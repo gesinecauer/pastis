@@ -69,6 +69,8 @@ def get_default_options():
                "normalize": False,
                "max_iter": 10000,
                "seed": 0,
+               "use_callback": False,
+               "X_true": None,
                }
 
     return options

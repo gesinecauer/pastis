@@ -5,7 +5,13 @@ from scipy import optimize
 from sklearn.utils import check_random_state
 from . import poisson_model
 from . import mds
+from topsy.metrics.generate_metrics import simulated_vs_inferred
 
+# Set up for callback function
+n_iter = 0
+iter_obj = iter_grad = np.nan
+iter_details = {'iter': [], 'obj': [], 'grad': [], 'RMSD_whole':[], 'distanceError_whole':[],
+                'RMSD_chr':[], 'distanceError_chr':[]}
 
 def poisson_obj(X, counts, alpha=-3., beta=1., bias=None,
                 use_zero_counts=False, cst=0):
@@ -34,6 +40,10 @@ def _poisson_obj_sparse(X, counts, alpha=-3., beta=1., bias=None,
     obj = fdis.sum() - (counts.data * np.log(fdis)).sum()
     if np.isnan(obj):
         raise ValueError("Objective function is nan")
+
+    global iter_obj
+    iter_obj = obj
+
     return obj
 
 
@@ -70,6 +80,9 @@ def _poisson_gradient_sparse(X, counts, alpha=-3, beta=1, bias=None):
         grad_[i] += grad[counts.row == i].sum(axis=0)
         grad_[i] -= grad[counts.col == i].sum(axis=0)
 
+    global iter_grad
+    iter_grad = grad_.max()
+
     return grad_
 
 
@@ -92,7 +105,9 @@ def eval_grad_f(x, user_data=None):
 
 def estimate_X(counts, alpha=-3., beta=1.,
                ini=None, bias=None,
-               random_state=None, maxiter=10000, verbose=0):
+               random_state=None, maxiter=10000, verbose=0,
+               X_true = None, lengths = None,
+               use_callback=False):
     """
     Estimate the parameters of g
 
@@ -143,6 +158,30 @@ def estimate_X(counts, alpha=-3., beta=1.,
     data = (n, counts, alpha, beta, bias,
             False)
 
+    def callback_fxn(Xi):
+        global n_iter
+        global iter_details
+        global iter_obj
+        global iter_grad
+        iter_details['iter'].append(n_iter)
+        iter_details['obj'].append(iter_obj)
+        iter_details['grad'].append(iter_grad)
+        if X_true is not None:
+            metrics = simulated_vs_inferred(X_true, Xi.reshape(-1, 3), lengths, verbose=0)
+            iter_details['RMSD_whole'].append(metrics['RMSD']['Whole structure'])
+            iter_details['distanceError_whole'].append(metrics['distanceError']['Whole structure'])
+            iter_details['RMSD_chr'].append(metrics['RMSD']['Intra-chromosomal'])
+            iter_details['distanceError_chr'].append(metrics['distanceError']['Intra-chromosomal'])
+            if len(np.unique(mapping)) != len(mapping):
+                iter_details['RMSD_homo'].append(metrics['RMSD']['Homologous pairs'])
+                iter_details['distanceError_homo'].append(metrics['distanceError']['Homologous pairs'])
+        n_iter += 1
+    if not use_callback:
+        callback_fxn = None
+
+    # Generate metrics for ini
+    callback_fxn(ini)
+
     results = optimize.fmin_l_bfgs_b(
         eval_f,
         ini.flatten(),
@@ -150,9 +189,13 @@ def estimate_X(counts, alpha=-3., beta=1.,
         (data, ),
         iprint=verbose,
         maxiter=maxiter,
-        )
+        callback=callback_fxn)
     results = results[0].reshape(-1, 3)
-    return results
+
+    global iter_details
+    iter_details = {k: v for k, v in iter_details.items() if len(v) != 0}
+
+    return results, iter_details
 
 
 class PM1(object):
@@ -171,7 +214,7 @@ class PM1(object):
         self.init = init
         self.verbose = verbose
 
-    def fit(self, counts, lengths=None):
+    def fit(self, counts, lengths=None, X_true=None, use_callback=False):
         """
 
         """
@@ -190,14 +233,19 @@ class PM1(object):
                                verbose=self.verbose)
         else:
             X = self.init
-        X = estimate_X(counts,
+        X, iter_details = estimate_X(counts,
                        alpha=self.alpha,
                        beta=self.beta,
                        ini=X,
                        bias=self.bias,
                        verbose=self.verbose,
                        random_state=self.random_state,
-                       maxiter=self.max_iter)
+                       maxiter=self.max_iter,
+                       lengths=lengths,
+                       X_true=X_true,
+                       use_callback=use_callback)
+        if use_callback:
+            self.iter_details_ = iter_details
         return X
 
 
@@ -220,7 +268,7 @@ class PM2(object):
         self.verbose = verbose
         self.bias = bias
 
-    def fit(self, counts):
+    def fit(self, counts, lengths=None, X_true=None, use_callback=False):
         """
 
         """
@@ -252,12 +300,17 @@ class PM2(object):
                 verbose=self.verbose,
                 random_state=self.random_state)
             print(self.alpha_, self.beta_)
-            X_ = estimate_X(counts,
+            X_, iter_details = estimate_X(counts,
                             alpha=self.alpha_,
                             beta=self.beta_,
                             ini=X,
                             verbose=self.verbose,
                             bias=self.bias,
                             random_state=self.random_state,
-                            maxiter=self.max_iter)
+                            maxiter=self.max_iter,
+                            lengths=lengths,
+                            X_true=X_true,
+                            use_callback=use_callback)
+        if use_callback:
+            self.iter_details_ = iter_details
         return X_

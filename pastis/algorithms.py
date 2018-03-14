@@ -68,7 +68,7 @@ def run_mds(directory):
               max_iter=options["max_iter"],
               verbose=options["verbose"])
     X = mds.fit(counts)
-    torm = np.array((counts.sum(axis=0) == 0)).flatten()
+    torm = np.array(((counts + counts.transpose()).sum(axis=0) == 0)).flatten()
     X[torm] = np.nan
     np.savetxt(
         os.path.join(
@@ -129,7 +129,7 @@ def run_nmds(directory):
         counts.eliminate_zeros()
         counts = counts.tocoo()
 
-    torm = np.array((counts.sum(axis=0) == 0)).flatten()
+    torm = np.array(((counts + counts.transpose()).sum(axis=0) == 0)).flatten()
     nmds = NMDS(alpha=options["alpha"],
                 beta=options["beta"],
                 random_state=random_state,
@@ -210,8 +210,9 @@ def run_pm1(directory):
               max_iter=options["max_iter"],
               bias=bias,
               verbose=options["verbose"])
-    X = pm1.fit(counts)
-    torm = np.array((counts.sum(axis=0) == 0)).flatten()
+    X = pm1.fit(counts, lengths=lengths, X_true=options["X_true"],
+                use_callback=options["use_callback"])
+    torm = np.array(((counts + counts.transpose()).sum(axis=0) == 0)).flatten()
 
     X[torm] = np.nan
 
@@ -227,6 +228,11 @@ def run_pm1(directory):
         "PM1." + options["output_name"] + ".pdb")
     # pdbfilename = "test.pdb"
     writePDB(X, pdbfilename)
+
+    if options["use_callback"]:
+        pd.DataFrame(pm1.iter_details_).to_csv(
+            os.path.join(directory, "PM1." + options["output_name"] + ".iter"),
+            sep='\t', index=False)
 
     return True
 
@@ -286,7 +292,8 @@ def run_pm2(directory):
               max_iter=options["max_iter"],
               bias=bias,
               verbose=options["verbose"])
-    X = pm2.fit(counts)
+    X = pm2.fit(counts, lengths=lengths, X_true=options["X_true"],
+                use_callback=options["use_callback"])
 
     torm = np.array(((counts + counts.transpose()).sum(axis=0) == 0)).flatten()
 
@@ -303,5 +310,10 @@ def run_pm2(directory):
         "PM2." + options["output_name"] + ".pdb")
     # pdbfilename = "test.pdb"
     writePDB(X, pdbfilename)
+
+    if options["use_callback"]:
+        pd.DataFrame(pm2.iter_details_).to_csv(
+            os.path.join(directory, "PM2." + options["output_name"] + ".iter"),
+            sep='\t', index=False)
 
     return True
