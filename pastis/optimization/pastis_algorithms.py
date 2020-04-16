@@ -24,6 +24,7 @@ from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from ..io.read import load_data
 from .poisson import objective
+from .bootstrap import bootstrap_counts
 
 
 def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
@@ -676,7 +677,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         null=null)
 
     if bootstrap:
-        counts = boostrap_counts(counts, random_state=seed)
+        counts = bootstrap_counts(counts, random_state=seed)
 
     if (not piecewise) or len(chrom_subset) == 1:
         struct_, infer_var = infer(
