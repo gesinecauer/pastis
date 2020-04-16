@@ -4,9 +4,9 @@ import pandas as pd
 import glob
 import os
 from scipy import sparse
-from iced.io import load_counts, load_lengths
-
-from .counts import subset_chrom
+from iced.io import load_lengths
+from .hiclib import load_hiclib_counts
+from ...optimization.counts import subset_chrom
 
 
 def _get_lengths(lengths):
@@ -52,7 +52,7 @@ def _get_counts(counts, lengths):
         elif f.endswith(".npy"):
             counts_maps = np.load(f)
         elif f.endswith(".matrix"):
-            counts_maps = load_counts(f, lengths=lengths)
+            counts_maps = load_hiclib_counts(f, lengths=lengths)
         else:
             raise ValueError("Counts file must end with .npy (for numpy array)"
                              " or .matrix (for hiclib / iced format)")
@@ -64,7 +64,7 @@ def _get_counts(counts, lengths):
 
 
 def load_data(counts, lengths_full, ploidy, chrom_full=None,
-              chrom_subset=None, exclude_zeros=True, struct_true=None):
+              chrom_subset=None, exclude_zeros=False, struct_true=None):
     """Load all input data from files, and/or reformat data objects.
 
     If files are provided, load data from files. Also reformats data objects.
@@ -125,7 +125,6 @@ def _choose_best_seed(outdir):
     """Choose seed with the lowest final objective value.
     """
 
-
     infer_var_files = glob.glob(
         '%s*.txt' % os.path.join(outdir, 'inference_variables'))
     if len(infer_var_files) == 0:
@@ -156,12 +155,12 @@ def _choose_struct_inferred_file(outdir, seed=None, verbose=True):
     if seed is None or seed == 'None':
         if verbose:
             print('Loading %s' % os.path.basename(outdir))
-        return os.path.join(outdir, 'struct_inferred.txt')
+        return os.path.join(outdir, 'struct_inferred.coords')
     else:
         if verbose:
             print('Loading %s from seed %03d' %
                   (os.path.basename(outdir), int(seed)))
-        return os.path.join(outdir, 'struct_inferred.%03d.txt' % int(seed))
+        return os.path.join(outdir, 'struct_inferred.%03d.coords' % int(seed))
 
 
 def _load_inferred_struct(outdir, seed=None, verbose=True):

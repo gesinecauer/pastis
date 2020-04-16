@@ -182,13 +182,13 @@ def _convert_indices_to_full_res(rows, cols, rows_max, cols_max,
             np.equal(rows_binned, np.floor(rows_binned.mean(axis=0))))
         incorrect_cols = np.invert(
             np.equal(cols_binned, np.floor(cols_binned.mean(axis=0))))
-        for val in np.flip(np.unique(rows[:, np.floor(rows_binned.mean(axis=0)) == i]
-                                         [incorrect_rows[:,
-                                                         np.floor(rows_binned.mean(axis=0)) == i]])):
+        row_mask = np.floor(rows_binned.mean(axis=0)) == i
+        col_mask = np.floor(cols_binned.mean(axis=0)) == i
+        row_vals = np.unique(rows[:, row_mask][incorrect_rows[:, row_mask]])
+        col_vals = np.unique(cols[:, col_mask][incorrect_cols[:, col_mask]])
+        for val in np.flip(row_vals, axis=0):
             rows[rows > val] -= 1
-        for val in np.flip(np.unique(cols[:, np.floor(cols_binned.mean(axis=0)) == i]
-                                         [incorrect_cols[:,
-                                                         np.floor(cols_binned.mean(axis=0)) == i]])):
+        for val in np.flip(col_vals, axis=0):
             cols[cols > val] -= 1
         # Because if the last low-res bin in this homolog of this chromosome is
         # all zero, that could mess up indices for subsequent
@@ -298,8 +298,10 @@ def _get_struct_indices(ploidy, multiscale_factor, lengths):
         indices_binned = np.digitize(indices, bins)
         incorrect_indices = np.invert(
             np.equal(indices_binned, indices_binned.min(axis=0)))
-        for val in np.flip(np.unique(indices[:, indices_binned.min(axis=0) == i]
-                                     [incorrect_indices[:, indices_binned.min(axis=0) == i]])):
+        index_mask = indices_binned.min(axis=0) == i
+        vals = np.unique(
+            indices[:, index_mask][incorrect_indices[:, index_mask]])
+        for val in np.flip(vals, axis=0):
             indices[indices > val] -= 1
     incorrect_indices += indices >= lengths.sum() * ploidy
 
@@ -402,13 +404,13 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
         lengths=lengths).reshape(multiscale_factor, -1)
 
     if fullres_torm is not None and fullres_torm.sum() != 0:
-        fullres_indices[fullres_indices == np.where(fullres_torm)[0]] = np.nan()
+        fullres_indices[fullres_indices == np.where(fullres_torm)[0]] = np.nan
 
     return (~ np.isnan(fullres_indices)).sum(axis=0)
 
 
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
-                                         ploidy, mixture_coefs=None):
+                                         mixture_coefs=None, verbose=True):
     """Compute multiscale variances from full-res structure.
 
     Generates multiscale variances at the specified resolution from the
@@ -426,8 +428,6 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 does not change the resolution.
-    ploidy : {1, 2}
-        Ploidy, 1 indicates haploid, 2 indicates diploid.
 
     Returns
     -------
@@ -442,7 +442,16 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
     if multiscale_factor == 1:
         return None
 
-    structures = _format_structures(structures, lengths=lengths, ploidy=ploidy,
+    structures = _format_structures(structures, mixture_coefs=mixture_coefs)
+    struct_length = set([s.shape[0] for s in structures])
+    if len(struct_length) > 1:
+        raise ValueError("Structures are of different shapes.")
+    else:
+        struct_length = struct_length.pop()
+    if struct_length / lengths.sum() not in (1, 2):
+        raise ValueError("Structures do not appear to be haploid or diploid.")
+    structures = _format_structures(structures, lengths=lengths,
+                                    ploidy=int(struct_length / lengths.sum()),
                                     mixture_coefs=mixture_coefs)
 
     multiscale_variances = []
@@ -450,8 +459,13 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
         struct_grouped = _group_highres_struct(
             struct, multiscale_factor, lengths)
         multiscale_variances.append(_var3d(struct_grouped))
+    multiscale_variances = np.mean(multiscale_variances, axis=0)
 
-    return np.mean(multiscale_variances, axis=0)
+    if verbose:
+        print("MULTISCALE VARIANCE: %.3g" % np.median(multiscale_variances),
+              flush=True)
+
+    return multiscale_variances
 
 
 def _var3d(struct_grouped):
@@ -463,7 +477,7 @@ def _var3d(struct_grouped):
         struct_group = struct_grouped[:, i, :]
         mean_coords = np.nanmean(struct_group, axis=0)
         # Euclidian distance formula = ((A - B) ** 2).sum(axis=1) ** 0.5
-        var = (1 / np.invert(np.isnan(struct_group)).sum()) * \
+        var = (1 / np.invert(np.isnan(struct_group[:, 0])).sum()) * \
             np.nansum((struct_group - mean_coords) ** 2)
         multiscale_variances[i] = var
     return multiscale_variances
@@ -473,8 +487,9 @@ def _choose_max_multiscale_rounds(lengths, min_beads):
     """Choose the maximum number of multiscale rounds, given `min_beads`.
     """
 
-    multiscale_rounds = 1
-    while decrease_lengths_res(lengths, 2 ** (multiscale_rounds + 1)).min() >= min_beads:
+    multiscale_rounds = 0
+    while decrease_lengths_res(
+            lengths, 2 ** (multiscale_rounds + 1)).min() >= min_beads:
         multiscale_rounds += 1
     return multiscale_rounds
 

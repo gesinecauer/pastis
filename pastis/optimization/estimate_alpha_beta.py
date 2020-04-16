@@ -38,7 +38,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, bias=None,
 
 
 def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
-                   mixture_coefs=None, verbose=True, simple_diploid=False):
+                   mixture_coefs=None, verbose=False):
     """Estimates beta for all counts matrices.
     """
 
@@ -49,33 +49,23 @@ def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
     if lengths is None:
-        lengths = np.array([min([min(counts_maps.shape) for counts_maps in counts])])
+        lengths = np.array([min([min(c.shape) for c in counts])])
     lengths = np.array(lengths)
     if bias is None:
-        bias = np.ones((min([min(counts_maps.shape) for counts_maps in counts]),))
+        bias = np.ones((min([min(c.shape) for c in counts]),))
     if not (isinstance(structures, list) or isinstance(structures, SequenceBox)):
         structures = [structures]
     if mixture_coefs is None:
         mixture_coefs = [1.] * len(structures)
 
     # Estimate beta for each type of counts (ambig, pa, ua)
-    counts_sum = {counts_maps.ambiguity: counts_maps.input_sum for counts_maps in counts}
-    K = {counts_maps.ambiguity: 0. for counts_maps in counts}
+    counts_sum = {c.ambiguity: c.input_sum for c in counts}
+    K = {c.ambiguity: 0. for c in counts}
 
-    if simple_diploid:
-        structures_homo1 = [s[:lengths.sum()] for s in structures]
-        structures_homo2 = [s[lengths.sum():] for s in structures]
-        for structures_homo in (structures_homo1, structures_homo2):
-            for counts_maps in counts:
-                K[counts_maps.ambiguity] += _estimate_beta_single(
-                    structures_homo, counts_maps, alpha=alpha, lengths=lengths,
-                    bias=bias, mixture_coefs=mixture_coefs)
-        K = {k / 2 for k in K}
-    else:
-        for counts_maps in counts:
-            K[counts_maps.ambiguity] += _estimate_beta_single(
-                structures, counts_maps, alpha=alpha, lengths=lengths,
-                bias=bias, mixture_coefs=mixture_coefs)
+    for counts_maps in counts:
+        K[counts_maps.ambiguity] += _estimate_beta_single(
+            structures, counts_maps, alpha=alpha, lengths=lengths,
+            bias=bias, mixture_coefs=mixture_coefs)
 
     beta = {k: counts_sum[k] / K[k] for k in counts_sum.keys()}
     for ambiguity, beta_maps in beta.items():
@@ -89,20 +79,18 @@ def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
             raise ValueError("Beta inferred for %s counts is zero."
                              % ambiguity)
 
-    counts = _update_betas_in_counts_matrices(counts=counts, beta=beta)
-
     if verbose:
         print('INFERRED BETA: %s' % ', '.join(['%s=%.2g' %
-              (counts_maps.name, counts_maps.beta) for counts_maps in counts]),
+              (k, v) for k, v in beta.items()]),
               flush=True)
 
-    return counts
+    return beta
 
 
 def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
                     reorienter=None, multiscale_factor=1,
                     multiscale_variances=None, mixture_coefs=None,
-                    return_components=False):
+                    return_extras=False):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -141,7 +129,7 @@ def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
                      multiscale_factor=multiscale_factor,
                      multiscale_variances=multiscale_variances,
                      mixture_coefs=mixture_coefs,
-                     return_components=return_components)
+                     return_extras=return_extras)
 
 
 gradient_alpha = grad(objective_alpha)
@@ -154,8 +142,10 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
-    counts = _estimate_beta(X, counts, alpha=alpha, lengths=lengths, bias=bias,
-                            reorienter=reorienter, mixture_coefs=mixture_coefs)
+    new_beta = _estimate_beta(
+        X, counts, alpha=alpha, lengths=lengths, bias=bias,
+        reorienter=reorienter, mixture_coefs=mixture_coefs)
+    counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
     X, mixture_coefs = _format_X(X, reorienter, mixture_coefs)
 
@@ -163,7 +153,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
         alpha, counts=counts, X=X, lengths=lengths, bias=bias, constraints=constraints,
         reorienter=reorienter, multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances, mixture_coefs=mixture_coefs,
-        return_components=True)
+        return_extras=True)
 
     if callback is not None:
         callback.on_epoch_end(obj_logs, structures, alpha, X)
@@ -178,8 +168,10 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
-    counts = _estimate_beta(X, counts, alpha=alpha, lengths=lengths, bias=bias,
-                            reorienter=reorienter, mixture_coefs=mixture_coefs)
+    new_beta = _estimate_beta(
+        X, counts, alpha=alpha, lengths=lengths, bias=bias,
+        reorienter=reorienter, mixture_coefs=mixture_coefs)
+    counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
     X, mixture_coefs = _format_X(X, reorienter, mixture_coefs)
 
@@ -200,7 +192,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
 def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
                    constraints=None, multiscale_factor=1,
                    multiscale_variances=None, random_state=None,
-                   max_iter=10000000000, factr=10000000., pgtol=1e-05,
+                   max_iter=30000, max_fun=None, factr=10000000., pgtol=1e-05,
                    callback=None, alpha_loop=None, reorienter=None,
                    mixture_coefs=None, verbose=True):
     """Estimates alpha, given current structure.
@@ -234,6 +226,9 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
         bead.
     max_iter : int, optional
         Maximum number of iterations per optimization.
+    max_fun : int, optional
+        Maximum number of function evaluations per optimization. If not
+        supplied, defaults to same value as `max_iter`.
     factr : float, optional
         factr for scipy's L-BFGS-B, alters convergence criteria.
     pgtol : float, optional
@@ -289,12 +284,15 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
             multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs, callback=callback)
 
+    if max_fun is None:
+        max_fun = max_iter
     results = optimize.fmin_l_bfgs_b(
         objective_wrapper_alpha,
         x0=np.float64(alpha_init),
         fprime=fprime_wrapper_alpha,
         iprint=0,
         maxiter=max_iter,
+        max_fun=max_fun,
         pgtol=pgtol,
         factr=factr,
         bounds=np.array([[-100, 1e-2]]),
@@ -302,8 +300,10 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
               reorienter, multiscale_factor, multiscale_variances,
               mixture_coefs, callback))
 
+    history = None
     if callback is not None:
         callback.on_training_end()
+        history = callback.history
 
     alpha, obj, d = results
     converged = d['warnflag'] == 0
@@ -317,4 +317,4 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
         print('INIT ALPHA: %.3g, FINAL ALPHA: %.3g' %
               (alpha_init, alpha), flush=True)
 
-    return float(alpha), obj, converged, callback.history
+    return float(alpha), obj, converged, history

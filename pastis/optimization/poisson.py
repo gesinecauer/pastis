@@ -6,10 +6,15 @@ if sys.version_info[0] < 3:
 
 from scipy import optimize
 import warnings
+from timeit import default_timer as timer
+from datetime import timedelta
 import autograd.numpy as ag_np
 from autograd.builtins import SequenceBox
 from autograd import grad
 from .multiscale_optimization import decrease_lengths_res
+from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
+from .constraints import Constraints
+from .callbacks import Callback
 
 
 def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
@@ -125,7 +130,8 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     if constraints is None:
         obj_constraints = {}
     else:
-        obj_constraints = constraints.apply(structures, mixture_coefs)
+        obj_constraints = constraints.apply(
+            structures, mixture_coefs=mixture_coefs, alpha=alpha)
     obj_poisson = {}
     for counts_maps in counts:
         obj_poisson['obj_' + counts_maps.name] = _poisson_obj_single(
@@ -151,7 +157,7 @@ def _format_X(X, reorienter=None, mixture_coefs=None):
         mixture_coefs = [1]
 
     if reorienter is not None and reorienter.reorient:
-        reorienter.check_format(X, mixture_coefs)
+        reorienter.check_X(X)
     else:
         try:
             X = X.reshape(-1, 3)
@@ -214,7 +220,7 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
 
 def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
                multiscale_factor=1, multiscale_variances=None,
-               max_iter=10000000000, factr=10000000., pgtol=1e-05,
+               max_iter=30000, max_fun=None, factr=10000000., pgtol=1e-05,
                callback=None, alpha_loop=None, reorienter=None,
                mixture_coefs=None, verbose=True):
     """Estimates a 3D structure, given current alpha.
@@ -247,6 +253,9 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
         bead.
     max_iter : int, optional
         Maximum number of iterations per optimization.
+    max_fun : int, optional
+        Maximum number of function evaluations per optimization. If not
+        supplied, defaults to same value as `max_iter`.
     factr : float, optional
         factr for scipy's L-BFGS-B, alters convergence criteria.
     pgtol : float, optional
@@ -273,9 +282,9 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
     lengths = np.array(lengths)
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     if bias is None:
-        bias = np.ones((min([min(counts_maps.shape)
-                             for counts_maps in counts]),))
+        bias = np.ones((lengths_lowres.sum(),))
     bias = np.array(bias)
 
     if verbose:
@@ -289,39 +298,49 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
         else:
             opt_type = 'structure'
         callback.on_training_begin(opt_type=opt_type, alpha_loop=alpha_loop)
-        objective_wrapper(
+        obj = objective_wrapper(
             init_X.flatten(), counts=counts, alpha=alpha, lengths=lengths,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs, callback=callback)
+    else:
+        obj = np.nan
 
-    results = optimize.fmin_l_bfgs_b(
-        objective_wrapper,
-        x0=init_X.flatten(),
-        fprime=fprime_wrapper,
-        iprint=0,
-        maxiter=max_iter,
-        pgtol=pgtol,
-        factr=factr,
-        args=(counts, alpha, lengths, bias, constraints,
-              reorienter, multiscale_factor, multiscale_variances,
-              mixture_coefs, callback))
+    if max_iter == 0:
+        X = init_X.flatten()
+        converged = True
+    else:
+        if max_fun is None:
+            max_fun = max_iter
+        results = optimize.fmin_l_bfgs_b(
+            objective_wrapper,
+            x0=init_X.flatten(),
+            fprime=fprime_wrapper,
+            iprint=0,
+            maxiter=max_iter,
+            maxfun=max_fun,
+            pgtol=pgtol,
+            factr=factr,
+            args=(counts, alpha, lengths, bias, constraints,
+                  reorienter, multiscale_factor, multiscale_variances,
+                  mixture_coefs, callback))
+        X, obj, d = results
+        converged = d['warnflag'] == 0
 
+    history = None
     if callback is not None:
         callback.on_training_end()
-
-    X, obj, d = results
-    converged = d['warnflag'] == 0
+        history = callback.history
 
     if verbose:
         if converged:
-            print('CONVERGED\n\n', flush=True)
+            print('CONVERGED\n', flush=True)
         else:
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
-            print(d['task'].decode('utf8') + '\n\n', flush=True)
+            print(d['task'].decode('utf8') + '\n', flush=True)
 
-    return X, obj, converged, callback.history
+    return X, obj, converged, history
 
 
 def _convergence_criteria(f_k, f_kplus1, factr=10000000.):
@@ -404,11 +423,10 @@ class PastisPM(object):
     def __init__(self, counts, lengths, ploidy, alpha, init, bias=None,
                  constraints=None, callback=None, multiscale_factor=1,
                  multiscale_variances=None, alpha_init=-3., max_alpha_loop=20,
-                 max_iter=10000000000, factr=10000000., pgtol=1e-05,
+                 max_iter=30000, factr=10000000., pgtol=1e-05,
                  alpha_factr=1000000000000., reorienter=None, null=False,
                  mixture_coefs=None, verbose=True):
-        from .constraints import Constraints
-        from .callbacks import Callback
+
         from .piecewise_whole_genome import ChromReorienter
 
         print('%s\n%s 3D STRUCTURAL INFERENCE' %
@@ -427,6 +445,7 @@ class PastisPM(object):
                 frequency={'print': 100, 'history': 100, 'save': None})
         if reorienter is None:
             reorienter = ChromReorienter(lengths=lengths, ploidy=ploidy)
+        reorienter.set_multiscale_factor(multiscale_factor)
 
         self.counts = counts
         self.lengths = lengths
@@ -464,11 +483,13 @@ class PastisPM(object):
 
         from .estimate_alpha_beta import _estimate_beta
 
-        self.counts = _estimate_beta(
+        new_beta = _estimate_beta(
             self.X_.flatten(), self.counts, alpha=self.alpha_, bias=self.bias,
             lengths=self.lengths, mixture_coefs=self.mixture_coefs,
             reorienter=self.reorienter, verbose=verbose)
-        return [c.beta for c in self.counts if c.sum() != 0]
+        self.counts = _update_betas_in_counts_matrices(
+            counts=self.counts, beta=new_beta)
+        return new_beta.values()
 
     def _fit_structure(self, alpha_loop=None):
         """Fit structure to counts data, given current alpha.
@@ -538,10 +559,6 @@ class PastisPM(object):
         -------
         self : returns an instance of self.
         """
-
-        from timeit import default_timer as timer
-        from datetime import timedelta
-        from .counts import NullCountsMatrix
 
         if self.null:
             print('GENERATING NULL STRUCTURE', flush=True)
