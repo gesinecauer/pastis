@@ -19,40 +19,46 @@ from .constraints import Constraints
 from .callbacks import Callback
 
 
-def printvars(variables, arr=False):
+def printvars(variables, print_array=False):
     import pandas as pd
     print('\n')
-    #buffer = 4 + max([len(k) for k in variables.keys()])
-    out = []
+    out_arr = []
+    out_const = []
     for name, var in variables.items():
         if type(var).__name__ == 'ArrayBox':
             var = var._value
-        #if not isinstance(var, float) and not isinstance(var, int):
         if isinstance(var, np.ndarray):
-            perc0 = (var == 0).sum() / (var.flatten().shape[0]) * 100
-            percNaN = np.isnan(var).sum() / (var.flatten().shape[0]) * 100
-            percInf = np.isinf(var).sum() / (var.flatten().shape[0]) * 100
-            out.append(
-                {'Name': name, 'Shape': f"({','.join(map(str, var.shape))})",
-                 'Mean': f"{var.mean():.3g}", 'Med': f"{np.median(var):.3g}",
-                 'Sum': f"{var.sum():.3g}",
-                 'Max': f"{var.max():.3g}", 'Min': f"{var.min():.3g}",
-                 'Perc0': f"{perc0:.3g}", 'PercNaN': f"{percNaN:.3g}",
-                 'PercInf': f"{percInf:.3g}",
-                 'Const': '.'})
-            #print(name, ' ' * (buffer - len(name)), var_sum)
-            if arr:
-                print(name)
-                with np.printoptions(formatter={'float': '{: 0.3g}'.format}):
-                    print(var)
+            var_size = var.flatten().shape[0]
+            if var_size == 0:
+                out_arr.append({
+                    'Name': name, 'Empty': True,
+                    'Shape': f"({','.join(map(str, var.shape))})"})
+            else:
+                perc0 = (var == 0).sum() / var_size * 100
+                percNaN = np.isnan(var).sum() / var_size * 100
+                percInf = np.isinf(var).sum() / var_size * 100
+                out_arr.append({
+                    'Name': name, 'Shape': f"({','.join(map(str, var.shape))})",
+                    'Mean': f"{var.mean():.3g}", 'Med': f"{np.median(var):.3g}",
+                    'Sum': f"{var.sum():.3g}",
+                    'Max': f"{var.max():.3g}", 'Min': f"{var.min():.3g}",
+                    '%0': f"{perc0:.3g}", '%nan': f"{percNaN:.3g}",
+                    '%inf': f"{percInf:.3g}", 'Empty': False})
+                if print_array:
+                    print(name)
+                    with np.printoptions(formatter={'float': '{: 0.3g}'.format}):
+                        print(var)
         else:
-            out.append(
-                {'Name': name, 'Sum': '.', 'Max': '.', 'Min': '.',
-                 'Perc0': '.', 'PercNaN': '.', 'PercInf': '.',
-                 'Const': var})
-            #print(name, ' ' * (buffer - len(name)), var)
-    df = pd.DataFrame(out)
-    print(df)
+            out_const.append({'Name': name, 'Const': var})
+    df_const = pd.DataFrame(out_const)
+    df_arr = pd.DataFrame(out_arr)
+    cols_replace_nan = [c for c in df_arr.columns if c not in ('Name', 'Shape')]
+    df_arr.loc[df_arr.Empty.values,
+               cols_replace_nan] = df_arr.loc[df_arr.Empty.values,
+                                              cols_replace_nan].fillna('.')
+    df_arr.drop('Empty', axis=1, inplace=True)
+    print(df_const.to_string(index=False, header=False))
+    print(df_arr.to_string(index=False))
 
 
 def _pois_sum(arr, nnz):
@@ -70,12 +76,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
 
-    # FIXME There's got to be a better way to do this but today is not the day ***************
-    '''structures = _repeat_struct_multiscale(
-        structures=structures, lengths=lengths,
-        multiscale_factor=multiscale_factor)
-    num_highres_per_lowres_bins = 1  # FIXME   # ***************'''
-
     num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
         multiscale_factor)
 
@@ -90,7 +90,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     k = ag_np.zeros(counts.nnz_lowres)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
-            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))  # ***************
+            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
         dis_sq = ag_np.square(dis)
         dis_alpha = ag_np.power(dis, alpha)
         if ploidy == 1:
@@ -120,8 +120,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     k = k.reshape(1, -1)
     num_highres_per_lowres_bins = num_highres_per_lowres_bins.reshape(1, -1)
 
-    #print(k.shape, counts.data_grouped.shape, (counts.data_grouped + k).sum(axis=0).shape, num_highres_per_lowres_bins.shape)
-
     alternative_obj = 'try2'
     huge_k_over_c = ag_np.array([0])
 
@@ -142,16 +140,17 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         #obj_tmp2 = obj_tmp2a + obj_tmp2b
         obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2a) + ag_np.sum(obj_tmp2b + obj_tmp3)
     elif alternative_obj == 'try2':
-        #obj_tmp1 = - ag_np.sum(counts.data_grouped * ag_np.log(1 + theta), axis=0)
-        #obj_tmp2a = num_highres_per_lowres_bins * k * (ag_np.log(theta) - ag_np.log(1 + theta))
-        ugh = 1
+        obj_tmp1 = - ag_np.sum(counts.data_grouped * ag_np.log(1 + theta), axis=0)
+        obj_tmp2a = num_highres_per_lowres_bins * k * (ag_np.log(theta) - ag_np.log(1 + theta))
+        '''ugh = 1
         log_1plusTheta = ag_np.log(ugh * (1 + theta)) - ag_np.log(ugh)
         log_theta = ag_np.log(ugh * (theta)) - ag_np.log(ugh)
         obj_tmp1 = - ag_np.sum(counts.data_grouped * (log_1plusTheta), axis=0)
-        obj_tmp2a = num_highres_per_lowres_bins * k * (log_theta - log_1plusTheta)
+        obj_tmp2a = num_highres_per_lowres_bins * k * (log_theta - log_1plusTheta)'''
         obj_tmp2b = - num_highres_per_lowres_bins * ag_gammaln(k)
         obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
 
+        try_new_approach = False
         if ag_np.min(dis) > ag_np.inf:
             obj_2b_3 = ag_np.sum(counts.data_grouped * ag_np.log(k), axis=0).reshape(1, -1)
             obj_2b_3_sum = ag_np.sum(obj_2b_3)
@@ -163,15 +162,32 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                 print('sum bad', obj_2b_3_sum_bad)
                 print('sum good', obj_2b_3_sum)
                 exit(0)
+        elif not try_new_approach:
+            obj_2b_3 = (obj_tmp2b + obj_tmp3)
+            obj_2b_3_sum = ag_np.sum(obj_2b_3)
         else:
             k_over_c_cutoff = 1e10
             k_over_c = k.flatten() / counts.data_grouped.min(axis=0)
             huge_k_over_c = k_over_c > k_over_c_cutoff
-            obj_2b_3 = (obj_tmp2b.flatten()[~huge_k_over_c] + obj_tmp3[~huge_k_over_c]).reshape(1, -1)
-            obj_2b_3_sum = ag_np.sum(obj_2b_3)
+            obj_2b_3_part1 = (obj_tmp2b.flatten()[~huge_k_over_c] + obj_tmp3[~huge_k_over_c])
+            '''if type(structures[0]).__name__ == 'ArrayBox':
+                print('====== GRADIENT =====')
+            else:
+                print('=' * 75)
+                print('===== OBJECTIVE =====')
+            print('$$$ obj_tmp2b.shape', obj_tmp2b.shape)
+            print('$$$ obj_tmp3.shape', obj_tmp3.shape)
+            print('$$$ obj_2b_3_part1.shape', obj_2b_3_part1.shape)'''
+            obj_2b_3_sum = ag_np.sum(obj_2b_3_part1)
             if ag_np.sum(huge_k_over_c) != 0:
-                tmp = ag_np.sum(counts.data_grouped[:, huge_k_over_c] * ag_np.log(k[0, huge_k_over_c]), axis=0)
-                obj_2b_3_sum = obj_2b_3_sum + ag_np.sum(tmp)
+                obj_2b_3_part2 = ag_np.sum(counts.data_grouped[:, huge_k_over_c] * ag_np.log(k[0, huge_k_over_c]), axis=0)
+                '''print('$$$ counts.data_grouped[:, huge_k_over_c].shape', counts.data_grouped[:, huge_k_over_c].shape)
+                print('$$$ ag_np.log(k[0, huge_k_over_c].shape', ag_np.log(k[:, huge_k_over_c]).shape)
+                print('$$$ obj_2b_3_part2.shape', obj_2b_3_part2.shape)'''
+                obj_2b_3_sum = obj_2b_3_sum + ag_np.sum(obj_2b_3_part2)
+                obj_2b_3 = np.concatenate([obj_2b_3_part1, obj_2b_3_part2]).reshape(1, -1)
+            else:
+                obj_2b_3 = obj_2b_3_part1.reshape(1, -1)
 
         obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2a) + obj_2b_3_sum
     else:
@@ -236,7 +252,8 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             print(k_tmp2[kneg1i])
             printvars({
                 'data_grouped': counts.data_grouped, 'dis': dis, 'k': k,
-                'theta': theta})
+                'theta': theta, 'obj_tmp1': obj_tmp1, 'obj_tmp2a': obj_tmp2a,
+                'obj_2b_3': obj_2b_3, 'epsilon': epsilon})
             #if dis.min() > 1e20: print('jfc.'); exit(0)
             dont_stop_believin = True
             if perc0_2b_3 > 0 and not dont_stop_believin:
