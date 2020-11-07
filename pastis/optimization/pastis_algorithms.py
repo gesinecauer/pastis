@@ -205,7 +205,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
-          multiscale_reform=False, epsilon_min=0.5, epsilon_max=5,
+          multiscale_reform=False, epsilon_min=0.1, epsilon_max=5,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True):
     """Infer 3D structures with PASTIS via Poisson model.
@@ -511,6 +511,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                             struct_true=struct_true, alpha_true=alpha_true)
 
         # INFER STRUCTURE
+        print('epsilon_min, epsilon_max', epsilon_min, epsilon_max)
         pm = PastisPM(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha_,
             init=struct_init, bias=bias, constraints=constraints,

@@ -21,7 +21,6 @@ from .callbacks import Callback
 
 def printvars(variables, print_array=False):
     import pandas as pd
-    print('\n')
     out_arr = []
     out_const = []
     for name, var in variables.items():
@@ -120,35 +119,31 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     k = k.reshape(1, -1)
     num_highres_per_lowres_bins = num_highres_per_lowres_bins.reshape(1, -1)
 
-    alternative_obj = 'try2'
+    alternative_obj = 'tryo'
     huge_k_over_c = ag_np.array([0])
 
     if counts.type == 'zero':
         if alternative_obj == 'try1':
-            obj_tmp = num_highres_per_lowres_bins * k * (ag_np.log(theta / (1 - theta)))
+            obj_tmp2a = num_highres_per_lowres_bins * k * (ag_np.log(theta / (1 - theta)))
         elif alternative_obj == 'try2':
-            obj_tmp = num_highres_per_lowres_bins * k * (ag_np.log(theta) - ag_np.log(1 + theta))
+            obj_tmp2a = num_highres_per_lowres_bins * k * (ag_np.log(theta) - ag_np.log(1 + theta))
         else:
-            obj_tmp = num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
-        obj = ag_np.sum(obj_tmp)
+            obj_tmp2a = num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
+        obj = ag_np.sum(obj_tmp2a)
+        obj_2b_3 = 0
     elif alternative_obj == 'try1':
         # TRY 1
         obj_tmp1 = ag_np.sum(counts.data_grouped * (ag_np.log(1 - theta / (1 - theta))), axis=0)
         obj_tmp2a = num_highres_per_lowres_bins * k * (ag_np.log(theta / (1 - theta)))
         obj_tmp2b = - num_highres_per_lowres_bins * ag_gammaln(k)
         obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
-        #obj_tmp2 = obj_tmp2a + obj_tmp2b
         obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2a) + ag_np.sum(obj_tmp2b + obj_tmp3)
+        obj_2b_3 = obj_tmp2b + obj_tmp3
     elif alternative_obj == 'try2':
-        obj_tmp1 = - ag_np.sum(counts.data_grouped * ag_np.log(1 + theta), axis=0)
+        obj_tmp1 = - ag_np.sum(counts.data_grouped * ag_np.log(1 + theta), axis=0).reshape(1, -1)
         obj_tmp2a = num_highres_per_lowres_bins * k * (ag_np.log(theta) - ag_np.log(1 + theta))
-        '''ugh = 1
-        log_1plusTheta = ag_np.log(ugh * (1 + theta)) - ag_np.log(ugh)
-        log_theta = ag_np.log(ugh * (theta)) - ag_np.log(ugh)
-        obj_tmp1 = - ag_np.sum(counts.data_grouped * (log_1plusTheta), axis=0)
-        obj_tmp2a = num_highres_per_lowres_bins * k * (log_theta - log_1plusTheta)'''
         obj_tmp2b = - num_highres_per_lowres_bins * ag_gammaln(k)
-        obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
+        obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0).reshape(1, -1)
 
         try_new_approach = False
         if ag_np.min(dis) > ag_np.inf:
@@ -163,27 +158,16 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                 print('sum good', obj_2b_3_sum)
                 exit(0)
         elif not try_new_approach:
-            obj_2b_3 = (obj_tmp2b + obj_tmp3)
+            obj_2b_3 = obj_tmp2b + obj_tmp3
             obj_2b_3_sum = ag_np.sum(obj_2b_3)
         else:
             k_over_c_cutoff = 1e10
             k_over_c = k.flatten() / counts.data_grouped.min(axis=0)
             huge_k_over_c = k_over_c > k_over_c_cutoff
-            obj_2b_3_part1 = (obj_tmp2b.flatten()[~huge_k_over_c] + obj_tmp3[~huge_k_over_c])
-            '''if type(structures[0]).__name__ == 'ArrayBox':
-                print('====== GRADIENT =====')
-            else:
-                print('=' * 75)
-                print('===== OBJECTIVE =====')
-            print('$$$ obj_tmp2b.shape', obj_tmp2b.shape)
-            print('$$$ obj_tmp3.shape', obj_tmp3.shape)
-            print('$$$ obj_2b_3_part1.shape', obj_2b_3_part1.shape)'''
+            obj_2b_3_part1 = obj_tmp2b.flatten()[~huge_k_over_c] + obj_tmp3[~huge_k_over_c]
             obj_2b_3_sum = ag_np.sum(obj_2b_3_part1)
             if ag_np.sum(huge_k_over_c) != 0:
                 obj_2b_3_part2 = ag_np.sum(counts.data_grouped[:, huge_k_over_c] * ag_np.log(k[0, huge_k_over_c]), axis=0)
-                '''print('$$$ counts.data_grouped[:, huge_k_over_c].shape', counts.data_grouped[:, huge_k_over_c].shape)
-                print('$$$ ag_np.log(k[0, huge_k_over_c].shape', ag_np.log(k[:, huge_k_over_c]).shape)
-                print('$$$ obj_2b_3_part2.shape', obj_2b_3_part2.shape)'''
                 obj_2b_3_sum = obj_2b_3_sum + ag_np.sum(obj_2b_3_part2)
                 obj_2b_3 = np.concatenate([obj_2b_3_part1, obj_2b_3_part2]).reshape(1, -1)
             else:
@@ -194,84 +178,34 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         obj_tmp1 = ag_np.sum(counts.data_grouped * ag_np.log(theta / (1 + theta)), axis=0)
         obj_tmp2a = - num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
         obj_tmp2b = - num_highres_per_lowres_bins * ag_gammaln(k)
-        #obj_tmp2 = - num_highres_per_lowres_bins * (k * ag_np.log(1 + theta) + ag_gammaln(k))
         obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
-        #obj = obj_tmp1 + obj_tmp2 + obj_tmp3
-        #obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2) + ag_np.sum(obj_tmp3)
-        #obj = ag_np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3)
-        #obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2 + obj_tmp3)
         obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2a) + ag_np.sum(obj_tmp2b + obj_tmp3)
+        obj_2b_3 = obj_tmp2b + obj_tmp3
 
-    if counts.type != 'zero':
-        #with np.printoptions(formatter={'float': '{: 0.3f}'.format}):
-        if type(obj).__name__ == 'ArrayBox':
-            pass
-            #print(f"Gradient:    shape=({', '.join(map(str, obj_2_3.shape))})   zeros={perc0:.3g}%   mean non0={mean_non0._value:.2g}   above0={perc_non0_above0:.3g}%")
-            #print(obj_2_3._value.round(1).flatten())
-        else:
-            obj_2_3 = obj_tmp2a + obj_tmp2b + obj_tmp3
-            perc0 = ag_np.sum(obj_2_3 == 0) / max(obj_2_3.shape) * 100
-            non0 = obj_2_3[obj_2_3 != 0]
-            if non0.flatten().shape[0] == 0:
-                mean_non0 = 0
-                perc_non0_above0 = 0
-            else:
-                mean_non0 = ag_np.abs(non0).mean()
-                perc_non0_above0 = ag_np.sum(non0 > 0) / max(non0.shape) * 100
-
-            non0i = np.where(obj_2_3 != 0)[1][:5]
-            counts_sum = ag_np.sum(counts.data_grouped, axis=0)
-
-            if alternative_obj != 'try2':
-                obj_2b_3 = obj_tmp2b + obj_tmp3
+    if type(obj).__name__ != 'ArrayBox':
+        print('=' * 75)
+        #kneg1i = (k == -1).flatten(); print(k_tmp1[kneg1i]); print(k_tmp2[kneg1i])
+        printvars({
+            'dis': dis, 'data_grouped': counts.data_grouped, 'k': k,
+            'theta': theta, 'obj_tmp1': obj_tmp1, 'obj_tmp2a': obj_tmp2a,
+            'obj_2b_3': obj_2b_3, 'epsilon': epsilon, 'obj': obj,
+            'huge_k_over_c': ag_np.sum(huge_k_over_c)})
+        #if dis.min() > 1e20: print('jfc.'); exit(0)
+        dont_stop_believin = True
+        perc0_2b_3 = ag_np.sum(obj_2b_3 == 0) / max(obj_2b_3.shape) * 100
+        if perc0_2b_3 > 0 and not dont_stop_believin:
             is0i_2b_3 = np.where(obj_2b_3 == 0)[1]
             non0i_2b_3 = np.where(obj_2b_3 != 0)[1]
-            perc0_2b_3 = ag_np.sum(obj_2b_3 == 0) / max(obj_2b_3.shape) * 100
-
-            perc0_2a = ag_np.sum(obj_tmp2a == 0) / max(obj_tmp2a.shape) * 100
-
-            print('--------------------------------------------------------------------')
-            print(f"Epsilon: {epsilon:.3g}")
-            print(f"Objective:   shape=({', '.join(map(str, obj_2_3.shape))})   2+3 zeros={perc0:.3g}%   mean non0={mean_non0:.2g}   above0={perc_non0_above0:.3g}%")
-            print(f"                            2B+3 zeros={perc0_2b_3:.3g}%")
-            print(f"obj {obj:.3g}")
-            print('huge_k_over_c', ag_np.sum(huge_k_over_c))
-            print(ag_np.sum(obj_tmp2a), perc0_2a)
-            print((theta).flatten()[:5])
-            #print(obj_2_3.round(1).flatten())
-            bar = np.concatenate([
-                k.T[non0i],
-                np.log(k).T[non0i],
-                #k_tmp1.reshape(1, -1).T[non0i],
-                #k_tmp2.reshape(1, -1).T[non0i],
-                counts_sum.reshape(-1, 1)[non0i]],
-                axis=1)
-            print(bar)
-            kneg1i = (k == -1).flatten()
-            print(k_tmp1[kneg1i])
-            print(k_tmp2[kneg1i])
+            got0_min = counts.data_grouped.min(axis=0)[is0i_2b_3]
+            non0_min = counts.data_grouped.min(axis=0)[non0i_2b_3]
+            got0_sum = counts.data_grouped.sum(axis=0)[is0i_2b_3]
+            non0_sum = counts.data_grouped.sum(axis=0)[non0i_2b_3]
             printvars({
-                'data_grouped': counts.data_grouped, 'dis': dis, 'k': k,
-                'theta': theta, 'obj_tmp1': obj_tmp1, 'obj_tmp2a': obj_tmp2a,
-                'obj_2b_3': obj_2b_3, 'epsilon': epsilon})
-            #if dis.min() > 1e20: print('jfc.'); exit(0)
-            dont_stop_believin = True
-            if perc0_2b_3 > 0 and not dont_stop_believin:
-                print()
-                print(np.sum(obj_2b_3 == 0), 'ugh\n')
-                print(counts.data_grouped.shape)
-                got0_min = counts.data_grouped.min(axis=0)[is0i_2b_3]
-                non0_min = counts.data_grouped.min(axis=0)[non0i_2b_3]
-                got0_sum = counts.data_grouped.sum(axis=0)[is0i_2b_3]
-                non0_sum = counts.data_grouped.sum(axis=0)[non0i_2b_3]
-                #print(got0_min)
-                #print(counts.data_grouped.T[is0i_2b_3])
-                printvars({
-                    'got0_min': got0_min, 'non0_min': non0_min,
-                    'got0_sum': got0_sum, 'non0_sum': non0_sum,
-                    'got0_c': counts.data_grouped.T[is0i_2b_3], 'non0_c': counts.data_grouped.T[non0i_2b_3],
-                    'got0_k': k.T[is0i_2b_3], 'non0_k': k.T[non0i_2b_3]})
-                exit(0)
+                'got0_min': got0_min, 'non0_min': non0_min,
+                'got0_sum': got0_sum, 'non0_sum': non0_sum,
+                'got0_c': counts.data_grouped.T[is0i_2b_3], 'non0_c': counts.data_grouped.T[non0i_2b_3],
+                'got0_k': k.T[is0i_2b_3], 'non0_k': k.T[non0i_2b_3]})
+            exit(0)
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         print(f"\nEpsilon: {epsilon:.3g}")
@@ -292,9 +226,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     if np.isnan(counts.weight) or np.isinf(counts.weight) or counts.weight == 0:
         raise ValueError(f"Counts weight may not be {counts.weight}.")
 
-    #print(obj, epsilon)
-
-    return counts.weight * obj
+    return counts.weight * (- obj)
 
 
 def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
