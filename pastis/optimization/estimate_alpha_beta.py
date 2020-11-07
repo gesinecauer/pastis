@@ -12,7 +12,7 @@ from .multiscale_optimization import decrease_lengths_res
 
 def _estimate_beta_single(structures, counts, alpha, lengths, bias=None,
                           multiscale_factor=1, multiscale_variances=None,
-                          mixture_coefs=None):
+                          multiscale_reform=False, mixture_coefs=None):
     """Facilitates estimation of beta for a single counts object.
 
     Computes the sum of distances (K) corresponding to a given counts matrix.
@@ -31,6 +31,10 @@ def _estimate_beta_single(structures, counts, alpha, lengths, bias=None,
         mixture_coefs = [1.]
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    if multiscale_reform:
+        lengths_counts = lengths
+    else:
+        lengths_counts = lengths_lowres
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
 
     if multiscale_variances is not None:
@@ -61,7 +65,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, bias=None,
 
 def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
                    multiscale_factor=1, multiscale_variances=None,
-                   mixture_coefs=None, verbose=False):
+                   multiscale_reform=False, mixture_coefs=None, verbose=False):
     """Estimates beta for all counts matrices.
     """
 
@@ -70,7 +74,10 @@ def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
             raise ValueError("Alpha should be of length 1.")
         alpha = alpha[0]
 
-    structures, mixture_coefs = _format_X(X, reorienter, mixture_coefs)
+    structures, epsilon, mixture_coefs = _format_X(
+        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
+        mixture_coefs=mixture_coefs)
+
     if reorienter is not None and reorienter.reorient:
         structures = reorienter.translate_and_rotate(X)
 
@@ -95,7 +102,7 @@ def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
             structures, counts_maps, alpha=alpha, lengths=lengths,
             bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
-            mixture_coefs=mixture_coefs)
+            multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs)
 
     beta = {k: counts_sum[k] / K[k] for k in counts_sum.keys()}
     for ambiguity, beta_maps in beta.items():
@@ -119,8 +126,8 @@ def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
 
 def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
                     reorienter=None, multiscale_factor=1,
-                    multiscale_variances=None, mixture_coefs=None,
-                    return_extras=False):
+                    multiscale_variances=None, epsilon=None,
+                    mixture_coefs=None, return_extras=False):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -164,8 +171,8 @@ def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
-        mixture_coefs=mixture_coefs, return_extras=return_extras,
-        inferring_alpha=True)
+        epsilon=epsilon, mixture_coefs=mixture_coefs,
+        return_extras=return_extras, inferring_alpha=True)
 
 
 gradient_alpha = grad(objective_alpha)
@@ -174,7 +181,8 @@ gradient_alpha = grad(objective_alpha)
 def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
                             constraints=None, reorienter=None,
                             multiscale_factor=1, multiscale_variances=None,
-                            mixture_coefs=None, callback=None):
+                            multiscale_reform=False, mixture_coefs=None,
+                            callback=None):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
@@ -182,17 +190,20 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
         X, counts, alpha=alpha, lengths=lengths, bias=bias,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
-        reorienter=reorienter, mixture_coefs=mixture_coefs)
+        multiscale_reform=multiscale_reform, reorienter=reorienter,
+        mixture_coefs=mixture_coefs)
     counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
-    X, mixture_coefs = _format_X(X, reorienter, mixture_coefs)
+    X, epsilon, mixture_coefs = _format_X(
+        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
+        mixture_coefs=mixture_coefs)
 
     new_obj, obj_logs, structures, alpha = objective_alpha(
         alpha, counts=counts, X=X, lengths=lengths, bias=bias,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
-        multiscale_variances=multiscale_variances, mixture_coefs=mixture_coefs,
-        return_extras=True)
+        multiscale_variances=multiscale_variances, epsilon=epsilon,
+        mixture_coefs=mixture_coefs, return_extras=True)
 
     if callback is not None:
         callback.on_epoch_end(obj_logs, structures, alpha, X)
@@ -202,8 +213,8 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
 
 def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
                          reorienter=None, multiscale_factor=1,
-                         multiscale_variances=None, mixture_coefs=None,
-                         callback=None):
+                         multiscale_variances=None, multiscale_reform=False,
+                         mixture_coefs=None, callback=None):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
@@ -211,10 +222,13 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
         X, counts, alpha=alpha, lengths=lengths, bias=bias,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
-        reorienter=reorienter, mixture_coefs=mixture_coefs)
+        multiscale_reform=multiscale_reform, reorienter=reorienter,
+        mixture_coefs=mixture_coefs)
     counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
-    X, mixture_coefs = _format_X(X, reorienter, mixture_coefs)
+    X, epsilon, mixture_coefs = _format_X(
+        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
+        mixture_coefs=mixture_coefs)
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -224,7 +238,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
             alpha, counts=counts, X=X, lengths=lengths, bias=bias,
             constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances,
+            multiscale_variances=multiscale_variances, epsilon=epsilon,
             mixture_coefs=mixture_coefs)).flatten()
 
     return new_grad
@@ -232,10 +246,10 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
 
 def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
                    constraints=None, multiscale_factor=1,
-                   multiscale_variances=None, random_state=None,
-                   max_iter=30000, max_fun=None, factr=10000000., pgtol=1e-05,
-                   callback=None, alpha_loop=None, reorienter=None,
-                   mixture_coefs=None, verbose=True):
+                   multiscale_variances=None, multiscale_reform=False,
+                   random_state=None, max_iter=30000, max_fun=None,
+                   factr=10000000., pgtol=1e-05, callback=None, alpha_loop=None,
+                   reorienter=None, mixture_coefs=None, verbose=True):
     """Estimates alpha, given current structure.
 
     Parameters
@@ -323,7 +337,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
-            mixture_coefs=mixture_coefs, callback=callback)
+            multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
+            callback=callback)
 
     if max_fun is None:
         max_fun = max_iter
@@ -339,7 +354,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
         bounds=np.array([[-100, -1e-2]]),
         args=(counts, X.flatten(), lengths, bias, constraints,
               reorienter, multiscale_factor, multiscale_variances,
-              mixture_coefs, callback))
+              multiscale_reform, mixture_coefs, callback))
 
     history = None
     if callback is not None:

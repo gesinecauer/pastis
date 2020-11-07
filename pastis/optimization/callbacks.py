@@ -121,18 +121,22 @@ class Callback(object):
     """
 
     def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
+                 multiscale_reform=False,
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
                  on_epoch_end=None, directory=None, struct_true=None,
                  alpha_true=None, verbose=False):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
+        self.epsilon = None
         self.lengths = decrease_lengths_res(lengths, multiscale_factor)
         if counts is None:
-            self.torm = np.full((lengths.sum() * self.ploidy), False)
+            self.torm = np.full((self.lengths.sum() * self.ploidy), False)
         else:
             self.torm = find_beads_to_remove(
-                counts, self.lengths.sum() * self.ploidy)
+                counts, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor,
+                multiscale_reform=multiscale_reform)
         self.analysis_function = analysis_function
         if frequency is None or isinstance(frequency, int):
             self.frequency = {'print': frequency,
@@ -239,7 +243,8 @@ class Callback(object):
                       ('alpha_loop', self.alpha_loop),
                       ('opt_type', self.opt_type),
                       ('multiscale_factor', self.multiscale_factor),
-                      ('seconds', self.seconds)]
+                      ('seconds', self.seconds),
+                      ('epsilon', self.epsilon)]
             to_log.extend(list(self.obj.items()))
 
             if self.analysis_function is not None:
@@ -282,7 +287,7 @@ class Callback(object):
             self.on_training_begin_(self)
         self.time_start = timer()
 
-    def on_epoch_end(self, obj_logs, structures, alpha, Xi):
+    def on_epoch_end(self, obj_logs, structures, alpha, Xi, epsilon=None):
         """Functionality to add to the end of each epoch.
 
         This method will be called at the end of each epoch during the
@@ -319,6 +324,7 @@ class Callback(object):
         self.alpha = alpha
         if self.opt_type == 'chrom_reorient':
             self.orientation = Xi
+        self.epsilon = epsilon
 
         self._print()
         self._log_history()

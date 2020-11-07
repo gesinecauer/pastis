@@ -56,7 +56,8 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                  hsc_lambda=0., hsc_r=None, hsc_min_beads=5,
                  struct_draft_fullres=None, callback_freq=None,
-                 callback_function=None, reorienter=None, alpha_true=None,
+                 callback_function=None, reorienter=None,
+                 multiscale_reform=False, alpha_true=None,
                  struct_true=None, input_weight=None, exclude_zeros=False,
                  null=False, mixture_coefs=None, verbose=True):
     """Infer draft 3D structures with PASTIS via Poisson model.
@@ -64,7 +65,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
 
     infer_draft_lowres = hsc_lambda > 0 and hsc_r is None
     need_multiscale_var = use_multiscale_variance and (
-        multiscale_rounds > 1 or infer_draft_lowres)
+        multiscale_rounds > 1 or infer_draft_lowres) and (not multiscale_reform)
     infer_draft_fullres = struct_draft_fullres is None and (
         need_multiscale_var)
 
@@ -114,10 +115,10 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, draft=True, simple_diploid=(ploidy == 2),
             callback_function=callback_function, callback_freq=callback_freq,
-            reorienter=reorienter, alpha_true=alpha_true,
-            struct_true=struct_true, input_weight=input_weight,
-            exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
-            verbose=verbose)
+            reorienter=reorienter, multiscale_reform=multiscale_reform,
+            alpha_true=alpha_true, struct_true=struct_true,
+            input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
+            mixture_coefs=mixture_coefs, verbose=verbose)
         if not infer_var_fullres['converged']:
             return struct_draft_fullres, alpha_, beta_, hsc_r, False
         if alpha is not None:
@@ -173,9 +174,9 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             simple_diploid=simple_diploid_for_lowres,
             callback_function=callback_function,
             callback_freq=callback_freq,
-            reorienter=reorienter, alpha_true=alpha_true,
-            struct_true=struct_true, input_weight=input_weight,
-            exclude_zeros=exclude_zeros, null=null,
+            reorienter=reorienter, multiscale_reform=multiscale_reform,
+            alpha_true=alpha_true, struct_true=struct_true,
+            input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
             mixture_coefs=mixture_coefs, verbose=verbose)
         if not infer_var_lowres['converged']:
             return struct_draft_fullres, alpha_, beta_, hsc_r, False
@@ -204,6 +205,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
+          multiscale_reform=False, epsilon_min=0.5, epsilon_max=5,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True):
     """Infer 3D structures with PASTIS via Poisson model.
@@ -346,7 +348,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     if multiscale_factor == 1 and not (draft or simple_diploid):
         infer_draft_lowres = hsc_lambda > 0 and hsc_r is None
         need_multiscale_var = use_multiscale_variance and (
-            multiscale_rounds > 1 or infer_draft_lowres)
+            multiscale_rounds > 1 or infer_draft_lowres) and (
+            not multiscale_reform)
         infer_draft_fullres = struct_draft_fullres is None and (
             need_multiscale_var)
         struct_draft_fullres, alpha_, beta_, hsc_r, draft_converged = _infer_draft(
@@ -361,10 +364,10 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             hsc_min_beads=hsc_min_beads,
             struct_draft_fullres=struct_draft_fullres,
             callback_freq=callback_freq, callback_function=callback_function,
-            reorienter=reorienter, alpha_true=alpha_true,
-            struct_true=struct_true, input_weight=input_weight,
-            exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
-            verbose=verbose)
+            reorienter=reorienter, multiscale_reform=multiscale_reform,
+            alpha_true=alpha_true, struct_true=struct_true,
+            input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
+            mixture_coefs=mixture_coefs, verbose=verbose)
         if not draft_converged:
             return None, {'alpha': alpha_, 'beta': beta_, 'seed': seed,
                           'converged': draft_converged}
@@ -377,7 +380,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         print('OUTPUT: %s' % out_file, flush=True)
 
     # MULTISCALE VARIANCES
-    if multiscale_factor != 1 and use_multiscale_variance and struct_draft_fullres is not None:
+    if multiscale_factor != 1 and use_multiscale_variance and struct_draft_fullres is not None and not multiscale_reform:
         multiscale_variances = np.median(get_multiscale_variances_from_struct(
             struct_draft_fullres, lengths=lengths,
             multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
@@ -407,7 +410,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy, normalize=normalize,
         filter_threshold=filter_threshold, multiscale_factor=multiscale_factor,
         exclude_zeros=exclude_zeros, beta=beta_, input_weight=input_weight,
-        verbose=verbose, fullres_torm=fullres_torm,
+        verbose=verbose, fullres_torm=fullres_torm, multiscale_reform=multiscale_reform,
         excluded_counts=excluded_counts, mixture_coefs=mixture_coefs)
     if verbose:
         print('BETA: %s' % ', '.join(
@@ -433,8 +436,13 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts=counts, lengths=lengths, init=init, ploidy=ploidy,
         random_state=random_state,
         alpha=alpha_init if alpha_ is None else alpha_,
-        bias=bias, multiscale_factor=multiscale_factor, reorienter=reorienter,
+        bias=bias, multiscale_factor=multiscale_factor,
+        multiscale_reform=multiscale_reform, reorienter=reorienter,
         mixture_coefs=mixture_coefs, verbose=verbose)
+    if multiscale_reform and multiscale_factor != 1:
+        epsilon = random_state.rand()
+    else:
+        epsilon = None
 
     # HOMOLOG-SEPARATING CONSTRAINT
     if ploidy == 1 and (hsc_lambda > 0 or mhs_lambda > 0):
@@ -458,6 +466,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         # SETUP CONSTRAINTS
         constraints = Constraints(counts=counts, lengths=lengths, ploidy=ploidy,
                                   multiscale_factor=multiscale_factor,
+                                  multiscale_reform=multiscale_reform,
                                   constraint_lambdas={'bcc': bcc_lambda,
                                                       'hsc': hsc_lambda,
                                                       'mhs': mhs_lambda},
@@ -476,12 +485,17 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     [struct_true_lowres[:int(struct_true.shape[0] / 2)],
                      struct_true_lowres[int(struct_true.shape[0] / 2):]],
                     axis=0)
+            if multiscale_reform and multiscale_factor != 1:
+                X_true_lowres = np.append(struct_true_lowres.flatten(), epsilon)
+            else:
+                X_true_lowres = struct_true_lowres
             _, obj_true, _, _ = objective(
-                struct_true_lowres, counts=counts,
+                X_true_lowres, counts=counts,
                 alpha=alpha_init if alpha_ is None else alpha_,
                 lengths=lengths, bias=bias, constraints=constraints,
                 multiscale_factor=multiscale_factor,
                 multiscale_variances=multiscale_variances,
+                multiscale_reform=multiscale_reform,
                 mixture_coefs=mixture_coefs, return_extras=True)
             pd.Series(obj_true).to_csv(
                 os.path.join(outdir, 'struct_true_obj'), sep='\t', header=False)
@@ -491,27 +505,29 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             callback_freq = {'print': 100, 'history': 100, 'save': None}
         callback = Callback(lengths, ploidy, counts=counts,
                             multiscale_factor=multiscale_factor,
+                            multiscale_reform=multiscale_reform,
                             analysis_function=callback_function,
                             frequency=callback_freq, directory=outdir,
                             struct_true=struct_true, alpha_true=alpha_true)
 
         # INFER STRUCTURE
-        pm = PastisPM(counts=counts, lengths=lengths, ploidy=ploidy,
-                      alpha=alpha_, init=struct_init, bias=bias,
-                      constraints=constraints, callback=callback,
-                      multiscale_factor=multiscale_factor,
-                      multiscale_variances=multiscale_variances,
-                      alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
-                      max_iter=max_iter, factr=factr, pgtol=pgtol,
-                      alpha_factr=alpha_factr, reorienter=reorienter, null=null,
-                      mixture_coefs=mixture_coefs, verbose=verbose)
+        pm = PastisPM(
+            counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha_,
+            init=struct_init, bias=bias, constraints=constraints,
+            callback=callback, multiscale_factor=multiscale_factor,
+            multiscale_variances=multiscale_variances, epsilon=epsilon,
+            epsilon_bounds=[epsilon_min, epsilon_max], alpha_init=alpha_init,
+            max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
+            pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
+            null=null, mixture_coefs=mixture_coefs, verbose=verbose)
         pm.fit()
         struct_ = pm.struct_.reshape(-1, 3)
         struct_[torm] = np.nan
 
         # SAVE RESULTS
         infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
-                     'seed': seed, 'converged': pm.converged_}
+                     'seed': seed, 'converged': pm.converged_,
+                     'epsilon': pm.epsilon_}
         if hsc_lambda > 0:
             infer_var['hsc_r'] = hsc_r
         if mhs_lambda > 0:
@@ -525,7 +541,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     if isinstance(v, np.ndarray) or isinstance(v, list):
                         f.write(
                             '%s\t%s\n' % (k, ' '.join(['%g' % x for x in v])))
-                    else:
+                    elif v is not None:
                         f.write('%s\t%g\n' % (k, v))
             if reorienter is not None and reorienter.reorient:
                 np.savetxt(orient_file, pm.orientation_)
@@ -576,9 +592,11 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 struct_draft_fullres=struct_draft_fullres,
                 callback_function=callback_function,
                 callback_freq=callback_freq, reorienter=reorienter,
-                alpha_true=alpha_true, struct_true=struct_true,
-                input_weight=input_weight, exclude_zeros=exclude_zeros,
-                null=null, mixture_coefs=mixture_coefs, verbose=verbose)
+                multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
+                epsilon_max=epsilon_max, alpha_true=alpha_true,
+                struct_true=struct_true, input_weight=input_weight,
+                exclude_zeros=exclude_zeros, null=null,
+                mixture_coefs=mixture_coefs, verbose=verbose)
             if not infer_var['converged']:
                 return struct_, infer_var
             if reorienter is not None and reorienter.reorient:
@@ -586,6 +604,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             else:
                 X_ = struct_
             alpha_ = infer_var['alpha']
+            #epsilon_max = infer_var['epsilon']
         return struct_, infer_var
 
 
@@ -602,7 +621,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    piecewise_chrom=None, piecewise_min_beads=5,
                    piecewise_fix_homo=False, piecewise_opt_orient=True,
                    piecewise_step3_multiscale=False,
-                   piecewise_step1_accuracy=1, alpha_true=None,
+                   piecewise_step1_accuracy=1,
+                   multiscale_reform=False, alpha_true=None,
                    struct_true=None, init='mds', input_weight=None,
                    exclude_zeros=False, null=False, mixture_coefs=None,
                    verbose=True):
@@ -729,9 +749,10 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             mhs_lambda=mhs_lambda, mhs_k=mhs_k,
             struct_draft_fullres=struct_draft_fullres,
             callback_function=callback_function, callback_freq=callback_freq,
-            alpha_true=alpha_true, struct_true=struct_true,
-            input_weight=input_weight, exclude_zeros=exclude_zeros,
-            null=null, mixture_coefs=mixture_coefs, verbose=verbose)
+            multiscale_reform=multiscale_reform, alpha_true=alpha_true,
+            struct_true=struct_true, input_weight=input_weight,
+            exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
+            verbose=verbose)
     else:
         from .piecewise_whole_genome import infer_piecewise
 
@@ -755,9 +776,10 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             piecewise_opt_orient=piecewise_opt_orient,
             piecewise_step3_multiscale=piecewise_step3_multiscale,
             piecewise_step1_accuracy=piecewise_step1_accuracy,
-            alpha_true=alpha_true, struct_true=struct_true, init=init,
-            input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
-            mixture_coefs=mixture_coefs, verbose=verbose)
+            multiscale_reform=multiscale_reform, alpha_true=alpha_true,
+            struct_true=struct_true, init=init, input_weight=input_weight,
+            exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
+            verbose=verbose)
 
     if verbose:
         if infer_var['converged']:

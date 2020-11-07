@@ -66,10 +66,15 @@ class Constraints(object):
     """
 
     def __init__(self, counts, lengths, ploidy, multiscale_factor=1,
-                 constraint_lambdas=None, constraint_params=None, verbose=True):
+                 multiscale_reform=False, constraint_lambdas=None,
+                 constraint_params=None, verbose=True):
 
         self.lengths = np.array(lengths)
         self.lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+        if multiscale_reform:
+            self.lengths_counts = self.lengths
+        else:
+            self.lengths_counts = self.lengths_lowres
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         if constraint_lambdas is None:
@@ -95,7 +100,9 @@ class Constraints(object):
         if self.lambdas["hsc"] or self.lambdas["mhs"]:
             n = self.lengths_lowres.sum()
             torm = find_beads_to_remove(
-                counts=counts, nbeads=self.lengths_lowres.sum() * ploidy)
+                counts, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor,
+                multiscale_reform=multiscale_reform)
             if multiscale_factor != 1:
                 highres_per_lowres_bead = np.max(
                     [c.highres_per_lowres_bead for c in counts], axis=0)
@@ -322,7 +329,9 @@ def _mean_interhomolog_counts(counts, lengths, bias=None):
     from .counts import ambiguate_counts
 
     n = lengths.sum()
-    torm = find_beads_to_remove(counts=counts, nbeads=n * 2)
+    torm = find_beads_to_remove(
+        counts, lengths=lengths, ploidy=2, multiscale_factor=1,
+        multiscale_reform=False)
     beads_per_homolog = _count_fullres_per_lowres_bead(
         multiscale_factor=lengths.max(), lengths=lengths, ploidy=2,
         fullres_torm=torm)

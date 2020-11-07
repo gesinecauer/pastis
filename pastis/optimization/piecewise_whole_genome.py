@@ -407,7 +407,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                     piecewise_step=None, piecewise_chrom=None,
                     piecewise_min_beads=5, piecewise_fix_homo=False,
                     piecewise_opt_orient=True, piecewise_step3_multiscale=False,
-                    piecewise_step1_accuracy=1,
+                    piecewise_step1_accuracy=1, multiscale_reform=False,
                     alpha_true=None, struct_true=None, init='msd',
                     input_weight=None, exclude_zeros=False, null=False,
                     mixture_coefs=None, verbose=True):

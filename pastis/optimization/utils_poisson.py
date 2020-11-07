@@ -101,7 +101,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
             structures = structures.reshape(-1, 3)
         except ValueError:
             raise ValueError("Structure should be composed of 3D coordinates")
-        structures, _ = _format_X(structures, mixture_coefs=mixture_coefs)
+        structures, _, _ = _format_X(structures, mixture_coefs=mixture_coefs)
 
     if mixture_coefs is not None and len(structures) != len(mixture_coefs):
         raise ValueError("The number of structures (%d) and of mixture "
@@ -123,7 +123,8 @@ def _format_structures(structures, lengths=None, ploidy=None,
     return structures
 
 
-def find_beads_to_remove(counts, nbeads, threshold=0):
+def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
+                         multiscale_reform=False, threshold=0):
     """Determine beads for which no corresponding counts data exists.
 
     Identifies beads that should be removed (set to NaN) in the structure.
@@ -136,6 +137,7 @@ def find_beads_to_remove(counts, nbeads, threshold=0):
         Counts data.
     nbeads : int
         Total number of beads in the structure.
+    FIXME
 
     Returns
     -------
@@ -143,10 +145,21 @@ def find_beads_to_remove(counts, nbeads, threshold=0):
         Beads that should be removed (set to NaN) in the structure.
     """
 
+    from .multiscale_optimization import decrease_lengths_res
+    from .multiscale_optimization import decrease_counts_res
+
     if not isinstance(counts, list):
         counts = [counts]
+
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    nbeads = lengths_lowres.sum() * ploidy
+
     inverse_torm = np.zeros(int(nbeads))
     for c in counts:
+        if multiscale_reform:
+            c = decrease_counts_res(
+                c, multiscale_factor=multiscale_factor, lengths=lengths,
+                ploidy=ploidy)
         if isinstance(c, np.ndarray):
             axis0sum = np.tile(
                 np.array(np.nansum(c, axis=0).flatten()).flatten(),

@@ -75,8 +75,9 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
                          (struct.reshape(-1, 3).shape[0], lengths_lowres.sum()))
     ploidy = int(ploidy)
 
-    indices = _get_struct_indices(ploidy, multiscale_factor,
-                                  lengths).reshape(multiscale_factor, -1)
+    indices = _get_struct_indices(
+        ploidy=ploidy, multiscale_factor=multiscale_factor,
+        lengths=lengths).reshape(multiscale_factor, -1)
     if mask is not None:
         indices[~mask.reshape(multiscale_factor, -1)] = np.nan
 
@@ -216,6 +217,54 @@ def _convert_indices_to_full_res(rows, cols, rows_max, cols_max,
     return rows, cols
 
 
+def _process_multiscale_counts(counts, multiscale_factor, lengths, ploidy):
+    """TODO
+    """
+
+    from .counts import _row_and_col, _check_counts_matrix
+
+    if multiscale_factor == 1:
+        rows, cols = _row_and_col(counts)
+        return counts, rows, cols
+
+    input_is_sparse = sparse.issparse(counts)
+
+    counts = _check_counts_matrix(
+        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True).toarray()
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+
+    dummy_counts_lowres = np.ones(
+        np.array(counts.shape / lengths.sum() * lengths_lowres.sum()).astype(int))
+    dummy_counts_lowres = _check_counts_matrix(
+        dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
+        exclude_zeros=True).toarray().astype(int)
+    dummy_counts_lowres = sparse.coo_matrix(dummy_counts_lowres)
+
+    rows_lowres, cols_lowres = _row_and_col(dummy_counts_lowres)
+
+    rows_fullres, cols_fullres = _convert_indices_to_full_res(
+        rows_lowres, cols_lowres, rows_max=counts.shape[0],
+        cols_max=counts.shape[1], multiscale_factor=multiscale_factor,
+        lengths=lengths, n=lengths_lowres.sum(),
+        counts_shape=dummy_counts_lowres.shape, ploidy=ploidy)
+
+    data_lowres = counts[rows_fullres, cols_fullres].reshape(
+        multiscale_factor ** 2, -1).sum(axis=0)
+    counts_lowres = sparse.coo_matrix(
+        (data_lowres[data_lowres != 0],
+            (rows_lowres[data_lowres != 0], cols_lowres[data_lowres != 0])),
+        shape=dummy_counts_lowres.shape)
+
+    if not input_is_sparse:
+        counts_lowres = _check_counts_matrix(
+            counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
+            exclude_zeros=False)
+
+    return counts_lowres, rows_fullres, cols_fullres
+
+
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
     """Decrease resolution of counts matrices by summing adjacent bins.
 
@@ -258,27 +307,33 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
+
     dummy_counts_lowres = np.ones(
         np.array(counts.shape / lengths.sum() * lengths_lowres.sum()).astype(int))
     dummy_counts_lowres = _check_counts_matrix(
         dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
         exclude_zeros=True).toarray().astype(int)
-
     dummy_counts_lowres = sparse.coo_matrix(dummy_counts_lowres)
+
     rows_lowres, cols_lowres = _row_and_col(dummy_counts_lowres)
+
     rows_fullres, cols_fullres = _convert_indices_to_full_res(
         rows_lowres, cols_lowres, rows_max=counts.shape[0],
         cols_max=counts.shape[1], multiscale_factor=multiscale_factor,
         lengths=lengths, n=lengths_lowres.sum(),
         counts_shape=dummy_counts_lowres.shape, ploidy=ploidy)
-    data = counts[rows_fullres, cols_fullres].reshape(
+
+    data_lowres = counts[rows_fullres, cols_fullres].reshape(
         multiscale_factor ** 2, -1).sum(axis=0)
     counts_lowres = sparse.coo_matrix(
-        (data[data != 0], (rows_lowres[data != 0], cols_lowres[data != 0])),
+        (data_lowres[data_lowres != 0],
+            (rows_lowres[data_lowres != 0], cols_lowres[data_lowres != 0])),
         shape=dummy_counts_lowres.shape)
 
     if not input_is_sparse:
-        counts_lowres = counts_lowres.toarray()
+        counts_lowres = _check_counts_matrix(
+            counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
+            exclude_zeros=False)
 
     return counts_lowres
 
@@ -336,7 +391,8 @@ def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask
     ploidy = int(ploidy)
 
     if indices is None:
-        indices = _get_struct_indices(ploidy, multiscale_factor, lengths)
+        indices = _get_struct_indices(
+            ploidy=ploidy, multiscale_factor=multiscale_factor, lengths=lengths)
     else:
         indices = indices.copy()
     incorrect_indices = np.isnan(indices)
@@ -409,6 +465,29 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
         fullres_indices[fullres_indices == np.where(fullres_torm)[0]] = np.nan
 
     return (~ np.isnan(fullres_indices)).sum(axis=0)
+
+
+def _repeat_struct_multiscale(structures, lengths, multiscale_factor):
+    """TODO
+    """
+
+    if multiscale_factor == 1:
+        return structures
+
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
+
+    fullres_indices = _get_struct_indices(
+        ploidy=ploidy, multiscale_factor=multiscale_factor, lengths=lengths)
+
+    index_nans = np.isnan(
+        fullres_indices.reshape(multiscale_factor, -1).T.flatten())
+
+    repeated_struct = [np.repeat(
+        struct.reshape(-1, 3), multiscale_factor,
+        axis=0)[~index_nans] for struct in structures]
+
+    return repeated_struct
 
 
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
