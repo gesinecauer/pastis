@@ -2,6 +2,7 @@ import sys
 import numpy as np
 from scipy import sparse
 from scipy.interpolate import interp1d
+import warnings
 from iced.io import load_lengths
 
 if sys.version_info[0] < 3:
@@ -67,7 +68,8 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     if isinstance(lengths, str):
         lengths = load_lengths(lengths)
     lengths = np.array(lengths).astype(int)
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    lengths_lowres = decrease_lengths_res(
+        lengths=lengths, multiscale_factor=multiscale_factor)
     ploidy = struct.shape[0] / lengths_lowres.sum()
     if ploidy != 1 and ploidy != 2:
         raise ValueError("Not consistent with haploid or diploid... struct is"
@@ -263,6 +265,43 @@ def _process_multiscale_counts(counts, multiscale_factor, lengths, ploidy):
             exclude_zeros=False)
 
     return counts_lowres, rows_fullres, cols_fullres
+
+
+def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
+                             multiscale_reform=False, dummy=False):
+    """TODO
+    """
+
+    from .counts import _counts_indices_to_3d_indices
+
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+
+    if isinstance(counts, np.ndarray) or sparse.issparse(counts):
+        counts_coo = sparse.coo_matrix(counts)
+    else:
+        counts_coo = counts.tocoo()
+
+    if multiscale_reform and multiscale_factor != 1:
+        counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
+            counts_coo, multiscale_factor=multiscale_factor,
+            lengths=lengths, ploidy=ploidy)
+        indices = counts_lowres.row, counts_lowres.col
+        indices3d = _counts_indices_to_3d_indices(
+            counts_lowres, n=lengths_lowres.sum(), ploidy=ploidy)
+        data_grouped = counts_coo.toarray()[rows_grp, cols_grp].reshape(
+            multiscale_factor ** 2, -1)
+        data_grouped = data_grouped[:, data_grouped.sum(axis=0) != 0]
+        if dummy:
+            data_grouped = np.zeros_like(data_grouped)
+        nnz_lowres = counts_lowres.nnz
+    else:
+        indices = counts_coo.row, counts_coo.col
+        indices3d = _counts_indices_to_3d_indices(
+            counts_coo, n=lengths_lowres.sum(), ploidy=ploidy)
+        data_grouped = None
+        nnz_lowres = counts_coo.nnz
+
+    return data_grouped, indices, indices3d, nnz_lowres
 
 
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
@@ -468,7 +507,8 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
 
 
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
-                                         mixture_coefs=None, verbose=True):
+                                         mixture_coefs=None, verbose=True,
+                                         replace_nan=True):
     """Compute multiscale variances from full-res structure.
 
     Generates multiscale variances at the specified resolution from the
@@ -508,15 +548,16 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
         struct_length = struct_length.pop()
     if struct_length / lengths.sum() not in (1, 2):
         raise ValueError("Structures do not appear to be haploid or diploid.")
+    ploidy = int(struct_length / lengths.sum())
     structures = _format_structures(structures, lengths=lengths,
-                                    ploidy=int(struct_length / lengths.sum()),
-                                    mixture_coefs=mixture_coefs)
+                                    ploidy=ploidy, mixture_coefs=mixture_coefs)
 
     multiscale_variances = []
     for struct in structures:
         struct_grouped = _group_highres_struct(
             struct, multiscale_factor, lengths)
-        multiscale_variances.append(_var3d(struct_grouped))
+        multiscale_variances.append(
+            _var3d(struct_grouped, replace_nan=replace_nan))
     multiscale_variances = np.mean(multiscale_variances, axis=0)
 
     if verbose:
@@ -526,7 +567,7 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
     return multiscale_variances
 
 
-def _var3d(struct_grouped):
+def _var3d(struct_grouped, replace_nan=True):
     """Compute variance of beads in 3D.
     """
 
@@ -545,12 +586,130 @@ def _var3d(struct_grouped):
         multiscale_variances[i] = var
 
     if np.isnan(multiscale_variances).sum() == multiscale_variances.shape[0]:
-        raise ValueError("Multiscale variances are not a number for each bead.")
+        raise ValueError("Multiscale variances are nan for every bead.")
 
-    multiscale_variances[np.isnan(multiscale_variances)] = np.nanmedian(
-        multiscale_variances)
+    if replace_nan:
+        multiscale_variances[np.isnan(multiscale_variances)] = np.nanmedian(
+            multiscale_variances)
 
     return multiscale_variances
+
+
+def est_multiscale_epsilon_from_counts(counts, lengths, ploidy,
+                                       multiscale_factor, alpha, bias,
+                                       mixture_coefs=None, verbose=True):
+    """Compute multiscale epsilon from full-res structure.
+    """
+
+    if multiscale_factor == 1:
+        return None
+
+    lengths_lowres = decrease_lengths_res(
+        lengths=lengths, multiscale_factor=multiscale_factor)
+
+    multiscale_stddev = []
+    for counts_maps in counts:
+        if counts_maps.type == 'zero':
+            continue
+        bias_per_bin = counts_maps.bias_per_bin(bias, ploidy)
+        counts_norm_data = counts_maps.data / bias_per_bin / counts_maps.beta
+        counts_norm = sparse.coo_matrix(
+            (counts_norm_data, (counts_maps.row, counts_maps.col)),
+            shape=counts_maps.shape)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", category=UserWarning,
+                message="Counts matrix must only contain integers or NaN")
+            counts_grouped = _group_counts_multiscale(
+                counts_norm, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, multiscale_reform=True)[0]
+        # counts_grouped.shape = (multiscale_factor ** 2, nbins)
+        counts_grouped = counts_grouped[:, counts_grouped.min(axis=0) != 0]
+        sort_index = counts_grouped.sum(axis=0).argsort()
+        counts_grouped = counts_grouped[:, sort_index]
+        if counts_maps.ambiguity == 'ambig':
+            top = lengths_lowres.sum()
+        else:
+            top = lengths_lowres.sum() * ploidy
+        counts_grouped_top = counts_grouped[:, -top:]
+        faux_dis_grouped = counts_grouped_top ** (1 / alpha)
+        multiscale_stddev.append(_stddev_distances(faux_dis_grouped))
+    multiscale_stddev = np.mean(multiscale_stddev)
+
+    if verbose:
+        print("MULTISCALE STD-DEV: %.3g" % multiscale_stddev,
+              flush=True)
+
+    return multiscale_stddev
+
+
+def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
+                                       mixture_coefs=None, verbose=True):
+    """Compute multiscale epsilon from full-res structure.
+    """
+
+    from .utils_poisson import _format_structures
+
+    if multiscale_factor == 1:
+        return None
+
+    structures = _format_structures(structures, mixture_coefs=mixture_coefs)
+    struct_length = set([s.shape[0] for s in structures])
+    if len(struct_length) > 1:
+        raise ValueError("Structures are of different shapes.")
+    else:
+        struct_length = struct_length.pop()
+    if struct_length / lengths.sum() not in (1, 2):
+        raise ValueError("Structures do not appear to be haploid or diploid.")
+    ploidy = int(struct_length / lengths.sum())
+    structures = _format_structures(structures, lengths=lengths,
+                                    ploidy=ploidy, mixture_coefs=mixture_coefs)
+
+    multiscale_stddev = []
+    for struct in structures:
+        mask = np.invert(np.isnan(structures[0][:, 0]))
+        dummy = sparse.coo_matrix(np.triu(
+            np.ones((mask.sum(), mask.sum())), 1))
+        dis = np.sqrt((np.square(
+            struct[mask][dummy.row] - struct[mask][dummy.col])).sum(axis=1))
+        dis_coo = sparse.coo_matrix(
+            (dis, (dummy.row, dummy.col)), shape=dummy.shape)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", category=UserWarning,
+                message="Counts matrix must only contain integers or NaN")
+            dis_grouped = _group_counts_multiscale(
+                dis_coo, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, multiscale_reform=True)[0]
+        multiscale_stddev.append(_stddev_distances(dis_grouped))
+    multiscale_stddev = np.mean(multiscale_stddev)
+
+    if verbose:
+        print("MULTISCALE STD-DEV: %.3g" % multiscale_stddev,
+              flush=True)
+
+    return multiscale_stddev
+
+
+def _stddev_distances(dis_grouped):
+    """TODO
+    """
+
+    from scipy.stats import norm
+
+    # dis_grouped.shape = (multiscale_factor ** 2, nbins)
+    dis_corr = []
+    for i in range(dis_grouped.shape[1]):
+        dis_group = dis_grouped[:, i]
+        dis_corr.append(dis_group - dis_group.mean())
+
+    dis_corr = np.concatenate(dis_corr)
+    mu, stddev = norm.fit(dis_corr)
+
+    if np.isnan(stddev):
+        raise ValueError("Multiscale dist stddev is nan.")
+
+    return stddev
 
 
 def _choose_max_multiscale_rounds(lengths, min_beads):

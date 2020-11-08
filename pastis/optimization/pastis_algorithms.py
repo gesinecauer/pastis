@@ -22,6 +22,8 @@ from .poisson import PastisPM
 from .multiscale_optimization import get_multiscale_variances_from_struct
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
+from .multiscale_optimization import get_multiscale_epsilon_from_struct
+from .multiscale_optimization import est_multiscale_epsilon_from_counts
 from ..io.read import load_data
 from .poisson import objective
 
@@ -421,26 +423,27 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             print('ALPHA: %.3g' % alpha_, flush=True)
 
-    # INITIALIZATION
-    random_state = np.random.RandomState(seed)
-    random_state = check_random_state(random_state)
-    if isinstance(init, str) and init.lower() == 'true':
-        if struct_true is None:
-            raise ValueError("Attempting to initialize with struct_true but"
-                             " struct_true is None")
-        if verbose:
-            print(
-                'INITIALIZATION: initializing with true structure', flush=True)
-        init = struct_true
-    struct_init = initialize(
-        counts=counts, lengths=lengths, init=init, ploidy=ploidy,
-        random_state=random_state,
-        alpha=alpha_init if alpha_ is None else alpha_,
-        bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, reorienter=reorienter,
-        mixture_coefs=mixture_coefs, verbose=verbose)
-    if multiscale_reform and multiscale_factor != 1:
-        epsilon = random_state.rand()
+    # EPSILON
+    if multiscale_factor != 1 and multiscale_reform:
+        all_multiscale_factors = 2 ** np.flip(
+            np.arange(multiscale_rounds), axis=0)[:-1]
+        for i in all_multiscale_factors:
+            epsilon_est = est_multiscale_epsilon_from_counts(
+                counts, lengths=lengths, ploidy=ploidy, multiscale_factor=i,
+                bias=bias, alpha=alpha, mixture_coefs=mixture_coefs,
+                verbose=False)
+            print(f"Multiscale factor {i}, est. epsilon: {epsilon_est:.3g}",
+                  flush=True)
+            if struct_true is not None and verbose:
+                epsilon_true = get_multiscale_epsilon_from_struct(
+                    struct_true, lengths=lengths, multiscale_factor=i,
+                    mixture_coefs=mixture_coefs, verbose=False)
+                print(f"Multiscale factor {i}, true epsilon: {epsilon_true:.3g}",
+                      flush=True)
+        epsilon = est_multiscale_epsilon_from_counts(
+            counts, lengths=lengths, ploidy=ploidy, multiscale_factor=i,
+            bias=bias, alpha=alpha, mixture_coefs=mixture_coefs,
+            verbose=False)
     else:
         epsilon = None
 
@@ -463,6 +466,29 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 counts, lengths=lengths, bias=bias)
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
+        # INITIALIZATION
+        random_state = np.random.RandomState(seed)
+        random_state = check_random_state(random_state)
+        if isinstance(init, str) and init.lower() == 'true':
+            if struct_true is None:
+                raise ValueError("Attempting to initialize with struct_true but"
+                                 " struct_true is None")
+            if verbose:
+                print('INITIALIZATION: initializing with true structure',
+                      flush=True)
+            init = struct_true
+        struct_init = initialize(
+            counts=counts, lengths=lengths, init=init, ploidy=ploidy,
+            random_state=random_state,
+            alpha=alpha_init if alpha_ is None else alpha_,
+            bias=bias, multiscale_factor=multiscale_factor,
+            multiscale_reform=multiscale_reform, reorienter=reorienter,
+            mixture_coefs=mixture_coefs, verbose=verbose)
+        #if multiscale_reform and multiscale_factor != 1: FIXME
+        #    epsilon = random_state.rand()
+        #else:
+        #    epsilon = None
+
         # SETUP CONSTRAINTS
         constraints = Constraints(counts=counts, lengths=lengths, ploidy=ploidy,
                                   multiscale_factor=multiscale_factor,
@@ -605,7 +631,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             else:
                 X_ = struct_
             alpha_ = infer_var['alpha']
-            #epsilon_max = infer_var['epsilon']
+            epsilon_max = infer_var['epsilon']
         return struct_, infer_var
 
 

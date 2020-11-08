@@ -12,7 +12,7 @@ from .utils_poisson import _intra_counts, _inter_counts
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
-from .multiscale_optimization import _process_multiscale_counts
+from .multiscale_optimization import _group_counts_multiscale
 
 
 def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
@@ -700,36 +700,6 @@ def _update_betas_in_counts_matrices(counts, beta):
     for counts_maps in counts:
         counts_maps.beta = beta[counts_maps.ambiguity]
     return counts
-
-
-def _group_counts_multiscale(counts_coo, lengths, ploidy, multiscale_factor=1,
-                             multiscale_reform=False, dummy=False):
-    """TODO
-    """
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-
-    if multiscale_reform and multiscale_factor != 1:
-        counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
-            counts_coo, multiscale_factor=multiscale_factor,
-            lengths=lengths, ploidy=ploidy)
-        indices = counts_lowres.row, counts_lowres.col
-        indices3d = _counts_indices_to_3d_indices(
-            counts_lowres, n=lengths_lowres.sum(), ploidy=ploidy)
-        data_grouped = counts_coo.toarray()[rows_grp, cols_grp].reshape(
-            multiscale_factor ** 2, -1)
-        data_grouped = data_grouped[:, data_grouped.sum(axis=0) != 0]
-        if dummy:
-            data_grouped = np.zeros_like(data_grouped)
-        nnz_lowres = counts_lowres.nnz
-    else:
-        indices = counts_coo.row, counts_coo.col
-        indices3d = _counts_indices_to_3d_indices(
-            counts_coo, n=lengths_lowres.sum(), ploidy=ploidy)
-        data_grouped = None
-        nnz_lowres = counts_coo.nnz
-
-    return data_grouped, indices, indices3d, nnz_lowres
 
 
 class CountsMatrix(object):
