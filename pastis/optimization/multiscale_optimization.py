@@ -467,29 +467,6 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
     return (~ np.isnan(fullres_indices)).sum(axis=0)
 
 
-def _repeat_struct_multiscale(structures, lengths, multiscale_factor):
-    """TODO
-    """
-
-    if multiscale_factor == 1:
-        return structures
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
-
-    fullres_indices = _get_struct_indices(
-        ploidy=ploidy, multiscale_factor=multiscale_factor, lengths=lengths)
-
-    index_nans = np.isnan(
-        fullres_indices.reshape(multiscale_factor, -1).T.flatten())
-
-    repeated_struct = [np.repeat(
-        struct.reshape(-1, 3), multiscale_factor,
-        axis=0)[~index_nans] for struct in structures]
-
-    return repeated_struct
-
-
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
                                          mixture_coefs=None, verbose=True):
     """Compute multiscale variances from full-res structure.
