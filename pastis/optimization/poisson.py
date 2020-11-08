@@ -17,14 +17,12 @@ from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .constraints import Constraints
 from .callbacks import Callback
 
-from topsy.utils.misc import printvars  # FIXME
-
 
 def _pois_sum(arr, nnz):
     """TODO
     """
 
-    return arr.reshape(-1, nnz).sum(axis=0)  # ***************
+    return arr.reshape(-1, nnz).sum(axis=0)
 
 
 def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
@@ -78,91 +76,21 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     k = k.reshape(1, -1)
     num_highres_per_lowres_bins = num_highres_per_lowres_bins.reshape(1, -1)
 
-    alternative_obj = 'tryo'
-    huge_k_over_c = ag_np.array([0])
-
-    if alternative_obj == 'try2':
-        obj_tmp1 = num_highres_per_lowres_bins * k * (ag_np.log(theta) - ag_np.log(1 + theta))
-        obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
-        if counts.type == 'zero':
-            obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2)
-            obj_2_3 = 0; obj_tmp3 = 0; obj_tmp4 = 0
-        else:
-            obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0).reshape(1, -1)
-            obj_tmp4 = - ag_np.sum(counts.data_grouped * ag_np.log(1 + theta), axis=0).reshape(1, -1)
-            if True:
-                obj_2_3 = obj_tmp2 + obj_tmp3
-                obj_2b_3_sum = ag_np.sum(obj_2_3)
-            elif ag_np.min(dis) > ag_np.inf:
-                obj_2_3 = ag_np.sum(counts.data_grouped * ag_np.log(k), axis=0).reshape(1, -1)
-                obj_2b_3_sum = ag_np.sum(obj_2_3)
-                obj_2b_3_sum_bad = (obj_tmp2 + obj_tmp3).sum()
-                if ag_np.min(dis) > 1e3 and obj_2b_3_sum_bad > obj_2b_3_sum:
-                    print('sum bad', obj_2b_3_sum_bad, flush=True)
-                    print('sum good', obj_2b_3_sum, flush=True)
-                    exit(0)
-            else:
-                k_over_c_cutoff = 1e10
-                k_over_c = k.flatten() / counts.data_grouped.min(axis=0)
-                huge_k_over_c = k_over_c > k_over_c_cutoff
-                obj_2b_3_part1 = obj_tmp2.flatten()[~huge_k_over_c] + obj_tmp3[~huge_k_over_c]
-                obj_2b_3_sum = ag_np.sum(obj_2b_3_part1)
-                if ag_np.sum(huge_k_over_c) != 0:
-                    obj_2b_3_part2 = ag_np.sum(counts.data_grouped[:, huge_k_over_c] * ag_np.log(k[0, huge_k_over_c]), axis=0)
-                    obj_2b_3_sum = obj_2b_3_sum + ag_np.sum(obj_2b_3_part2)
-                    obj_2_3 = np.concatenate([obj_2b_3_part1, obj_2b_3_part2]).reshape(1, -1)
-                else:
-                    obj_2_3 = obj_2b_3_part1.reshape(1, -1)
-            obj = ag_np.sum(obj_tmp4) + ag_np.sum(obj_tmp1) + obj_2b_3_sum
+    obj_tmp1 = - num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
+    obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
+    if counts.type == 'zero':
+        obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2)
     else:
-        obj_tmp1 = - num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
-        obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
-        if counts.type == 'zero':
-            obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2)
-            obj_2_3 = 0; obj_tmp3 = 0; obj_tmp4 = 0
-        else:
-            obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
-            obj_tmp4 = ag_np.sum(counts.data_grouped * ag_np.log(theta / (1 + theta)), axis=0)
-            obj = ag_np.sum(obj_tmp4) + ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2 + obj_tmp3)
-            obj_2_3 = obj_tmp2 + obj_tmp3
-
-    if type(obj).__name__ != 'ArrayBox':
-        print('=' * 75, flush=True)
-        printvars({
-            'dis': dis, 'c': counts.data_grouped, 'k': k,
-            'θ': theta, 'obj_tmp1': obj_tmp1,
-            'obj_2_3': obj_2_3, 'obj_tmp4': obj_tmp4, 'ε': epsilon, 'obj': obj,
-            'huge_k_over_c': ag_np.sum(huge_k_over_c)})
-        if False and ag_np.sum(obj_2_3 == 0) > 0:
-            is0i_2b_3 = np.where(obj_2_3 == 0)[1]
-            non0i_2b_3 = np.where(obj_2_3 != 0)[1]
-            got0_min = counts.data_grouped.min(axis=0)[is0i_2b_3]
-            non0_min = counts.data_grouped.min(axis=0)[non0i_2b_3]
-            got0_sum = counts.data_grouped.sum(axis=0)[is0i_2b_3]
-            non0_sum = counts.data_grouped.sum(axis=0)[non0i_2b_3]
-            printvars({
-                'got0_min': got0_min, 'non0_min': non0_min,
-                'got0_sum': got0_sum, 'non0_sum': non0_sum,
-                'got0_c': counts.data_grouped.T[is0i_2b_3],
-                'non0_c': counts.data_grouped.T[non0i_2b_3],
-                'got0_k': k.T[is0i_2b_3], 'non0_k': k.T[non0i_2b_3]})
-            exit(0)
+        obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
+        obj_tmp4 = ag_np.sum(counts.data_grouped * ag_np.log(
+            theta / (1 + theta)), axis=0)
+        obj = ag_np.sum(obj_tmp4) + ag_np.sum(obj_tmp1) + ag_np.sum(
+            obj_tmp2 + obj_tmp3)
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
-        printvars({
-            'obj_tmp1': obj_tmp1,
-            'obj_tmp2': obj_tmp2,
-            'obj_tmp3': obj_tmp3,
-            'obj_tmp4': obj_tmp4,
-            'k': k, 'θ': theta,
-            'c': counts.data_grouped,
-            'c + k': counts.data_grouped + k,
-            'Γ(c + k)': ag_gammaln(counts.data_grouped + k),
-            'Γ(k)': ag_gammaln(k),
-            'log Γ(k)': ag_gammaln(k),
-            'ε': epsilon,
-        })
-        raise ValueError(f"Poisson component of objective function is {obj}.")
+        raise ValueError(
+            f"Multiscale component of objective function for {counts.name}"
+            f" is {obj}.")
 
     return counts.weight * (- obj)
 
@@ -228,7 +156,9 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
             lambda_intensity)).sum()
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
-        raise ValueError(f"Poisson component of objective function is {obj}.")
+        raise ValueError(
+            f"Poisson component of objective function for {counts.name}"
+            f" is {obj}.")
 
     return counts.weight * obj
 
