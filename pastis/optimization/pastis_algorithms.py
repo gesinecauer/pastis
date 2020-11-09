@@ -25,7 +25,7 @@ from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from .multiscale_optimization import get_multiscale_epsilon_from_struct
 from .multiscale_optimization import est_multiscale_epsilon_from_counts
 from ..io.read import load_data
-from .poisson import objective
+from .poisson import objective, _estimate_epsilon
 
 
 def _adjust_beta_simple_diploid(beta, counts, lengths):
@@ -207,7 +207,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
-          multiscale_reform=False, epsilon_min=0.1, epsilon_max=5,
+          multiscale_reform=False, epsilon_min=0.01, epsilon_max=10,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True):
     """Infer 3D structures with PASTIS via Poisson model.
@@ -440,10 +440,29 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     mixture_coefs=mixture_coefs, verbose=False)
                 print(f"Multiscale factor {i}, true epsilon: {epsilon_true:.3g}",
                       flush=True)
+                struct_true_lowres = decrease_struct_res(
+                    struct_true, multiscale_factor=i,
+                    lengths=lengths)
+                if simple_diploid:
+                    struct_true_lowres = np.nanmean(
+                        [struct_true_lowres[:int(struct_true.shape[0] / 2)],
+                         struct_true_lowres[int(struct_true.shape[0] / 2):]],
+                        axis=0)
+                epsilon_true = _estimate_epsilon(
+                    struct_true_lowres.flatten(), counts=counts, alpha=alpha,
+                    lengths=lengths, bias=bias,
+                    multiscale_factor=i,
+                    mixture_coefs=mixture_coefs)
+                print(f"*** Multiscale factor {i}, true epsilon: {epsilon_true:.3g}",
+                      flush=True)
         epsilon = est_multiscale_epsilon_from_counts(
-            counts, lengths=lengths, ploidy=ploidy, multiscale_factor=i,
-            bias=bias, alpha=alpha, mixture_coefs=mixture_coefs,
-            verbose=False)
+            counts, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, bias=bias, alpha=alpha,
+            mixture_coefs=mixture_coefs, verbose=False)
+        epsilon = _estimate_epsilon(
+            struct_true_lowres.flatten(), counts=counts, alpha=alpha,
+            lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
+            mixture_coefs=mixture_coefs)  # FIXME
     else:
         epsilon = None
 
@@ -484,10 +503,11 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             bias=bias, multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, reorienter=reorienter,
             mixture_coefs=mixture_coefs, verbose=verbose)
-        #if multiscale_reform and multiscale_factor != 1: FIXME
-        #    epsilon = random_state.rand()
-        #else:
-        #    epsilon = None
+        if True:
+            if multiscale_reform and multiscale_factor != 1:  # FIXME
+                epsilon = random_state.rand()
+            else:
+                epsilon = None
 
         # SETUP CONSTRAINTS
         constraints = Constraints(counts=counts, lengths=lengths, ploidy=ploidy,
@@ -523,6 +543,13 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 multiscale_variances=multiscale_variances,
                 multiscale_reform=multiscale_reform,
                 mixture_coefs=mixture_coefs, return_extras=True)
+            # FIXME
+            from topsy.utils.misc import printvars
+            print('epsilon', epsilon)
+            printvars({k: v for k, v in obj_true.items() if k != 'obj'})
+            #print(f"obj_ua {obj_true['obj_ua']:.3g}")
+            #print(f"obj_ua0 {obj_true['obj_ua0']:.3g}")
+            exit(0)
             pd.Series(obj_true).to_csv(
                 os.path.join(outdir, 'struct_true_obj'), sep='\t', header=False)
 
@@ -631,7 +658,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             else:
                 X_ = struct_
             alpha_ = infer_var['alpha']
-            epsilon_max = infer_var['epsilon']
+            #epsilon_max = infer_var['epsilon']  # FIXME
         return struct_, infer_var
 
 

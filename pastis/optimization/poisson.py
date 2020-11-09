@@ -18,6 +18,85 @@ from .constraints import Constraints
 from .callbacks import Callback
 
 
+def _estimate_epsilon_single(structures, epsilon, counts, alpha, lengths,
+                             bias=None, multiscale_factor=1, mixture_coefs=None):
+    """TODO
+    """
+
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
+
+    num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
+        multiscale_factor).reshape(1, -1)
+
+    bias_per_bin = counts.bias_per_bin(bias, ploidy)  # TODO
+
+    sum_dis_alpha = ag_np.zeros((1, counts.nnz_lowres))
+    sum_dis_alpha_neg2 = ag_np.zeros((1, counts.nnz_lowres))
+    for struct, mix_coef in zip(structures, mixture_coefs):
+        dis = ag_np.sqrt((ag_np.square(
+            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+        dis_sq = ag_np.square(dis)
+        dis_alpha = ag_np.power(dis, alpha)
+        sum_dis_alpha = sum_dis_alpha + mix_coef * _pois_sum(
+            dis_alpha, counts.nnz_lowres)
+        sum_dis_alpha_neg2 = sum_dis_alpha_neg2 + mix_coef * _pois_sum(
+            dis_alpha / dis_sq, counts.nnz_lowres)
+
+    if counts.type == 'zero':
+        pass
+    else:
+        adjusted_counts = (1 / counts.beta) * (
+            ag_np.sum(counts.data_grouped, axis=0) / num_highres_per_lowres_bins)
+        numerator = (sum_dis_alpha / adjusted_counts - 1) * 2 * sum_dis_alpha
+        denominator = - 3 * alpha * sum_dis_alpha_neg2
+        epsilon_sq = (numerator / denominator).sum()
+        epsilon = ag_np.sqrt(epsilon_sq)
+
+    return epsilon
+
+
+def _estimate_epsilon(X, counts, alpha, lengths, bias=None, multiscale_factor=1,
+                      mixture_coefs=None):
+    """TODO
+    """
+
+    structures, epsilon, mixture_coefs = _format_X(
+        X, reorienter=None, multiscale_reform=False, mixture_coefs=mixture_coefs)
+
+    # Check format of input
+    counts = (counts if isinstance(counts, list) else [counts])
+    if lengths is None:
+        lengths = np.array([min([min(counts_maps.shape)
+                                 for counts_maps in counts])])
+    lengths = np.array(lengths)
+    if bias is None:
+        bias = np.ones((min([min(counts_maps.shape)
+                             for counts_maps in counts]),))
+    if not (isinstance(structures, list) or isinstance(structures, SequenceBox)):
+        structures = [structures]
+    if mixture_coefs is None:
+        mixture_coefs = [1.] * len(structures)
+
+    #numerator = 0
+    #denominator = 0
+    for counts_maps in counts:
+        if counts_maps.type != 'zero':  # FIXME
+            epsilon = _estimate_epsilon_single(
+                structures=structures, epsilon=epsilon, counts=counts_maps,
+                alpha=alpha, lengths=lengths, bias=bias,
+                multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
+            #numerator = numerator + num
+            #denominator = denominator + denom
+
+    #print('totals:', numerator, denominator)
+
+    #epsilon_sq = numerator / denominator
+    #epsilon = ag_np.sqrt(epsilon_sq)
+    #return epsilon
+    return 1
+
+
 def _pois_sum(arr, nnz):
     """TODO
     """
@@ -34,7 +113,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
 
     num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
-        multiscale_factor)
+        multiscale_factor).reshape(1, -1)
 
     bias_per_bin = counts.bias_per_bin(bias, ploidy)  # TODO
 
@@ -42,15 +121,14 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     alpha_sq = ag_np.square(alpha)
 
     taylor = False
-
-    theta = ag_np.zeros(counts.nnz_lowres)
-    k = ag_np.zeros(counts.nnz_lowres)
+    theta = ag_np.zeros((1, counts.nnz_lowres))
+    k = ag_np.zeros((1, counts.nnz_lowres))
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
         dis_sq = ag_np.square(dis)
         dis_alpha = ag_np.power(dis, alpha)
-        if ploidy == 1:
+        if counts.ambiguity == 'ua':
             theta_tmp1 = alpha_sq * epsilon_sq * dis_alpha / dis_sq
             theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq / dis_sq
             k_tmp1 = dis_sq / alpha_sq / epsilon_sq
@@ -58,33 +136,29 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             else: k_tmp2 = 1 + 1.5 * alpha * epsilon_sq / dis_sq
         else:
             raise ValueError("lol.")
-            sum_dis_2alpha_min2 = _pois_sum(
+            sum_dis_2alpha_neg2 = _pois_sum(
                 ag_np.power(dis, 2 * alpha - 2), counts.nnz_lowres)
             sum_dis_alpha = _pois_sum(dis_alpha, counts.nnz_lowres)
-            sum_dis_alpha_min2 = _pois_sum(
+            sum_dis_alpha_neg2 = _pois_sum(
                 dis_alpha / dis_sq, counts.nnz_lowres)
-            theta_tmp1 = alpha_sq * epsilon_sq * sum_dis_2alpha_min2 / sum_dis_alpha
-            theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq * sum_dis_alpha_min2 / sum_dis_alpha
-            k_tmp1 = ag_np.square(sum_dis_alpha) / alpha_sq / epsilon_sq / sum_dis_2alpha_min2
-            if taylor: k_tmp2 = 1 + 3 * alpha * epsilon_sq * sum_dis_alpha_min2 / sum_dis_alpha
-            else: k_tmp2 = 1 + 1.5 * alpha * epsilon_sq * sum_dis_alpha_min2 / sum_dis_alpha
+            theta_tmp1 = alpha_sq * epsilon_sq * sum_dis_2alpha_neg2 / sum_dis_alpha
+            theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
+            k_tmp1 = ag_np.square(sum_dis_alpha) / alpha_sq / epsilon_sq / sum_dis_2alpha_neg2
+            if taylor: k_tmp2 = 1 + 3 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
+            else: k_tmp2 = 1 + 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
         theta = theta + mix_coef * counts.beta * theta_tmp1 * theta_tmp2
         if taylor: k = k + mix_coef * k_tmp1 * k_tmp2
         else: k = k + mix_coef * k_tmp1 * ag_np.square(k_tmp2)
 
-    theta = theta.reshape(1, -1)
-    k = k.reshape(1, -1)
-    num_highres_per_lowres_bins = num_highres_per_lowres_bins.reshape(1, -1)
-
     obj_tmp1 = - num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
-    obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
     if counts.type == 'zero':
-        obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp2)
+        obj = ag_np.sum(obj_tmp1)
     else:
+        obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
         obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
-        obj_tmp4 = ag_np.sum(counts.data_grouped * ag_np.log(
-            theta / (1 + theta)), axis=0)
-        obj = ag_np.sum(obj_tmp4) + ag_np.sum(obj_tmp1) + ag_np.sum(
+        obj_tmp4 = ag_np.sum(counts.data_grouped, axis=0) * ag_np.log(
+            theta / (1 + theta))
+        obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp4) + ag_np.sum(
             obj_tmp2 + obj_tmp3)
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
@@ -230,12 +304,6 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     obj : float
         The total negative log likelihood of the poisson model and constraints.
     """
-
-    '''if multiscale_reform:
-        epsilon = X[-1]
-        X = X[:-1]
-    else:
-        epsilon = None'''
 
     X, epsilon, mixture_coefs = _format_X(
         X, reorienter=reorienter,
