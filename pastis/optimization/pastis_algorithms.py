@@ -207,7 +207,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
-          multiscale_reform=False, epsilon_min=0.01, epsilon_max=10,
+          multiscale_reform=False, epsilon_min=0.00000001, epsilon_max=10,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True):
     """Infer 3D structures with PASTIS via Poisson model.
@@ -424,7 +424,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             print('ALPHA: %.3g' % alpha_, flush=True)
 
     # EPSILON
-    if multiscale_factor != 1 and multiscale_reform:
+    '''if multiscale_factor != 1 and multiscale_reform:
         all_multiscale_factors = 2 ** np.flip(
             np.arange(multiscale_rounds), axis=0)[:-1]
         for i in all_multiscale_factors:
@@ -464,7 +464,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
             mixture_coefs=mixture_coefs)  # FIXME
     else:
-        epsilon = None
+        epsilon = None'''
 
     # HOMOLOG-SEPARATING CONSTRAINT
     if ploidy == 1 and (hsc_lambda > 0 or mhs_lambda > 0):
@@ -503,11 +503,10 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             bias=bias, multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, reorienter=reorienter,
             mixture_coefs=mixture_coefs, verbose=verbose)
-        if True:
-            if multiscale_reform and multiscale_factor != 1:  # FIXME
-                epsilon = random_state.rand()
-            else:
-                epsilon = None
+        if multiscale_reform and multiscale_factor != 1:  # FIXME
+            epsilon = random_state.rand()
+        else:
+            epsilon = None
 
         # SETUP CONSTRAINTS
         constraints = Constraints(counts=counts, lengths=lengths, ploidy=ploidy,
@@ -544,12 +543,12 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 multiscale_reform=multiscale_reform,
                 mixture_coefs=mixture_coefs, return_extras=True)
             # FIXME
-            from topsy.utils.misc import printvars
+            '''from topsy.utils.misc import printvars
             print('epsilon', epsilon)
             printvars({k: v for k, v in obj_true.items() if k != 'obj'})
             #print(f"obj_ua {obj_true['obj_ua']:.3g}")
             #print(f"obj_ua0 {obj_true['obj_ua0']:.3g}")
-            exit(0)
+            exit(0)'''
             pd.Series(obj_true).to_csv(
                 os.path.join(outdir, 'struct_true_obj'), sep='\t', header=False)
 

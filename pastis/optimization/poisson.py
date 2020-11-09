@@ -43,15 +43,23 @@ def _estimate_epsilon_single(structures, epsilon, counts, alpha, lengths,
         sum_dis_alpha_neg2 = sum_dis_alpha_neg2 + mix_coef * _pois_sum(
             dis_alpha / dis_sq, counts.nnz_lowres)
 
+    #numerator = adjusted_counts / sum_dis_alpha
+    #denominator = 1.5 * adjusted_counts 
+
     if counts.type == 'zero':
-        pass
+        numerator = - 2 * sum_dis_alpha
+        denominator = 3 * alpha * sum_dis_alpha_neg2
+        epsilon_sq = ag_np.sum(numerator) / ag_np.sum(denominator)
     else:
         adjusted_counts = (1 / counts.beta) * (
             ag_np.sum(counts.data_grouped, axis=0) / num_highres_per_lowres_bins)
         numerator = (sum_dis_alpha / adjusted_counts - 1) * 2 * sum_dis_alpha
         denominator = - 3 * alpha * sum_dis_alpha_neg2
-        epsilon_sq = (numerator / denominator).sum()
-        epsilon = ag_np.sqrt(epsilon_sq)
+        epsilon_sq = ag_np.sum(numerator / denominator)
+        print('test', ag_np.sum(numerator) / ag_np.sum(denominator))
+
+    epsilon = ag_np.sqrt(epsilon_sq)
+    print(counts.type, epsilon)
 
     return epsilon
 
@@ -78,23 +86,19 @@ def _estimate_epsilon(X, counts, alpha, lengths, bias=None, multiscale_factor=1,
     if mixture_coefs is None:
         mixture_coefs = [1.] * len(structures)
 
-    #numerator = 0
-    #denominator = 0
+    numerator = 0
+    denominator = 0
     for counts_maps in counts:
-        if counts_maps.type != 'zero':  # FIXME
-            epsilon = _estimate_epsilon_single(
-                structures=structures, epsilon=epsilon, counts=counts_maps,
-                alpha=alpha, lengths=lengths, bias=bias,
-                multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
-            #numerator = numerator + num
-            #denominator = denominator + denom
+        #if counts_maps.type != 'zero':  # FIXME
+        epsilon_maps = _estimate_epsilon_single(
+            structures=structures, epsilon=epsilon, counts=counts_maps,
+            alpha=alpha, lengths=lengths, bias=bias,
+            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
+        numerator = numerator + counts_maps.nnz_lowres * epsilon_maps
+        denominator = denominator + counts_maps.nnz_lowres
 
-    #print('totals:', numerator, denominator)
-
-    #epsilon_sq = numerator / denominator
-    #epsilon = ag_np.sqrt(epsilon_sq)
-    #return epsilon
-    return 1
+    epsilon = numerator / denominator
+    return epsilon
 
 
 def _pois_sum(arr, nnz):
@@ -120,7 +124,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     epsilon_sq = ag_np.square(epsilon)
     alpha_sq = ag_np.square(alpha)
 
-    taylor = False
+    taylor = False  # FIXME
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
     for struct, mix_coef in zip(structures, mixture_coefs):
@@ -151,20 +155,50 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         else: k = k + mix_coef * k_tmp1 * ag_np.square(k_tmp2)
 
     obj_tmp1 = - num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
-    if counts.type == 'zero':
-        obj = ag_np.sum(obj_tmp1)
+    if counts.type == 'zero':  # FIXME
+        obj = ag_np.sum(obj_tmp1) #+ ag_np.sum(- num_highres_per_lowres_bins * ag_gammaln(k))
     else:
         obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
         obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
-        obj_tmp4 = ag_np.sum(counts.data_grouped, axis=0) * ag_np.log(
-            theta / (1 + theta))
+        # FIXME obj_tmp4
+        if True:
+            obj_tmp4 = ag_np.sum(counts.data_grouped, axis=0) * ag_np.log(
+                theta / (1 + theta))
+        else:
+            obj_tmp4 = ag_np.sum(counts.data_grouped * ag_np.log(
+                theta / (1 + theta)), axis=0)
         obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp4) + ag_np.sum(
             obj_tmp2 + obj_tmp3)
 
+    from topsy.utils.misc import printvars  # FIXME
+    if type(theta).__name__ != 'ArrayBox' and counts.type != 'zero':
+        printvars({'epsilon': epsilon})
+    '''if type(theta).__name__ != 'ArrayBox':
+        from topsy.utils.misc import printvars
+        print(type(theta).__name__)
+        if counts.type == 'zero':
+            printvars({
+                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1})
+        else:
+            printvars({
+                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1,
+                'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
+                'obj_tmp4': obj_tmp4, 'theta': theta, 'k': k})
+        print()'''
+
     if ag_np.isnan(obj) or ag_np.isinf(obj):
+        from topsy.utils.misc import printvars  # FIXME
+        if counts.type == 'zero':
+            printvars({
+                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1})
+        else:
+            printvars({
+                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1,
+                'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
+                'obj_tmp4': obj_tmp4, 'theta': theta, 'k': k})
         raise ValueError(
             f"Multiscale component of objective function for {counts.name}"
-            f" is {obj}.")
+            f" is {- obj}.")
 
     return counts.weight * (- obj)
 
