@@ -12,6 +12,7 @@ import autograd.numpy as ag_np
 from autograd.builtins import SequenceBox
 from autograd import grad
 from autograd.scipy.special import gammaln as ag_gammaln
+from autograd.scipy.special import gamma as ag_gamma
 from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .constraints import Constraints
@@ -156,7 +157,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
 
     obj_tmp1 = - num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
     if counts.type == 'zero':  # FIXME
-        obj = ag_np.sum(obj_tmp1) #+ ag_np.sum(- num_highres_per_lowres_bins * ag_gammaln(k))
+        obj = ag_np.sum(obj_tmp1)  #+ ag_np.sum(- num_highres_per_lowres_bins * ag_gammaln(k))
     else:
         obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
         obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
@@ -170,9 +171,15 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp4) + ag_np.sum(
             obj_tmp2 + obj_tmp3)
 
-    from topsy.utils.misc import printvars  # FIXME
-    if type(theta).__name__ != 'ArrayBox' and counts.type != 'zero':
-        printvars({'epsilon': epsilon})
+    '''if type(theta).__name__ != 'ArrayBox':
+        print(counts.type, counts.nnz, counts.nnz_lowres, ((counts.data_grouped == 0).sum() / counts.data_grouped.flatten().shape[0] * 100).round())
+        print(counts.data_grouped.shape)
+    else:
+        exit(0)'''
+
+    #from topsy.utils.misc import printvars  # FIXME
+    #if type(theta).__name__ != 'ArrayBox' and counts.type != 'zero':
+    #    printvars({'epsilon': epsilon, 'dis': dis})
     '''if type(theta).__name__ != 'ArrayBox':
         from topsy.utils.misc import printvars
         print(type(theta).__name__)
