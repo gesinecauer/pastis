@@ -134,9 +134,8 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
             if verbose:
                 print('INITIALIZATION: decreasing resolution of structure by'
                       ' %d' % resize_factor, flush=True)
-            structures[i] = decrease_struct_res(
-                structures[i], multiscale_factor=resize_factor,
-                lengths=lengths_lowres)
+            structures[i] = decrease_struct_res( # TODO change lengths=lengths (not lengths_lowres) on main branch too
+                structures[i], multiscale_factor=resize_factor, lengths=lengths)
 
     structures = _format_structures(
         structures, lengths=lengths_lowres, ploidy=ploidy,
