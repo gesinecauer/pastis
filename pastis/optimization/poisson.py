@@ -11,6 +11,7 @@ from datetime import timedelta
 import autograd.numpy as ag_np
 from autograd.builtins import SequenceBox
 from autograd import grad
+from autograd.extend import primitive, defvjp
 from autograd.scipy.special import gammaln as ag_gammaln
 from autograd.scipy.special import gamma as ag_gamma
 from .multiscale_optimization import decrease_lengths_res
@@ -19,87 +20,54 @@ from .constraints import Constraints
 from .callbacks import Callback
 
 
-def _estimate_epsilon_single(structures, epsilon, counts, alpha, lengths,
-                             bias=None, multiscale_factor=1, mixture_coefs=None):
+def my_polevl(x, coefs):
     """TODO
     """
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
-
-    num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
-        multiscale_factor).reshape(1, -1)
-
-    bias_per_bin = counts.bias_per_bin(bias, ploidy)  # TODO
-
-    sum_dis_alpha = ag_np.zeros((1, counts.nnz_lowres))
-    sum_dis_alpha_neg2 = ag_np.zeros((1, counts.nnz_lowres))
-    for struct, mix_coef in zip(structures, mixture_coefs):
-        dis = ag_np.sqrt((ag_np.square(
-            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
-        dis_sq = ag_np.square(dis)
-        dis_alpha = ag_np.power(dis, alpha)
-        sum_dis_alpha = sum_dis_alpha + mix_coef * _pois_sum(
-            dis_alpha, counts.nnz_lowres)
-        sum_dis_alpha_neg2 = sum_dis_alpha_neg2 + mix_coef * _pois_sum(
-            dis_alpha / dis_sq, counts.nnz_lowres)
-
-    #numerator = adjusted_counts / sum_dis_alpha
-    #denominator = 1.5 * adjusted_counts 
-
-    if counts.type == 'zero':
-        numerator = - 2 * sum_dis_alpha
-        denominator = 3 * alpha * sum_dis_alpha_neg2
-        epsilon_sq = ag_np.sum(numerator) / ag_np.sum(denominator)
-    else:
-        adjusted_counts = (1 / counts.beta) * (
-            ag_np.sum(counts.data_grouped, axis=0) / num_highres_per_lowres_bins)
-        numerator = (sum_dis_alpha / adjusted_counts - 1) * 2 * sum_dis_alpha
-        denominator = - 3 * alpha * sum_dis_alpha_neg2
-        epsilon_sq = ag_np.sum(numerator / denominator)
-        print('test', ag_np.sum(numerator) / ag_np.sum(denominator))
-
-    epsilon = ag_np.sqrt(epsilon_sq)
-    print(counts.type, epsilon)
-
-    return epsilon
+    ans = 0
+    power = len(coefs) - 1
+    for coef in coefs:
+        ans = ans + coef * ag_np.power(x, power)
+        power = power - 1
+    return ans
 
 
-def _estimate_epsilon(X, counts, alpha, lengths, bias=None, multiscale_factor=1,
-                      mixture_coefs=None):
+def stirling_polyval_good(z):
     """TODO
     """
+    sterling_coefs = [
+        8.11614167470508450300E-4, -5.95061904284301438324E-4,
+        7.93650340457716943945E-4, -2.77777777730099687205E-3,
+        8.33333333333331927722E-2]
+    z_sq_inv = 1. / (z * z)
+    return my_polevl(z_sq_inv, coefs=sterling_coefs) / z
 
-    structures, epsilon, mixture_coefs = _format_X(
-        X, reorienter=None, multiscale_reform=False, mixture_coefs=mixture_coefs)
 
-    # Check format of input
-    counts = (counts if isinstance(counts, list) else [counts])
-    if lengths is None:
-        lengths = np.array([min([min(counts_maps.shape)
-                                 for counts_maps in counts])])
-    lengths = np.array(lengths)
-    if bias is None:
-        bias = np.ones((min([min(counts_maps.shape)
-                             for counts_maps in counts]),))
-    if not (isinstance(structures, list) or isinstance(structures, SequenceBox)):
-        structures = [structures]
-    if mixture_coefs is None:
-        mixture_coefs = [1.] * len(structures)
+@primitive
+def _stirling_polyval(z):
+    """TODO
+    """
+    sterling_coefs = [
+        8.11614167470508450300E-4, -5.95061904284301438324E-4,
+        7.93650340457716943945E-4, -2.77777777730099687205E-3,
+        8.33333333333331927722E-2]
+    z_sq_inv = 1. / (z * z)
+    return ag_np.polyval(sterling_coefs, z_sq_inv) / z
 
-    numerator = 0
-    denominator = 0
-    for counts_maps in counts:
-        #if counts_maps.type != 'zero':  # FIXME
-        epsilon_maps = _estimate_epsilon_single(
-            structures=structures, epsilon=epsilon, counts=counts_maps,
-            alpha=alpha, lengths=lengths, bias=bias,
-            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
-        numerator = numerator + counts_maps.nnz_lowres * epsilon_maps
-        denominator = denominator + counts_maps.nnz_lowres
 
-    epsilon = numerator / denominator
-    return epsilon
+def _stirling_polyval_deriv(z):
+    """TODO
+    """
+    # FIXME if z >= 1e17 then return 0
+    sterling_coefs_deriv = [
+        8.33333333333333333333E-2, -2.10927960927960927961E-2,
+        7.57575757575757575758E-3, -4.16666666666666666667E-3,
+        3.96825396825396825397E-3, -8.33333333333333333333E-3,
+        8.33333333333333333333E-2]
+    z_sq_inv = 1. / (z * z)
+    return - ag_np.polyval(sterling_coefs_deriv, z_sq_inv) * z_sq_inv
+
+
+defvjp(_stirling_polyval, lambda ans, x: lambda g: g * _stirling_polyval_deriv(x))
 
 
 def _pois_sum(arr, nnz):
@@ -128,9 +96,11 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     taylor = False  # FIXME
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
+    mu = ag_np.zeros((1, counts.nnz_lowres))
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+        mu = mu + mix_coef * dis
         dis_sq = ag_np.square(dis)
         dis_alpha = ag_np.power(dis, alpha)
         if counts.ambiguity == 'ua':
@@ -155,33 +125,36 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         if taylor: k = k + mix_coef * k_tmp1 * k_tmp2
         else: k = k + mix_coef * k_tmp1 * ag_np.square(k_tmp2)
 
-    obj_tmp1 = - num_highres_per_lowres_bins * k * ag_np.log(1 + theta)
-    if counts.type == 'zero':  # FIXME
-        obj = ag_np.sum(obj_tmp1)  #+ ag_np.sum(- num_highres_per_lowres_bins * ag_gammaln(k))
+    eps = 1e-6
+    check_instability = False
+
+    log1p_theta = ag_np.log1p(theta)
+    obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
+    if counts.type == 'zero':
+        obj = ag_np.sum(obj_tmp1)
     else:
-        obj_tmp2 = - num_highres_per_lowres_bins * ag_gammaln(k)
-        obj_tmp3 = ag_np.sum(ag_gammaln(counts.data_grouped + k), axis=0)
-        # FIXME obj_tmp4
-        if True:
-            obj_tmp4 = ag_np.sum(counts.data_grouped, axis=0) * ag_np.log(
-                theta / (1 + theta))
+        obj_tmp2 = -num_highres_per_lowres_bins * stirling_polyval_good(k)
+        obj_tmp3 = ag_np.sum(stirling_polyval_good(counts.data_grouped + k), axis=0)
+        obj_tmp4 = ag_np.sum(counts.data_grouped, axis=0) * (
+            ag_np.log(mu) - log1p_theta - 1)
+        if check_instability:
+            possible_instability = counts.data_grouped / k < eps
+            stable_rows, stable_cols = ag_np.where(~possible_instability)
+            stable_counts = counts.data_grouped[stable_rows, stable_cols]
+            stable_k = k[:, stable_cols]
+            obj_tmp5 = counts.data_grouped[possible_instability].sum() + (
+                (stable_counts + stable_k - 0.5) * ag_np.log1p(
+                    stable_counts / stable_k)).sum()
         else:
-            obj_tmp4 = ag_np.sum(counts.data_grouped * ag_np.log(
-                theta / (1 + theta)), axis=0)
-        obj = ag_np.sum(obj_tmp1) + ag_np.sum(obj_tmp4) + ag_np.sum(
-            obj_tmp2 + obj_tmp3)
+            obj_tmp5 = (counts.data_grouped + k - 0.5) * ag_np.log1p(
+                counts.data_grouped / k)
+        obj = ag_np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5)
 
-    '''if type(theta).__name__ != 'ArrayBox':
-        print(counts.type, counts.nnz, counts.nnz_lowres, ((counts.data_grouped == 0).sum() / counts.data_grouped.flatten().shape[0] * 100).round())
-        print(counts.data_grouped.shape)
-    else:
-        exit(0)'''
-
-    #from topsy.utils.misc import printvars  # FIXME
-    #if type(theta).__name__ != 'ArrayBox' and counts.type != 'zero':
-    #    printvars({'epsilon': epsilon, 'dis': dis})
-    '''if type(theta).__name__ != 'ArrayBox':
-        from topsy.utils.misc import printvars
+    from topsy.utils.misc import printvars
+    if type(theta).__name__ != 'ArrayBox' and counts.type != 'zero':
+        printvars({'epsilon': epsilon}) # , 'dis': dis
+    '''from topsy.utils.misc import printvars  # FIXME
+    if type(theta).__name__ != 'ArrayBox':
         print(type(theta).__name__)
         if counts.type == 'zero':
             printvars({
@@ -190,7 +163,8 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             printvars({
                 'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1,
                 'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
-                'obj_tmp4': obj_tmp4, 'theta': theta, 'k': k})
+                'obj_tmp4': obj_tmp4, 'obj_tmp5': obj_tmp5,
+                'theta': theta, 'k': k})
         print()'''
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
@@ -202,7 +176,9 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             printvars({
                 'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1,
                 'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
-                'obj_tmp4': obj_tmp4, 'theta': theta, 'k': k})
+                'obj_tmp4': obj_tmp4, 'obj_tmp5': obj_tmp5,
+                'theta': theta, 'k': k,
+                'ag_np.log(mu)': ag_np.log(mu), 'ag_np.log1p(-theta)': ag_np.log1p(-theta)})
         raise ValueError(
             f"Multiscale component of objective function for {counts.name}"
             f" is {- obj}.")
@@ -227,12 +203,6 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
                          (len(structures), len(mixture_coefs)))
     elif mixture_coefs is None:
         mixture_coefs = [1.]
-
-    if epsilon is not None and epsilon != 0 and multiscale_factor != 1:
-        return _multiscale_reform_obj(
-            structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
-            lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs)
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
@@ -270,7 +240,33 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
         obj = lambda_intensity.sum() - (counts.data_grouped * ag_np.log(
             lambda_intensity)).sum()
 
+    '''from topsy.utils.misc import printvars
+    if type(dis).__name__ != 'ArrayBox':
+        if (dis == 0).sum() > 0:
+            print(counts.name)
+            dis0i = np.where(dis == 0)[0]
+            row0 = counts.row3d[dis0i]
+            col0 = counts.col3d[dis0i]
+            for r, c in zip(row0, col0):
+                d = ag_np.sqrt((ag_np.square(
+                    struct[r] - struct[c])).sum())
+                print(r, '\t', c, '\t', struct[r], struct[c], d)
+            printvars({
+                'struct': structures[0], 'dis': dis, 'ag_np.square(dis)': ag_np.square(dis),
+                'lambda_intensity': lambda_intensity, 'obj': obj
+                })
+            print('\n\n')
+        else:
+            printvars({'obj': obj})'''
+
     if ag_np.isnan(obj) or ag_np.isinf(obj):
+        from topsy.utils.misc import printvars
+        if type(dis).__name__ != 'ArrayBox':
+            print(counts.name)
+            printvars({
+                'struct': structures[0], 'dis': dis,
+                'lambda_intensity': lambda_intensity,
+                'counts.data': counts.data})
         raise ValueError(
             f"Poisson component of objective function for {counts.name}"
             f" is {obj}.")
@@ -296,6 +292,7 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
     elif mixture_coefs is None:
         mixture_coefs = [1.]
 
+    # FIXME... ?
     if epsilon is None or epsilon == 0 or multiscale_factor == 1:
         return _poisson_obj_single(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
