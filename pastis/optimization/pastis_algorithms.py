@@ -22,10 +22,8 @@ from .poisson import PastisPM
 from .multiscale_optimization import get_multiscale_variances_from_struct
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
-from .multiscale_optimization import get_multiscale_epsilon_from_struct
-from .multiscale_optimization import est_multiscale_epsilon_from_counts
 from ..io.read import load_data
-from .poisson import objective, _estimate_epsilon
+from .poisson import objective
 
 
 def _adjust_beta_simple_diploid(beta, counts, lengths):
@@ -125,8 +123,10 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             return struct_draft_fullres, alpha_, beta_, hsc_r, False
         if alpha is not None:
             alpha_ = infer_var_fullres['alpha']
-            beta_ = list(infer_var_fullres['beta'] * np.array(
-                beta) / _adjust_beta_simple_diploid(beta, counts_raw, lengths=lengths))
+            if ploidy == 2:  # TODO add this line on the main branch too
+                beta_ = list(infer_var_fullres['beta'] * np.array(
+                    beta) / _adjust_beta_simple_diploid(
+                    beta, counts_raw, lengths=lengths))
 
     if infer_draft_lowres:
         if verbose and infer_draft_fullres:
@@ -207,7 +207,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
-          multiscale_reform=False, epsilon_min=0.1, epsilon_max=10,
+          multiscale_reform=False, epsilon_min=0, epsilon_max=20,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True):
     """Infer 3D structures with PASTIS via Poisson model.
@@ -423,49 +423,6 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             print('ALPHA: %.3g' % alpha_, flush=True)
 
-    # EPSILON
-    '''if multiscale_factor != 1 and multiscale_reform:
-        all_multiscale_factors = 2 ** np.flip(
-            np.arange(multiscale_rounds), axis=0)[:-1]
-        for i in all_multiscale_factors:
-            epsilon_est = est_multiscale_epsilon_from_counts(
-                counts, lengths=lengths, ploidy=ploidy, multiscale_factor=i,
-                bias=bias, alpha=alpha, mixture_coefs=mixture_coefs,
-                verbose=False)
-            print(f"Multiscale factor {i}, est. epsilon: {epsilon_est:.3g}",
-                  flush=True)
-            if struct_true is not None and verbose:
-                epsilon_true = get_multiscale_epsilon_from_struct(
-                    struct_true, lengths=lengths, multiscale_factor=i,
-                    mixture_coefs=mixture_coefs, verbose=False)
-                print(f"Multiscale factor {i}, true epsilon: {epsilon_true:.3g}",
-                      flush=True)
-                struct_true_lowres = decrease_struct_res(
-                    struct_true, multiscale_factor=i,
-                    lengths=lengths)
-                if simple_diploid:
-                    struct_true_lowres = np.nanmean(
-                        [struct_true_lowres[:int(struct_true.shape[0] / 2)],
-                         struct_true_lowres[int(struct_true.shape[0] / 2):]],
-                        axis=0)
-                epsilon_true = _estimate_epsilon(
-                    struct_true_lowres.flatten(), counts=counts, alpha=alpha,
-                    lengths=lengths, bias=bias,
-                    multiscale_factor=i,
-                    mixture_coefs=mixture_coefs)
-                print(f"*** Multiscale factor {i}, true epsilon: {epsilon_true:.3g}",
-                      flush=True)
-        epsilon = est_multiscale_epsilon_from_counts(
-            counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, bias=bias, alpha=alpha,
-            mixture_coefs=mixture_coefs, verbose=False)
-        epsilon = _estimate_epsilon(
-            struct_true_lowres.flatten(), counts=counts, alpha=alpha,
-            lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs)  # FIXME
-    else:
-        epsilon = None'''
-
     # HOMOLOG-SEPARATING CONSTRAINT
     if ploidy == 1 and (hsc_lambda > 0 or mhs_lambda > 0):
         raise ValueError("Can not apply homolog-separating constraint to"
@@ -504,7 +461,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             multiscale_reform=multiscale_reform, reorienter=reorienter,
             mixture_coefs=mixture_coefs, verbose=verbose)
         if multiscale_reform and multiscale_factor != 1:  # FIXME
-            epsilon = random_state.rand()
+            epsilon = random_state.rand() / 1e6
         else:
             epsilon = None
 
@@ -542,13 +499,6 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 multiscale_variances=multiscale_variances,
                 multiscale_reform=multiscale_reform,
                 mixture_coefs=mixture_coefs, return_extras=True)
-            # FIXME
-            '''from topsy.utils.misc import printvars
-            print('epsilon', epsilon)
-            printvars({k: v for k, v in obj_true.items() if k != 'obj'})
-            #print(f"obj_ua {obj_true['obj_ua']:.3g}")
-            #print(f"obj_ua0 {obj_true['obj_ua0']:.3g}")
-            exit(0)'''
             pd.Series(obj_true).to_csv(
                 os.path.join(outdir, 'struct_true_obj'), sep='\t', header=False)
 
