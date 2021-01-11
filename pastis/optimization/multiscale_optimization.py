@@ -1,8 +1,8 @@
 import sys
 import numpy as np
+import warnings
 from scipy import sparse
 from scipy.interpolate import interp1d
-import warnings
 from iced.io import load_lengths
 
 if sys.version_info[0] < 3:
@@ -507,8 +507,8 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
 
 
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
-                                         mixture_coefs=None, verbose=True,
-                                         replace_nan=True):
+                                         mixture_coefs=None, replace_nan=True,
+                                         verbose=True):
     """Compute multiscale variances from full-res structure.
 
     Generates multiscale variances at the specified resolution from the
@@ -561,8 +561,8 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
     multiscale_variances = np.mean(multiscale_variances, axis=0)
 
     if verbose:
-        print("MULTISCALE VARIANCE: %.3g" % np.median(multiscale_variances),
-              flush=True)
+        print(f"MULTISCALE VARIANCE ({multiscale_factor}x):"
+              f" {np.median(multiscale_variances):.3g}", flush=True)
 
     return multiscale_variances
 
@@ -576,7 +576,7 @@ def _var3d(struct_grouped, replace_nan=True):
     for i in range(struct_grouped.shape[1]):
         struct_group = struct_grouped[:, i, :]
         beads_in_group = np.invert(np.isnan(struct_group[:, 0])).sum()
-        if beads_in_group == 0:
+        if beads_in_group <= 1:
             var = np.nan
         else:
             mean_coords = np.nanmean(struct_group, axis=0)
@@ -593,6 +593,189 @@ def _var3d(struct_grouped, replace_nan=True):
             multiscale_variances)
 
     return multiscale_variances
+
+
+def get_multiscale_epsilon_from_dis(structures, lengths, multiscale_factor,
+                                    mixture_coefs=None, verbose=True):
+    """Compute multiscale epsilon from full-res structure.
+    """
+
+    from .utils_poisson import _format_structures
+
+    if multiscale_factor == 1:
+        return None
+
+    structures = _format_structures(structures, mixture_coefs=mixture_coefs)
+    struct_length = set([s.shape[0] for s in structures])
+    if len(struct_length) > 1:
+        raise ValueError("Structures are of different shapes.")
+    else:
+        struct_length = struct_length.pop()
+    if struct_length / lengths.sum() not in (1, 2):
+        raise ValueError("Structures do not appear to be haploid or diploid.")
+    ploidy = int(struct_length / lengths.sum())
+    structures = _format_structures(structures, lengths=lengths,
+                                    ploidy=ploidy, mixture_coefs=mixture_coefs)
+
+    std_all = []
+    for struct in structures:
+        mask = np.invert(np.isnan(structures[0][:, 0]))
+        dummy = sparse.coo_matrix(np.triu(
+            np.ones((mask.sum(), mask.sum())), 1))
+        dis = np.sqrt((np.square(
+            struct[mask][dummy.row] - struct[mask][dummy.col])).sum(axis=1))
+        dis_coo = sparse.coo_matrix(
+            (dis, (dummy.row, dummy.col)), shape=dummy.shape)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", category=UserWarning,
+                message="Counts matrix must only contain integers or NaN")
+            dis_grouped = _group_counts_multiscale(
+                dis_coo, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, multiscale_reform=True)[0]
+        std_all.append(_get_epsilon_from_dis(dis_grouped))
+    std_all = np.mean(std_all)
+
+    if verbose:
+        print(f"MULTISCALE EPSILON (estimate) ({multiscale_factor}x):"
+              f" {std_all:.3g}", flush=True)
+
+    return std_all
+
+
+def _get_epsilon_from_dis(dis_grouped, alpha=-3.):
+    """TODO
+    """
+
+    from scipy.stats import norm, mode
+    import plotille
+    #from topsy.datasets.samples_generator import get_diff_coords_from_euc_dis
+
+    # dis_grouped.shape = (multiscale_factor ** 2, nbins)
+    tmp = []
+    for i in range(dis_grouped.shape[1]):
+        dis_fullres = dis_grouped[:, i]
+        if (dis_fullres == 0).sum() > 0:  # Lowres dist bin is on diagonal
+            print((dis_fullres == 0).sum(), (dis_fullres != 0).sum())
+            continue
+        fake_counts_lowres = (dis_fullres ** alpha).sum()
+        dis_lowres = fake_counts_lowres ** (1 / alpha)
+        tmp.append(dis_fullres.flatten() - dis_lowres)
+
+    tmp = np.concatenate(tmp)
+    est_diff = tmp #* np.sqrt(1 / 3)
+
+    est_diff_rounded = np.array([float(f"{x:.2g}") for x in est_diff])
+    est_diff_mode = mode(est_diff_rounded, axis=None)[0][0]
+
+    #est_diff -= np.median(est_diff)
+    #est_diff -= est_diff_mode
+    #est_diff = np.append(est_diff, -est_diff)
+
+    # fig = plotille.Figure()
+    # fig.height = 25
+    # fig.set_y_limits(min_=0)
+    # fig.histogram(est_diff, bins=160, lc=None)
+    # fig.plot([0, 0], [0, 2400])
+    # fig.plot([np.median(est_diff), np.median(est_diff)], [0, 2400])
+    # fig.plot([np.mean(est_diff), np.mean(est_diff)], [0, 2400])
+    # #fig.plot([est_diff_mode, est_diff_mode], [0, 2400])
+    # print(fig.show(legend=False))
+
+    mu, stddev = norm.fit(est_diff)
+    #print(f'MIN={est_diff.min():.3g}    MU={mu:.3g}   MEAN={np.mean(est_diff):.3g}   MED={np.median(est_diff):.3g}')
+
+    if np.isnan(stddev):
+        raise ValueError("Multiscale dist stddev is nan.")
+
+    return stddev
+
+
+def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
+                                       mixture_coefs=None, replace_nan=True,
+                                       verbose=True):
+    """Compute multiscale epsilon from full-res structure.
+    """
+
+    from .utils_poisson import _format_structures
+
+    if multiscale_factor == 1:
+        return None
+
+    structures = _format_structures(structures, mixture_coefs=mixture_coefs)
+    struct_length = set([s.shape[0] for s in structures])
+    if len(struct_length) > 1:
+        raise ValueError("Structures are of different shapes.")
+    else:
+        struct_length = struct_length.pop()
+    if struct_length / lengths.sum() not in (1, 2):
+        raise ValueError("Structures do not appear to be haploid or diploid.")
+    ploidy = int(struct_length / lengths.sum())
+    structures = _format_structures(structures, lengths=lengths,
+                                    ploidy=ploidy, mixture_coefs=mixture_coefs)
+
+    std_per_bead = []
+    std_all = []
+    for struct in structures:
+        struct_grouped = _group_highres_struct(
+            struct, multiscale_factor, lengths)
+        std_per_bead_tmp, std_all_tmp = _get_epsilon(
+            struct_grouped, replace_nan=replace_nan)
+        std_per_bead.append(std_per_bead_tmp)
+        std_all.append(std_all_tmp)
+    std_per_bead = np.mean(std_per_bead, axis=0)
+    std_all = np.mean(std_all)
+
+    if verbose:
+        print(f"MULTISCALE EPSILON per-bead  ({multiscale_factor}x):"
+              f" {np.median(std_per_bead):.3g}", flush=True)
+        print(f"MULTISCALE EPSILON all-beads ({multiscale_factor}x):"
+              f" {std_all:.3g}", flush=True)
+
+    return std_all
+
+
+def _get_epsilon(struct_grouped, replace_nan=True):
+    """TODO
+    """
+
+    from scipy.stats import norm
+
+    # struct_grouped.shape = (multiscale_factor, nbeads, 3)
+    mu_per_bead = np.full(struct_grouped.shape[1], np.nan)
+    std_per_bead = np.full(struct_grouped.shape[1], np.nan)
+    all_diff = []
+    for i in range(struct_grouped.shape[1]):
+        struct_group = struct_grouped[:, i, :]
+        beads_in_group = np.invert(np.isnan(struct_group[:, 0])).sum()
+        if beads_in_group == 0:
+            stddev = mu = np.nan
+        else:
+            mean_coords = np.nanmean(struct_group, axis=0)
+            diff = struct_group - mean_coords
+            diff *= 2  # FIXME IS THIS CORRECT?
+            diff = diff[~np.isnan(diff[:, 0])]
+            all_diff.append(diff)
+            mu, stddev = norm.fit(diff)
+        std_per_bead[i] = stddev
+        mu_per_bead[i] = mu
+
+    if np.isnan(std_per_bead).sum() == std_per_bead.shape[0]:
+        raise ValueError("Multiscale stddev are nan for every bead.")
+
+    all_diff = np.concatenate(all_diff)
+    mu_all, std_all = norm.fit(all_diff)
+
+    if not np.isclose(np.median(mu_per_bead), 0):
+        warnings.warn(f"Multiscale mu (per-bead) is {np.median(mu_per_bead)}, expected 0.")
+    if not np.isclose(mu_all, 0):
+        warnings.warn(f"Multiscale mu (all-beads) is {np.median(mu_all)}, expected 0.")
+
+    if replace_nan:
+        std_per_bead[np.isnan(std_per_bead)] = np.nanmedian(
+            std_per_bead)
+
+    return std_per_bead, std_all
 
 
 def _choose_max_multiscale_rounds(lengths, min_beads):

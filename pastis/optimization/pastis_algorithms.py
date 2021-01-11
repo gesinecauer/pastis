@@ -102,7 +102,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
         if verbose and infer_draft_lowres:
             _print_code_header(
                 "Inferring full-res draft structure",
-                max_length=50, blank_lines=1)
+                max_length=60, blank_lines=1)
         if outdir is None:
             fullres_outdir = None
         else:
@@ -133,7 +133,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             _print_code_header(
                 "Inferring low-res draft structure (%dx)"
                 % multiscale_factor_for_lowres,
-                max_length=50, blank_lines=1)
+                max_length=60, blank_lines=1)
         if ploidy == 1:
             raise ValueError("Can not apply homolog-separating constraint"
                              " to haploid data.")
@@ -207,7 +207,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
-          multiscale_reform=False, epsilon_min=0, epsilon_max=20,
+          multiscale_reform=False, epsilon_min=1e-6, epsilon_max=None,  # epsilon_min=1e-50... jk, is 1e-10? 1e-20?
+          epsilon_coord_descent=False,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True):
     """Infer 3D structures with PASTIS via Poisson model.
@@ -393,20 +394,36 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     struct_true, lengths=lengths,
                     multiscale_factor=multiscale_factor,
                     mixture_coefs=mixture_coefs, verbose=False))
-            print("True multiscale variance: %.3g" % multiscale_variances_true,
-                  flush=True)
+            print(f"True multiscale variance ({multiscale_factor}x):"
+                  f" {multiscale_variances_true:.3g}", flush=True)
     else:
         multiscale_variances = None
 
+    # from .multiscale_optimization import get_multiscale_epsilon_from_struct
+    # from .multiscale_optimization import get_multiscale_epsilon_from_dis
+    # print('\n\n\n')
+    # for tmp_factor in (8, 4, 2):
+    #     get_multiscale_epsilon_from_struct(struct_true, lengths, multiscale_factor=tmp_factor, verbose=True)
+    #     print('---')
+    #     get_multiscale_epsilon_from_dis(struct_true, lengths, multiscale_factor=tmp_factor, verbose=True)
+    #     print('\n')
+    # exit(0)
+
     # PREPARE COUNTS OBJECTS
     if simple_diploid:
+        if ploidy != 2:  # TODO add this if stmt on the main branch too
+            raise ValueError("Ploidy is not 2, but simple_diploid specified.")
         counts_raw = check_counts(
             counts_raw, lengths=lengths, ploidy=ploidy,
             exclude_zeros=exclude_zeros)
+        #print('beta before simple_diploid', beta_)  # FIXME remove
         beta_ = _adjust_beta_simple_diploid(beta_, counts_raw, lengths=lengths)
+        #print('beta after simple_diploid ', beta_)  # FIXME remove
         counts_raw = [ambiguate_counts(
             counts=counts_raw, lengths=lengths, ploidy=ploidy,
             exclude_zeros=exclude_zeros)]
+        # FIXME remove below
+        #np.savetxt("/net/gs/vol1/home/gesine/noble_lab/projects/2015_gesine_diploid/temp/counts_simple_diploid.txt", counts_raw[0], fmt='%g',)
         ploidy = 1
     counts, bias, torm, fullres_torm_for_multiscale = preprocess_counts(
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy, normalize=normalize,
@@ -414,6 +431,9 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         exclude_zeros=exclude_zeros, beta=beta_, input_weight=input_weight,
         verbose=verbose, fullres_torm=fullres_torm, multiscale_reform=multiscale_reform,
         excluded_counts=excluded_counts, mixture_coefs=mixture_coefs)
+    # FIXME remove below
+    #np.savetxt("/net/gs/vol1/home/gesine/noble_lab/projects/2015_gesine_diploid/temp/counts_processed_simple_diploid0.txt", counts[0].toarray(), fmt='%g',)
+    #np.savetxt("/net/gs/vol1/home/gesine/noble_lab/projects/2015_gesine_diploid/temp/counts_processed_simple_diploid1.txt", counts[1].toarray(), fmt='%g',)
     if verbose:
         print('BETA: %s' % ', '.join(
             ['%s=%.3g' % (c.ambiguity, c.beta) for c in counts if c.sum() != 0]),
@@ -453,6 +473,15 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 print('INITIALIZATION: initializing with true structure',
                       flush=True)
             init = struct_true
+        # FIXME remove below
+        # from topsy.utils.misc import printvars
+        # printvars({
+        #     'lengths': lengths, 'init': init, 'ploidy': ploidy,
+        #     'random_state': random_state,
+        #     'alpha': alpha_init if alpha_ is None else alpha_,
+        #     'bias': bias, 'multiscale_factor': multiscale_factor,
+        #     'multiscale_reform': multiscale_reform, 'reorienter': reorienter,
+        #     'mixture_coefs': mixture_coefs, 'verbose': verbose})
         struct_init = initialize(
             counts=counts, lengths=lengths, init=init, ploidy=ploidy,
             random_state=random_state,
@@ -461,9 +490,18 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             multiscale_reform=multiscale_reform, reorienter=reorienter,
             mixture_coefs=mixture_coefs, verbose=verbose)
         if multiscale_reform and multiscale_factor != 1:  # FIXME
-            epsilon = random_state.rand() / 1e6
+            #epsilon = random_state.rand() * 1e-1  # * 1e-2
+            #epsilon = random_state.rand() * (epsilon_max - epsilon_min) + epsilon_min
+            epsilon = random_state.rand()
+            epsilon = 1.2
+            #epsilon = epsilon_min # FIXME FIXME FIXME !!!!!!! make sure u want epsilon=epsilon_min!!!!  0.0961936
+            # epsilon = 1e-6
+            # epsilon = 1e-2
         else:
             epsilon = None
+        # FIXME remove below
+        #np.savetxt("/net/gs/vol1/home/gesine/noble_lab/projects/2015_gesine_diploid/temp/struct_init.txt", struct_init, fmt='%g',)
+        #exit(0)
 
         # SETUP CONSTRAINTS
         constraints = Constraints(counts=counts, lengths=lengths, ploidy=ploidy,
@@ -513,13 +551,14 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                             struct_true=struct_true, alpha_true=alpha_true)
 
         # INFER STRUCTURE
-        print('epsilon_min, epsilon_max', epsilon_min, epsilon_max)
+        print(f'epsilon_min={epsilon_min},    epsilon_max={epsilon_max},    EPSILON={epsilon}')
         pm = PastisPM(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha_,
             init=struct_init, bias=bias, constraints=constraints,
             callback=callback, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
-            epsilon_bounds=[epsilon_min, epsilon_max], alpha_init=alpha_init,
+            epsilon_bounds=[epsilon_min, epsilon_max],
+            epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
             max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
             pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
             null=null, mixture_coefs=mixture_coefs, verbose=verbose)
@@ -570,7 +609,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         for i in all_multiscale_factors:
             if verbose:
                 _print_code_header(
-                    'MULTISCALE FACTOR %d' % i, max_length=50, blank_lines=1)
+                    'MULTISCALE FACTOR %d' % i, max_length=60, blank_lines=1)
             if i == 1:
                 multiscale_outdir = outdir
                 final_multiscale_round = True
@@ -596,7 +635,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 callback_function=callback_function,
                 callback_freq=callback_freq, reorienter=reorienter,
                 multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
-                epsilon_max=epsilon_max, alpha_true=alpha_true,
+                epsilon_max=epsilon_max,
+                epsilon_coord_descent=epsilon_coord_descent, alpha_true=alpha_true,
                 struct_true=struct_true, input_weight=input_weight,
                 exclude_zeros=exclude_zeros, null=null,
                 mixture_coefs=mixture_coefs, verbose=verbose)
@@ -608,6 +648,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 X_ = struct_
             alpha_ = infer_var['alpha']
             #epsilon_max = infer_var['epsilon']  # FIXME
+            exit(0)
         return struct_, infer_var
 
 
@@ -625,7 +666,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    piecewise_fix_homo=False, piecewise_opt_orient=True,
                    piecewise_step3_multiscale=False,
                    piecewise_step1_accuracy=1,
-                   multiscale_reform=False, alpha_true=None,
+                   multiscale_reform=False, epsilon_coord_descent=False, alpha_true=None,
                    struct_true=None, init='mds', input_weight=None,
                    exclude_zeros=False, null=False, mixture_coefs=None,
                    verbose=True):
@@ -752,7 +793,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             mhs_lambda=mhs_lambda, mhs_k=mhs_k,
             struct_draft_fullres=struct_draft_fullres,
             callback_function=callback_function, callback_freq=callback_freq,
-            multiscale_reform=multiscale_reform, alpha_true=alpha_true,
+            multiscale_reform=multiscale_reform,
+            epsilon_coord_descent=epsilon_coord_descent, alpha_true=alpha_true,
             struct_true=struct_true, input_weight=input_weight,
             exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
             verbose=verbose)
@@ -779,7 +821,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             piecewise_opt_orient=piecewise_opt_orient,
             piecewise_step3_multiscale=piecewise_step3_multiscale,
             piecewise_step1_accuracy=piecewise_step1_accuracy,
-            multiscale_reform=multiscale_reform, alpha_true=alpha_true,
+            multiscale_reform=multiscale_reform,
+            epsilon_coord_descent=epsilon_coord_descent, alpha_true=alpha_true,
             struct_true=struct_true, init=init, input_weight=input_weight,
             exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
             verbose=verbose)

@@ -18,6 +18,7 @@ from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .constraints import Constraints
 from .callbacks import Callback
+from .utils_poisson import _print_code_header
 
 
 def my_polevl(x, coefs):
@@ -82,6 +83,8 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     """Computes the multiscale objective function for a given counts matrix.
     """
 
+    #epsilon = 1e-50 # FIXME
+
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
 
@@ -96,11 +99,10 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     taylor = False  # FIXME
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
-    mu = ag_np.zeros((1, counts.nnz_lowres))
+    lambda_intensity = ag_np.zeros(counts.nnz_lowres)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
-        mu = mu + mix_coef * dis
         dis_sq = ag_np.square(dis)
         dis_alpha = ag_np.power(dis, alpha)
         if counts.ambiguity == 'ua':
@@ -124,6 +126,28 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         theta = theta + mix_coef * counts.beta * theta_tmp1 * theta_tmp2
         if taylor: k = k + mix_coef * k_tmp1 * k_tmp2
         else: k = k + mix_coef * k_tmp1 * ag_np.square(k_tmp2)
+        #
+        tmp1 = ag_np.power(dis, alpha)
+        tmp = tmp1.reshape(-1, counts.nnz_lowres).sum(axis=0)
+        lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
+            bias, ploidy) * counts.beta * tmp
+
+    mu = theta * k
+
+    if epsilon < 1e-10:
+        obj_pois_mu = (num_highres_per_lowres_bins * mu).sum() - (
+            counts.data_grouped.sum(axis=0) * ag_np.log(mu)).sum()
+
+        if ag_np.isnan(obj_pois_mu) or ag_np.isinf(obj_pois_mu):
+            from topsy.utils.misc import printvars  # FIXME
+            printvars({
+                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'λ': lambda_intensity, 'μ': mu,
+                'ag_np.log(μ)': ag_np.log(mu)})
+            raise ValueError(
+                f"Poisson component of objective function for {counts.name}"
+                f" is {obj_pois_mu}.")
+
+        return counts.weight * obj_pois_mu
 
     eps = 1e-6
     check_instability = False
@@ -145,42 +169,93 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             obj_tmp5 = counts.data_grouped[possible_instability].sum() + (
                 (stable_counts + stable_k - 0.5) * ag_np.log1p(
                     stable_counts / stable_k)).sum()
+            # FIXME make sure dimensions of obj_tmp5 are correct here (1, -1)
         else:
-            obj_tmp5 = (counts.data_grouped + k - 0.5) * ag_np.log1p(
-                counts.data_grouped / k)
+            obj_tmp5 = ((counts.data_grouped + k - 0.5) * ag_np.log1p(
+                counts.data_grouped / k)).sum(axis=0)
         obj = ag_np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5)
 
     from topsy.utils.misc import printvars
-    if type(theta).__name__ != 'ArrayBox' and counts.type != 'zero':
-        printvars({'epsilon': epsilon}) # , 'dis': dis
-    '''from topsy.utils.misc import printvars  # FIXME
-    if type(theta).__name__ != 'ArrayBox':
-        print(type(theta).__name__)
-        if counts.type == 'zero':
-            printvars({
-                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1})
-        else:
-            printvars({
-                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1,
-                'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
-                'obj_tmp4': obj_tmp4, 'obj_tmp5': obj_tmp5,
-                'theta': theta, 'k': k})
-        print()'''
+    if False and type(theta).__name__ != 'ArrayBox' and counts.type != 'zero' and np.allclose(epsilon, 1e-50):
+        obj_tmp4_theta0 = ag_np.sum(counts.data_grouped, axis=0) * (
+            ag_np.log(mu) - 0 - 1)
+        nxny_mu = num_highres_per_lowres_bins * mu
+        obj_pois = (num_highres_per_lowres_bins * lambda_intensity).sum() - (counts.data_grouped.sum(axis=0) * ag_np.log(
+            lambda_intensity)).sum()
+        obj_pois_mu = nxny_mu.sum() - (counts.data_grouped.sum(axis=0) * ag_np.log(mu)).sum()
+
+        log1p_theta = ag_np.log1p(theta)
+        obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
+
+        actual_pois_obj = _poisson_obj_single(
+            structures=structures, counts=counts, alpha=alpha, lengths=lengths,
+            bias=bias, multiscale_factor=multiscale_factor,
+            multiscale_variances=None, epsilon=0, mixture_coefs=mixture_coefs)
+        print()
+        printvars({
+            'obj_pois λ': -obj_pois,
+            'obj_pois μ': -obj_pois_mu,
+            'fix2_pois μ': - (nxny_mu.sum() - (counts.data_grouped * ag_np.log(mu)).sum()),  # fixes: nxny_mu (doesn't matter if you sum(axis=0) counts data grouped before mult by ln(μ))
+            '(∑cij)lnμ -nxnyμ': (counts.data_grouped * ag_np.log(mu)).sum() - \
+            nxny_mu.sum(),
+            'obj': obj,
+            'actual pois obj': -actual_pois_obj})  # 'obj + ∑cij': obj + counts.data_grouped.sum())
+        print()
+        A_ideal_mu = counts.data_grouped.sum(axis=0) * (ag_np.log(mu) - 1)
+        BpC_ideal_mu = -num_highres_per_lowres_bins * mu
+        D_ideal = counts.data_grouped.sum(axis=0)
+        printvars({
+            'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'nxny': num_highres_per_lowres_bins,
+            'λ': lambda_intensity, 'μ': mu, 'nxny μ': nxny_mu,
+            '': np.array([]),
+            # 'A': obj_tmp4,
+            # 'A θ=0': obj_tmp4_theta0,
+            # 'A ideal μ': A_ideal_mu,
+            # 'A ideal λ': counts.data_grouped.sum(axis=0) * (ag_np.log(lambda_intensity) - 1),
+            # 'B+C': obj_tmp1 + obj_tmp2 + obj_tmp3,
+            # 'B+C ideal μ': BpC_ideal_mu,
+            # 'B+C ideal λ': -num_highres_per_lowres_bins * lambda_intensity,
+            # 'tmp2+tmp3': obj_tmp2 + obj_tmp3,
+            # '    ': np.array([]),
+            # '-λ': -lambda_intensity,
+            # '-μ': -mu,
+            # '-k * log(1+θ)': -k * log1p_theta,
+            # 'D+E': obj_tmp5,
+            # 'D+E ideal': D_ideal,
+            # ' ': np.array([]),
+            'obj_tmp1': obj_tmp1, 'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
+            'obj_tmp4': obj_tmp4, 'obj_tmp5': obj_tmp5,
+            'ag_np.log(μ)': ag_np.log(mu), 'ag_np.log1p(θ)': ag_np.log1p(theta),
+
+            '   ': np.array([]),
+            '(∑cij)lnμ -nxnyμ': (counts.data_grouped.sum(axis=0) * ag_np.log(mu)) - \
+            (num_highres_per_lowres_bins * mu),
+            'obj': (obj_tmp1 + obj_tmp2 + obj_tmp3) + obj_tmp4 + obj_tmp5,
+            'obj ideal': A_ideal_mu + BpC_ideal_mu + D_ideal,
+            '     ': np.array([]),
+            '∑cij': counts.data_grouped.sum(axis=0)})
+
+        print()
+        print(type(counts.data_grouped), counts.data_grouped.dtype)
+
+        exit(0)
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars  # FIXME
         if counts.type == 'zero':
             printvars({
-                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1})
+                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'λ': lambda_intensity, 'μ': mu,
+                'obj_tmp1': obj_tmp1})
         else:
             printvars({
-                'epsilon': epsilon, 'dis': dis, 'obj_tmp1': obj_tmp1,
-                'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
-                'obj_tmp4': obj_tmp4, 'obj_tmp5': obj_tmp5,
-                'theta': theta, 'k': k,
-                'ag_np.log(mu)': ag_np.log(mu), 'ag_np.log1p(-theta)': ag_np.log1p(-theta)})
+                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'λ': lambda_intensity, 'μ': mu,
+                'ag_np.log(μ)': ag_np.log(mu),
+                'ag_np.log1p(θ)': ag_np.log1p(theta),
+                'obj_tmp1': obj_tmp1, 'obj_tmp2': obj_tmp2,
+                'obj_tmp3': obj_tmp3, 'obj_tmp4': obj_tmp4,
+                'obj_tmp5': obj_tmp5})
         raise ValueError(
-            f"Multiscale component of objective function for {counts.name}"
+            f"Poisson component of objective function for {counts.name}"
             f" is {- obj}.")
 
     return counts.weight * (- obj)
@@ -233,31 +308,23 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
     # Sum main objective function
     if counts.type == 'zero':
         obj = lambda_intensity.sum()
-    elif epsilon is None:
+    elif lambda_intensity.shape == counts.data.shape:  # TODO decide: elif epsilon is None:
         obj = lambda_intensity.sum() - (counts.data * ag_np.log(
             lambda_intensity)).sum()
+        # obj0 = lambda_intensity.sum() - (counts.data * ag_np.log(
+        #     lambda_intensity)).sum()
+        # obj1 = lambda_intensity.sum() - (counts.data * ag_np.log(
+        #     lambda_intensity / num_highres_per_lowres_bins)).sum()
+        # obj2 = lambda_intensity.sum() - (counts.data * ag_np.log(
+        #     lambda_intensity / num_highres_per_lowres_bins)).sum() - (
+        #     counts.data * ag_np.log(
+        #         num_highres_per_lowres_bins)).sum()
+        # print(obj0); print(obj1); print(obj2); exit(0)
     else:
-        obj = lambda_intensity.sum() - (counts.data_grouped * ag_np.log(
-            lambda_intensity)).sum()
+        obj = lambda_intensity.sum() - (
+            counts.data_grouped * ag_np.log(lambda_intensity / num_highres_per_lowres_bins)).sum()
 
-    '''from topsy.utils.misc import printvars
-    if type(dis).__name__ != 'ArrayBox':
-        if (dis == 0).sum() > 0:
-            print(counts.name)
-            dis0i = np.where(dis == 0)[0]
-            row0 = counts.row3d[dis0i]
-            col0 = counts.col3d[dis0i]
-            for r, c in zip(row0, col0):
-                d = ag_np.sqrt((ag_np.square(
-                    struct[r] - struct[c])).sum())
-                print(r, '\t', c, '\t', struct[r], struct[c], d)
-            printvars({
-                'struct': structures[0], 'dis': dis, 'ag_np.square(dis)': ag_np.square(dis),
-                'lambda_intensity': lambda_intensity, 'obj': obj
-                })
-            print('\n\n')
-        else:
-            printvars({'obj': obj})'''
+    #print('\n', obj, '\n'); exit(0) # TODO
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars
@@ -292,24 +359,25 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
     elif mixture_coefs is None:
         mixture_coefs = [1.]
 
-    # FIXME... ?
-    if epsilon is None or epsilon == 0 or multiscale_factor == 1:
-        return _poisson_obj_single(
+    if epsilon is None or multiscale_factor == 1 or epsilon == 0:
+        obj = _poisson_obj_single(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
             bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
             mixture_coefs=mixture_coefs)
+        return obj
     else:
-        return _multiscale_reform_obj(
+        obj = _multiscale_reform_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
             mixture_coefs=mixture_coefs)
+        return obj
 
 
 def objective(X, counts, alpha, lengths, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False):
+              inferring_alpha=False, epsilon=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -346,7 +414,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     X, epsilon, mixture_coefs = _format_X(
         X, reorienter=reorienter,
         multiscale_reform=(multiscale_factor != 1 and multiscale_reform),
-        mixture_coefs=mixture_coefs)
+        mixture_coefs=mixture_coefs, epsilon=epsilon)  # FIXME epsilon
 
     # Optionally translate & rotate structures
     if reorienter is not None and reorienter.reorient:
@@ -391,18 +459,19 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
         return obj
 
 
-def _format_X(X, reorienter=None, multiscale_reform=False, mixture_coefs=None):
+def _format_X(X, reorienter=None, multiscale_reform=False, mixture_coefs=None, epsilon=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Reformat and check X.
     """
 
     if mixture_coefs is None:
         mixture_coefs = [1]
 
-    if multiscale_reform:
+    if multiscale_reform and epsilon is None:  # FIXME epsilon
         epsilon = X[-1]
         X = X[:-1]
     else:
-        epsilon = None
+        #epsilon = None  # FIXME epsilon
+        pass
 
     if reorienter is not None and reorienter.reorient:
         reorienter.check_X(X)
@@ -447,6 +516,13 @@ def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
             epsilon = None
         callback.on_epoch_end(obj_logs, structures, alpha, X, epsilon=epsilon)
 
+    if epsilon is not None:
+        spacer = ' ' * (12 - len(f"{new_obj:.3g}"))
+        if epsilon == 0:
+            print(f'    obj {new_obj:.3g}{spacer}ε ---', flush=True)
+        else:
+            print(f'    obj {new_obj:.3g}{spacer}ε {epsilon:.6g}', flush=True)
+
     return new_obj
 
 
@@ -476,6 +552,10 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform,
             mixture_coefs=mixture_coefs)).flatten()
+    if multiscale_reform and new_grad[-1] == 0:
+        print(f"* * * * EPSILON GRADIENT IS 0 * * * *       (mean |other grad| = {np.mean(np.abs(new_grad[:-1]))})", flush=True)
+    # elif multiscale_reform:
+    #     print(f"*                 epsilon grad = {new_grad[-1]:.2g}   (mean |other grad| = {np.mean(np.abs(new_grad[:-1]))})", flush=True)
 
     return new_grad
 
@@ -483,7 +563,7 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
 def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
                multiscale_factor=1, multiscale_variances=None,
                epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
-               factr=10000000., pgtol=1e-05, callback=None, alpha_loop=None,
+               factr=10000000., pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
                reorienter=None, mixture_coefs=None, verbose=True):
     """Estimates a 3D structure, given current alpha.
 
@@ -561,16 +641,17 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
         x0 = init_X.flatten()
 
     if verbose:
-        print('=' * 30, flush=True)
+        #print('=' * 30, flush=True) # TODO removed
         print("\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\nMachine"
               " precision = %.4g\n" % np.finfo(np.float).eps, flush=True)
 
     if callback is not None:
         if reorienter is not None and reorienter.reorient:
-            opt_type = 'chrom_reorient'
+            opt_type = 'structure.chrom_reorient'
         else:
             opt_type = 'structure'
-        callback.on_training_begin(opt_type=opt_type, alpha_loop=alpha_loop)
+        callback.on_training_begin(
+            opt_type=opt_type, alpha_loop=alpha_loop, epsilon_loop=epsilon_loop)
         obj = objective_wrapper(
             x0, counts=counts, alpha=alpha, lengths=lengths,
             bias=bias, constraints=constraints, reorienter=reorienter,
@@ -616,6 +697,9 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
         history = callback.history
 
     if verbose:
+        if multiscale_reform:
+            print(f'INIT EPSILON: {epsilon:.3g},  FINAL EPSILON: {X[-1]:.3g}',
+                  flush=True)
         if converged:
             print('CONVERGED\n', flush=True)
         else:
@@ -705,14 +789,14 @@ class PastisPM(object):
     def __init__(self, counts, lengths, ploidy, alpha, init, bias=None,
                  constraints=None, callback=None, multiscale_factor=1,
                  multiscale_variances=None, epsilon=None, epsilon_bounds=None,
-                 alpha_init=-3., max_alpha_loop=20, max_iter=30000,
+                 epsilon_coord_descent=False, alpha_init=-3., max_alpha_loop=20, max_iter=30000,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                  reorienter=None, null=False, mixture_coefs=None, verbose=True):
 
         from .piecewise_whole_genome import ChromReorienter
 
-        print('%s\n%s 3D STRUCTURAL INFERENCE' %
-              ('=' * 30, {2: 'DIPLOID', 1: 'HAPLOID'}[ploidy]), flush=True)
+        #print('%s\n%s 3D STRUCTURAL INFERENCE' %
+        #      ('=' * 30, {2: 'DIPLOID', 1: 'HAPLOID'}[ploidy]), flush=True) # TODO removed
 
         lengths = np.array(lengths)
 
@@ -744,6 +828,7 @@ class PastisPM(object):
         self.multiscale_reform = (epsilon is not None)
         self.epsilon = epsilon
         self.epsilon_bounds = epsilon_bounds
+        self.epsilon_coord_descent = epsilon_coord_descent
         self.alpha_init = alpha_init
         self.max_alpha_loop = max_alpha_loop
         self.max_iter = max_iter
@@ -755,10 +840,21 @@ class PastisPM(object):
         self.mixture_coefs = mixture_coefs
         self.verbose = verbose
 
-        self.X_ = None
-        self.alpha_ = None
-        self.beta_ = None
+        # FIXME this is obviously temporary...
+        self.max_epsilon_loop = max_alpha_loop
+        self.epsilon_factr = alpha_factr
+
+        # TODO update this on the main branch too...?
+        self.X_ = self.init_X
+        if self.alpha is not None:
+            self.alpha_ = self.alpha
+        else:
+            self.alpha_ = self.alpha_init
+        self.beta_ = [c.beta for c in self.counts if c.sum() != 0]
+        self.epsilon_ = self.epsilon
         self.obj_ = None
+        self.alpha_obj_ = None  # TODO update this on the main branch too
+        self.epsilon_obj_ = None
         self.converged_ = None
         self.history_ = None
         self.struct_ = None
@@ -775,7 +871,7 @@ class PastisPM(object):
             lengths=self.lengths, bias=self.bias,
             multiscale_factor=self.multiscale_factor,
             multiscale_variances=self.multiscale_variances,
-            epsilon=self.epsilon,
+            epsilon=self.epsilon_,
             mixture_coefs=self.mixture_coefs,
             reorienter=self.reorienter, verbose=verbose)
         if update_counts:
@@ -783,11 +879,11 @@ class PastisPM(object):
                 counts=self.counts, beta=new_beta)
         return list(new_beta.values())
 
-    def _fit_structure(self, alpha_loop=None):
+    def _fit_structure(self, alpha_loop=0):
         """Fit structure to counts data, given current alpha.
         """
 
-        self.X_, self.obj_, self.converged_, history_ = estimate_X(
+        self.X_, self.obj_, self.converged_, self.history_ = estimate_X(  # TODO check self.history_
             counts=self.counts,
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
@@ -796,7 +892,7 @@ class PastisPM(object):
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
             multiscale_variances=self.multiscale_variances,
-            epsilon=self.epsilon,
+            epsilon=self.epsilon_,
             epsilon_bounds=self.epsilon_bounds,
             max_iter=self.max_iter,
             factr=self.factr,
@@ -807,20 +903,20 @@ class PastisPM(object):
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose)
 
-        if len(history_) > 1:
-            if self.history_ is None:
-                self.history_ = history_
-            else:
-                for k, v in history_.items():
-                    self.history_[k].extend(v)
+        # if len(history_) > 1:
+        #     if self.history_ is None:
+        #         self.history_ = history_
+        #     else:
+        #         for k, v in history_.items():
+        #             self.history_[k].extend(v)
 
-    def _fit_alpha(self, alpha_loop=None):
+    def _fit_alpha(self, alpha_loop=0):
         """Fit alpha to counts data, given current structure.
         """
 
         from .estimate_alpha_beta import estimate_alpha
 
-        self.alpha_, self.alpha_obj_, self.converged_, history_ = estimate_alpha(
+        self.alpha_, self.alpha_obj_, self.converged_, self.history_ = estimate_alpha(  # TODO check self.history_
             counts=self.counts,
             X=self.X_.flatten(),
             alpha_init=self.alpha_,
@@ -829,7 +925,7 @@ class PastisPM(object):
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
             multiscale_variances=self.multiscale_variances,
-            epsilon=self.epsilon,
+            epsilon=self.epsilon_,
             random_state=None,
             max_iter=self.max_iter,
             factr=self.factr,
@@ -840,15 +936,205 @@ class PastisPM(object):
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose)
 
-        if len(history_) > 1:
-            if self.history_ is None:
-                self.history_ = history_
-            else:
-                for k, v in history_.items():
-                    self.history_[k].extend(v)
+        # if len(history_) > 1:
+        #     if self.history_ is None:
+        #         self.history_ = history_
+        #     else:
+        #         for k, v in history_.items():
+        #             self.history_[k].extend(v)
+
+    def _fit_epsilon(self, inferring_epsilon, alpha_loop=0, epsilon_loop=0):
+        """Fit structure/epsilon to counts, given current structure/epsilon.
+        """
+        from .estimate_epsilon import estimate_epsilon
+
+        if inferring_epsilon:
+            init_X = self.epsilon_
+            epsilon = None
+            structures = self.X_.flatten()
+        else:
+            init_X = self.X_.flatten()
+            epsilon = self.epsilon_
+            structures = None
+
+        new_X_, self.epsilon_obj_, self.converged_, self.history_ = estimate_epsilon(  # TODO check self.history_
+            counts=self.counts,
+            init_X=init_X,
+            alpha=self.alpha_,
+            lengths=self.lengths,
+            bias=self.bias,
+            constraints=self.constraints,
+            multiscale_factor=self.multiscale_factor,
+            multiscale_variances=self.multiscale_variances,
+            epsilon=epsilon,
+            structures=structures,
+            epsilon_bounds=self.epsilon_bounds,
+            max_iter=self.max_iter,
+            factr=self.factr,
+            pgtol=self.pgtol,
+            callback=self.callback,
+            alpha_loop=alpha_loop,
+            epsilon_loop=epsilon_loop,
+            reorienter=self.reorienter,
+            mixture_coefs=self.mixture_coefs,
+            verbose=self.verbose)
+
+        if inferring_epsilon:
+            self.epsilon_ = new_X_[0]
+        else:
+            self.X_ = new_X_
+
+        # if len(history_) > 1:
+        #     if self.history_ is None:
+        #         self.history_ = history_
+        #     else:
+        #         for k, v in history_.items():
+        #             self.history_[k].extend(v)
+
+    def _fit_naive_multiscale(self, alpha_loop=0):
+        """Fit structure to counts data, given current alpha. TODO
+        """
+
+        if self.multiscale_factor == 1:
+            return False
+
+        if self.epsilon is None and (self.multiscale_variances is None or self.multiscale_variances == 0):
+            return False
+
+        if not self.multiscale_reform:
+            return False
+
+        _print_code_header(
+            "Inferring with naive multiscale", max_length=50, blank_lines=1)
+
+        self.X_, self.obj_, self.converged_, self.history_ = estimate_X(  # TODO check self.history_
+            counts=self.counts,
+            init_X=self.X_.flatten(),
+            alpha=self.alpha_,
+            lengths=self.lengths,
+            bias=self.bias,
+            constraints=self.constraints,
+            multiscale_factor=self.multiscale_factor,
+            multiscale_variances=None,
+            epsilon=None,
+            epsilon_bounds=None,
+            max_iter=self.max_iter,
+            factr=self.factr,
+            pgtol=self.pgtol,
+            callback=self.callback,
+            alpha_loop=alpha_loop,
+            epsilon_loop=-1,
+            reorienter=self.reorienter,
+            mixture_coefs=self.mixture_coefs,
+            verbose=self.verbose)
+
+        return True
+
+    def _fit_struct_alpha_jointly(self, time_start, infer_structure_first=True):
+        """Jointly fit structure & alpha to counts data.
+        """
+        if self.alpha is not None:
+            self._fit_structure()
+            return
+
+        if infer_structure_first:
+            _print_code_header([
+                "Jointly inferring structure & alpha",
+                f"Inferring STRUCTURE #0, initial alpha={self.alpha_init:.3g}"],
+                max_length=50)
+            self._fit_structure(alpha_loop=0)
+            if not self.converged_:
+                return
+
+        prev_alpha_obj = None
+        for alpha_loop in range(1, self.max_alpha_loop + 1):
+            time_current = str(
+                timedelta(seconds=round(timer() - time_start)))
+            _print_code_header([
+                f"Jointly inferring structure & alpha",
+                f"Inferring ALPHA #{alpha_loop},"
+                f" total time={time_current}"], max_length=50)
+            self._fit_alpha(alpha_loop=alpha_loop)
+            self.beta_ = self._infer_beta()
+            if not self.converged_:
+                break
+            time_current = str(
+                timedelta(seconds=round(timer() - time_start)))
+            _print_code_header([
+                f"Jointly inferring structure & alpha",
+                f"Inferring STRUCTURE #{alpha_loop},"
+                f" total time={time_current}"], max_length=50)
+            self._fit_structure(alpha_loop=alpha_loop)
+            if not self.converged_:
+                break
+            if _convergence_criteria(
+                    f_k=prev_alpha_obj, f_kplus1=self.alpha_obj_,
+                    factr=self.alpha_factr):
+                break
+            prev_alpha_obj = self.alpha_obj_
+
+    def _fit_struct_epsilon_jointly(self, time_start, alpha_loop=0,
+                                    infer_structure_first=True):
+        """Jointly fit structure & epsilon to counts data.
+        """
+
+        only_infer_epsilon_once = True
+        if only_infer_epsilon_once:
+            self._fit_epsilon(
+                inferring_epsilon=True, alpha_loop=alpha_loop,
+                epsilon_loop=1)
+            return
+
+        fit_naive_multiscale = False
+        #fit_naive_multiscale = self._fit_naive_multiscale()
+
+        if not self.multiscale_reform or not self.epsilon_coord_descent:
+            self._fit_structure()
+            return
+
+        if infer_structure_first and not fit_naive_multiscale:
+            _print_code_header([
+                "Jointly inferring structure & epsilon",
+                f"Inferring STRUCTURE #0, initial epsilon={self.epsilon:.3g}"],
+                max_length=50)
+            self._fit_epsilon(
+                inferring_epsilon=False, alpha_loop=alpha_loop, epsilon_loop=0)
+            if not self.converged_:
+                return
+
+        prev_epsilon_obj = None
+        for epsilon_loop in range(1, self.max_epsilon_loop + 1):
+            time_current = str(
+                timedelta(seconds=round(timer() - time_start)))
+            _print_code_header([
+                f"Jointly inferring structure & epsilon",
+                f"Inferring EPSILON #{epsilon_loop},"
+                f" total time={time_current}"], max_length=50)
+            self._fit_epsilon(
+                inferring_epsilon=True, alpha_loop=alpha_loop,
+                epsilon_loop=epsilon_loop)
+            #self.beta_ = self._infer_beta()
+            if not self.converged_:
+                break
+            time_current = str(
+                timedelta(seconds=round(timer() - time_start)))
+            _print_code_header([
+                f"Jointly inferring structure & epsilon",
+                f"Inferring STRUCTURE #{epsilon_loop},"
+                f" total time={time_current}"], max_length=50)
+            self._fit_epsilon(
+                inferring_epsilon=False, alpha_loop=alpha_loop,
+                epsilon_loop=epsilon_loop)
+            if not self.converged_:
+                break
+            if _convergence_criteria(
+                    f_k=prev_epsilon_obj, f_kplus1=self.epsilon_obj_,
+                    factr=self.epsilon_factr):
+                break
+            prev_epsilon_obj = self.epsilon_obj_
 
     def fit(self):
-        """Fit structure to counts data, optionally estimate alpha.
+        """Fit structure to counts data, optionally estimate alpha & epsilon.
 
         Returns
         -------
@@ -864,12 +1150,6 @@ class PastisPM(object):
                 multiscale_factor=self.multiscale_factor,
                 multiscale_reform=self.multiscale_reform)]
 
-        self.X_ = self.init_X
-        if self.alpha is not None:
-            self.alpha_ = self.alpha
-        else:
-            self.alpha_ = self.alpha_init
-        self.beta_ = [c.beta for c in self.counts if c.sum() != 0]
         if any([b is None for b in self.beta_]):
             if all([b is None for b in self.beta_]):
                 self.beta_ = self._infer_beta()
@@ -879,47 +1159,17 @@ class PastisPM(object):
         # Infer structure
         self.history_ = None
         time_start = timer()
-        if self.alpha is not None:
-            self._fit_structure()
-        else:
-            print("JOINTLY INFERRING STRUCTURE + ALPHA: inferring structure,"
-                  " with initial guess of alpha=%.3g"
-                  % self.alpha_init, flush=True)
-            self._fit_structure(alpha_loop=0)
-            prev_alpha_obj = None
-            if self.converged_:
-                for alpha_loop in range(1, self.max_alpha_loop + 1):
-                    time_current = str(
-                        timedelta(seconds=round(timer() - time_start)))
-                    print("JOINTLY INFERRING STRUCTURE + ALPHA (#%d):"
-                          " inferring alpha, total elapsed time=%s" %
-                          (alpha_loop, time_current), flush=True)
-                    self._fit_alpha(alpha_loop=alpha_loop)
-                    self.beta_ = self._infer_beta()
-                    if not self.converged_:
-                        break
-                    time_current = str(
-                        timedelta(seconds=round(timer() - time_start)))
-                    print("JOINTLY INFERRING STRUCTURE + ALPHA (#%d): inferring"
-                          " structure, total elapsed time=%s" %
-                          (alpha_loop, time_current), flush=True)
-                    self._fit_structure(alpha_loop=alpha_loop)
-                    if not self.converged_:
-                        break
-                    if _convergence_criteria(
-                            f_k=prev_alpha_obj, f_kplus1=self.alpha_obj_,
-                            factr=self.alpha_factr):
-                        break
-                    prev_alpha_obj = self.alpha_obj_
+        #self._fit_naive_multiscale()
+        self._fit_struct_epsilon_jointly(time_start)
+        #self._fit_struct_alpha_jointly(time_start)  # FIXME duh, temporary
         time_current = str(timedelta(seconds=round(timer() - time_start)))
         print("OPTIMIZATION AT %dX RESOLUTION COMPLETE, TOTAL ELAPSED TIME=%s" %
               (self.multiscale_factor, time_current), flush=True)
 
-        if self.multiscale_reform:
+        if self.multiscale_reform and not self.epsilon_coord_descent:
             self.epsilon_ = self.X_[-1]
             X_ = self.X_[:-1]
         else:
-            self.epsilon_ = None
             X_ = self.X_
 
         if self.reorienter.reorient:

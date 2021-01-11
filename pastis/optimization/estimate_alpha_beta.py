@@ -322,7 +322,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
         alpha_init = (- random_state.randint(1, 100) + random_state.rand(1))[0]
 
     if verbose:
-        print('=' * 30, flush=True)
+        #print('=' * 30, flush=True)
         print('\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\n Machine'
               ' precision = %.4g\n' % np.finfo(np.float).eps, flush=True)
 
@@ -365,12 +365,12 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
     converged = d['warnflag'] == 0
 
     if verbose:
+        print(f'INIT ALPHA: {alpha_init:.3g},  FINAL ALPHA: {alpha:.3g}',
+              flush=True)
         if converged:
-            print('CONVERGED\n\n', flush=True)
+            print('CONVERGED\n', flush=True)
         else:
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
-            print(d['task'].decode('utf8') + '\n\n', flush=True)
-        print('INIT ALPHA: %.3g, FINAL ALPHA: %.3g' %
-              (alpha_init, alpha), flush=True)
+            print(d['task'].decode('utf8') + '\n', flush=True)
 
     return float(alpha), obj, converged, history

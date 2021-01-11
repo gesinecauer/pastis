@@ -881,18 +881,18 @@ class SparseCountsMatrix(CountsMatrix):
             lengths_counts = lengths
         else:
             lengths_counts = lengths_lowres
-        counts = counts.copy()
-        if sparse.issparse(counts):
-            counts = counts.toarray()
-        self.input_sum = np.nansum(counts)
-        counts[np.isnan(counts)] = 0
-        if np.array_equal(counts[~np.isnan(counts)],
-                          counts[~np.isnan(counts)].round()):
-            counts = counts.astype(
-                sparse.sputils.get_index_dtype(maxval=counts.max()))
-        self._counts = sparse.coo_matrix(counts)
+        _counts = counts.copy()
+        if sparse.issparse(_counts):
+            _counts = _counts.toarray()
+        self.input_sum = np.nansum(_counts)
+        _counts[np.isnan(_counts)] = 0
+        if np.array_equal(_counts[~np.isnan(_counts)],
+                          _counts[~np.isnan(_counts)].round()):
+            _counts = _counts.astype(
+                sparse.sputils.get_index_dtype(maxval=_counts.max()))
+        self._counts = sparse.coo_matrix(_counts)
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(counts.shape) / (lengths_counts.sum() * ploidy)]
+            sum(_counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = self.ambiguity
         self.beta = beta
         self.weight = (1. if weight is None else weight)
@@ -912,6 +912,14 @@ class SparseCountsMatrix(CountsMatrix):
             self._counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform)
+
+        # self.data_lowres = decrease_counts_res(
+        #     self._counts, multiscale_factor=multiscale_factor, lengths=lengths,
+        #     ploidy=ploidy).data
+        # if multiscale_factor != 1:
+        #     print(np.array_equal(self.data_lowres, self.data_grouped.sum(axis=0)))
+        #     exit(0)  # TODO delete me
+
         self.row_lowres, self.col_lowres = indices
         self.row3d, self.col3d = indices3d
 
@@ -936,6 +944,7 @@ class SparseCountsMatrix(CountsMatrix):
         return self._counts.shape
 
     def toarray(self):
+        # TODO this array should really have NaNs in it...
         return self._counts.toarray()
 
     def tocoo(self):

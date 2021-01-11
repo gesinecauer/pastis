@@ -174,6 +174,7 @@ class Callback(object):
 
         self.opt_type = None
         self.alpha_loop = None
+        self.epsilon_loop = None
         self.epoch = -1
         self.time = '0:00:00.0'
         self.structures = None
@@ -241,6 +242,7 @@ class Callback(object):
                 alpha = ','.join(map(str, self.alpha))
             to_log = [('iter', self.epoch), ('alpha', alpha),
                       ('alpha_loop', self.alpha_loop),
+                      ('epsilon_loop', self.epsilon_loop),
                       ('opt_type', self.opt_type),
                       ('multiscale_factor', self.multiscale_factor),
                       ('seconds', self.seconds),
@@ -256,7 +258,8 @@ class Callback(object):
                 else:
                     self.history[k] = [v]
 
-    def on_training_begin(self, opt_type=None, alpha_loop=None):
+    def on_training_begin(self, opt_type=None, alpha_loop=None,
+                          epsilon_loop=None):
         """Functionality to add to the beginning of optimization.
 
         This method will be called at the beginning of the optimization
@@ -277,6 +280,7 @@ class Callback(object):
         else:
             self.opt_type = opt_type
         self.alpha_loop = alpha_loop
+        self.epsilon_loop = epsilon_loop
         self.epoch = -1
         self.seconds = 0
         self.time = '0:00:00.0'
