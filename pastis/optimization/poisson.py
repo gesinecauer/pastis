@@ -96,7 +96,11 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     epsilon_sq = ag_np.square(epsilon)
     alpha_sq = ag_np.square(alpha)
 
-    taylor = False  # FIXME
+    assume_epsilon_small = False
+    taylor_theta = True  # FIXME (obj errors if False)
+    taylor_k = False  # FIXME (obj errors if True)
+    mu_is_theta_k = True  # FIXME (obj errors if False)
+    mu = ag_np.zeros((1, counts.nnz_lowres))
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
     lambda_intensity = ag_np.zeros(counts.nnz_lowres)
@@ -104,35 +108,65 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
         dis_sq = ag_np.square(dis)
-        dis_alpha = ag_np.power(dis, alpha)
-        if counts.ambiguity == 'ua':
-            theta_tmp1 = alpha_sq * epsilon_sq * dis_alpha / dis_sq
-            theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq / dis_sq
-            k_tmp1 = dis_sq / alpha_sq / epsilon_sq
-            if taylor: k_tmp2 = 1 + 3 * alpha * epsilon_sq / dis_sq
-            else: k_tmp2 = 1 + 1.5 * alpha * epsilon_sq / dis_sq
+        if assume_epsilon_small:
+            dis_alpha = ag_np.power(dis, alpha)
+            if counts.ambiguity == 'ua':
+                mu_tmp = 1 + 1.5 * alpha * epsilon_sq / dis_sq
+                theta_tmp1 = alpha_sq * epsilon_sq * dis_alpha / dis_sq
+                if taylor_theta:
+                    theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq / dis_sq
+                else:
+                    theta_tmp2 = 1 / mu_tmp
+                k_tmp1 = dis_sq / alpha_sq / epsilon_sq
+                if taylor_k:
+                    k_tmp2 = 1 + 3 * alpha * epsilon_sq / dis_sq
+                else:
+                    k_tmp2 = ag_np.square(mu_tmp)
+            else:
+                raise ValueError("lol.")
+                sum_dis_2alpha_neg2 = _pois_sum(
+                    ag_np.power(dis, 2 * alpha - 2), counts.nnz_lowres)
+                sum_dis_alpha = _pois_sum(dis_alpha, counts.nnz_lowres)
+                sum_dis_alpha_neg2 = _pois_sum(
+                    dis_alpha / dis_sq, counts.nnz_lowres)
+                mu_tmp = 1 + 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
+                theta_tmp1 = alpha_sq * epsilon_sq * sum_dis_2alpha_neg2 / sum_dis_alpha
+                if taylor_theta:
+                    theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
+                else:
+                    theta_tmp2 = 1 / mu_tmp
+                k_tmp1 = ag_np.square(sum_dis_alpha) / alpha_sq / epsilon_sq / sum_dis_2alpha_neg2
+                if taylor_k:
+                    k_tmp2 = 1 + 3 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
+                else:
+                    k_tmp2 = ag_np.square(mu_tmp)
+            theta = theta + mix_coef * counts.beta * theta_tmp1 * theta_tmp2
+            k = k + mix_coef * k_tmp1 * k_tmp2
+            mu = mu + mix_coef * counts.beta * dis_alpha * mu_tmp
         else:
-            raise ValueError("lol.")
-            sum_dis_2alpha_neg2 = _pois_sum(
-                ag_np.power(dis, 2 * alpha - 2), counts.nnz_lowres)
-            sum_dis_alpha = _pois_sum(dis_alpha, counts.nnz_lowres)
-            sum_dis_alpha_neg2 = _pois_sum(
-                dis_alpha / dis_sq, counts.nnz_lowres)
-            theta_tmp1 = alpha_sq * epsilon_sq * sum_dis_2alpha_neg2 / sum_dis_alpha
-            theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
-            k_tmp1 = ag_np.square(sum_dis_alpha) / alpha_sq / epsilon_sq / sum_dis_2alpha_neg2
-            if taylor: k_tmp2 = 1 + 3 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
-            else: k_tmp2 = 1 + 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
-        theta = theta + mix_coef * counts.beta * theta_tmp1 * theta_tmp2
-        if taylor: k = k + mix_coef * k_tmp1 * k_tmp2
-        else: k = k + mix_coef * k_tmp1 * ag_np.square(k_tmp2)
-        #
+            gamma_tmp = dis_sq + 3 * epsilon_sq
+            gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
+            gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
+                4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
+            theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
+            k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
+            mu = mu + mix_coef * counts.beta * gamma_mean
+        # below is just for lambda_intensity, can remove
         tmp1 = ag_np.power(dis, alpha)
         tmp = tmp1.reshape(-1, counts.nnz_lowres).sum(axis=0)
         lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
             bias, ploidy) * counts.beta * tmp
 
-    mu = theta * k
+    if assume_epsilon_small and mu_is_theta_k:
+        mu = theta * k
+
+    # if type(theta).__name__ != 'ArrayBox' and not np.allclose(theta * k, mu) and counts.type != 'zero':
+    #     from topsy.utils.misc import printvars  # FIXME
+    #     print(f"\nθk != μ for ε={epsilon}")
+    #     printvars({
+    #         # 'θ': theta, 'k': k,
+    #         'θk': theta * k, 'μ': mu, 'λ': lambda_intensity,
+    #         'θk-μ': theta * k - mu})
 
     if epsilon < 1e-10:
         obj_pois_mu = (num_highres_per_lowres_bins * mu).sum() - (
@@ -249,16 +283,17 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         else:
             printvars({
                 'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'λ': lambda_intensity, 'μ': mu,
-                'ag_np.log(μ)': ag_np.log(mu),
-                'ag_np.log1p(θ)': ag_np.log1p(theta),
-                'obj_tmp1': obj_tmp1, 'obj_tmp2': obj_tmp2,
-                'obj_tmp3': obj_tmp3, 'obj_tmp4': obj_tmp4,
-                'obj_tmp5': obj_tmp5})
+                'ln(μ)': ag_np.log(mu),
+                'ln(1+θ)': ag_np.log1p(theta),
+                'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
+                'tmp3': obj_tmp3, 'tmp4': obj_tmp4,
+                'tmp5': obj_tmp5})
         raise ValueError(
             f"Poisson component of objective function for {counts.name}"
             f" is {- obj}.")
 
-    return counts.weight * (- obj)
+    #return counts.weight * (- obj) # FIXME FIXME FIXME
+    return counts.weight * (- obj - (counts.data_grouped.sum(axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()) # FIXME FIXME FIXME
 
 
 def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
@@ -453,7 +488,8 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     obj = obj_poisson_sum + sum(obj_constraints.values())
 
     if return_extras:
-        obj_logs = {**obj_poisson, **obj_constraints, **{'obj': obj, 'obj_poisson': obj_poisson_sum}}
+        obj_logs = {**obj_poisson, **obj_constraints,
+                    **{'obj': obj, 'obj_poisson': obj_poisson_sum}}
         return obj, obj_logs, structures, alpha
     else:
         return obj
@@ -1078,6 +1114,11 @@ class PastisPM(object):
         """Jointly fit structure & epsilon to counts data.
         """
 
+        # if self.multiscale_reform and self.verbose:
+        #     print(f"Epsilon init = {self.epsilon:.3g}, bounds = ["
+        #           f"{self.epsilon_bounds[0]:.3g},"
+        #           f" {self.epsilon_bounds[1]:.3g}]", flush=True)
+
         only_infer_epsilon_once = True
         if only_infer_epsilon_once:
             self._fit_epsilon(
@@ -1113,7 +1154,6 @@ class PastisPM(object):
             self._fit_epsilon(
                 inferring_epsilon=True, alpha_loop=alpha_loop,
                 epsilon_loop=epsilon_loop)
-            #self.beta_ = self._infer_beta()
             if not self.converged_:
                 break
             time_current = str(
