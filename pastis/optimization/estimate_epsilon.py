@@ -6,10 +6,9 @@ from .poisson import objective
 
 
 def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
-                      bias=None, constraints=None,
-                      reorienter=None, multiscale_factor=1, multiscale_variances=None,
-                      mixture_coefs=None, return_extras=False,
-                      inferring_alpha=False):
+                      bias=None, constraints=None, reorienter=None,
+                      multiscale_factor=1, mixture_coefs=None,
+                      return_extras=False):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -61,8 +60,7 @@ def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
     return objective(
         my_struct, counts, alpha=alpha, lengths=lengths, bias=bias,
         constraints=constraints, reorienter=reorienter,
-        multiscale_factor=multiscale_factor,
-        multiscale_variances=multiscale_variances,
+        multiscale_factor=multiscale_factor, multiscale_variances=None,
         multiscale_reform=True, mixture_coefs=mixture_coefs,
         return_extras=return_extras, inferring_alpha=True, epsilon=my_epsilon)
 
