@@ -79,11 +79,9 @@ def _pois_sum(arr, nnz):
 
 
 def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
-                           bias=None, multiscale_factor=1, mixture_coefs=None):
+                           bias=None, multiscale_factor=1, mixture_coefs=None, assume_epsilon_small=False):
     """Computes the multiscale objective function for a given counts matrix.
     """
-
-    #epsilon = 1e-50 # FIXME
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
@@ -96,10 +94,13 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     epsilon_sq = ag_np.square(epsilon)
     alpha_sq = ag_np.square(alpha)
 
-    assume_epsilon_small = False
-    taylor_theta = True  # FIXME (obj errors if False)
-    taylor_k = False  # FIXME (obj errors if True)
-    mu_is_theta_k = True  # FIXME (obj errors if False)
+    # assume_epsilon_small = False
+    # if assume_epsilon_small: # FIXME3
+    #     print('assume_epsilon_small !!')
+    taylor_theta = True  # FIXME True (obj errors if False)
+    taylor_k = False  # FIXME False (obj errors if True)
+    mu_is_theta_k = True  # FIXME True (obj errors if False)
+
     mu = ag_np.zeros((1, counts.nnz_lowres))
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
@@ -148,6 +149,9 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
             gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
                 4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
+            if counts.ambiguity != 'ua':
+                gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
+                gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
             theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
             k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
             mu = mu + mix_coef * counts.beta * gamma_mean
@@ -159,14 +163,13 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
 
     if assume_epsilon_small and mu_is_theta_k:
         mu = theta * k
-
-    # if type(theta).__name__ != 'ArrayBox' and not np.allclose(theta * k, mu) and counts.type != 'zero':
-    #     from topsy.utils.misc import printvars  # FIXME
-    #     print(f"\nθk != μ for ε={epsilon}")
-    #     printvars({
-    #         # 'θ': theta, 'k': k,
-    #         'θk': theta * k, 'μ': mu, 'λ': lambda_intensity,
-    #         'θk-μ': theta * k - mu})
+    elif type(theta).__name__ != 'ArrayBox' and not np.allclose(theta * k, mu): # and counts.type != 'zero':
+        from topsy.utils.misc import printvars  # FIXME
+        print(f"θk != μ for ε={epsilon}  ({counts.type})")
+        # printvars({
+        #     # 'θ': theta, 'k': k,
+        #     'θk': theta * k, 'μ': mu, 'λ': lambda_intensity,
+        #     'θk-μ': theta * k - mu})
 
     if epsilon < 1e-10:
         obj_pois_mu = (num_highres_per_lowres_bins * mu).sum() - (
@@ -274,7 +277,11 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
 
         exit(0)
 
-    if ag_np.isnan(obj) or ag_np.isinf(obj):
+    #if ag_np.isnan(obj) or ag_np.isinf(obj): # FIXME3
+    #print(f" * * * * *    {counts.type}   obj={obj:.2g}   μ={mu.mean():.2g}   ln(μ)={ag_np.log(mu).mean():.2g}   ln(1+θ)={ag_np.log1p(theta).mean():.2g}")
+
+    # if ag_np.isnan(obj) or ag_np.isinf(obj): # FIXME3
+    if False: # FIXME3
         from topsy.utils.misc import printvars  # FIXME
         if counts.type == 'zero':
             printvars({
@@ -288,12 +295,31 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                 'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
                 'tmp3': obj_tmp3, 'tmp4': obj_tmp4,
                 'tmp5': obj_tmp5})
-        raise ValueError(
-            f"Poisson component of objective function for {counts.name}"
-            f" is {- obj}.")
+        print(f"obj={-obj}")
+        # FIXME3
+        # raise ValueError(
+        #     f"Poisson component of objective function for {counts.name}"
+        #     f" is {- obj}.")
 
-    #return counts.weight * (- obj) # FIXME FIXME FIXME
-    return counts.weight * (- obj - (counts.data_grouped.sum(axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()) # FIXME FIXME FIXME
+    # FIXME FIXME FIXME below is temporary
+    obj += (counts.data_grouped.sum(axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()
+
+    if type(theta).__name__ != 'ArrayBox' and False:
+        if isinstance(epsilon, np.ndarray):
+            print(f"       {counts.type}   ε={epsilon[0]:.3g}    obj={(-obj):.3g}", flush=True)
+        else:
+            print(f"       {counts.type}   ε={epsilon:.3g}    obj={(-obj):.3g}", flush=True)
+        from topsy.utils.misc import printvars  # FIXME
+        printvars({
+            'structures': structures[0], 'counts': counts.data_grouped,
+            'counts arr': counts.toarray(), 'alpha': alpha, 'lengths': lengths,
+            'bias': bias, 'multiscale_factor': multiscale_factor,
+            'mixture_coefs': mixture_coefs})
+        print('\n')
+        if counts.type == 'zero':
+            print('=====================================\n')
+
+    return counts.weight * (- obj)
 
 
 def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
@@ -378,7 +404,7 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
 
 def _obj_single(structures, counts, alpha, lengths, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                mixture_coefs=None):
+                mixture_coefs=None, assume_epsilon_small=False):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -405,14 +431,14 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
         obj = _multiscale_reform_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs)
+            mixture_coefs=mixture_coefs, assume_epsilon_small=assume_epsilon_small)
         return obj
 
 
 def objective(X, counts, alpha, lengths, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False, epsilon=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+              inferring_alpha=False, epsilon=None, assume_epsilon_small=False):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -470,6 +496,11 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
         structures = [structures]
     if mixture_coefs is None:
         mixture_coefs = [1.] * len(structures)
+    # nbeads = decrease_lengths_res(lengths, multiscale_factor).sum() * ploidy
+    # if structures[0].shape[0] != nbeads:  # TODO fix this & add to main brainch
+    #     raise ValueError(
+    #         f"Expected {nbeads} beads in structure at multiscale_factor="
+    #         f"{multiscale_factor}, found {structures[0].shape[0]} beads")
 
     if constraints is None:
         obj_constraints = {}
@@ -483,7 +514,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
             structures=structures, counts=counts_maps, alpha=alpha,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
-            mixture_coefs=mixture_coefs)
+            mixture_coefs=mixture_coefs, assume_epsilon_small=assume_epsilon_small)
     obj_poisson_sum = sum(obj_poisson.values())
     obj = obj_poisson_sum + sum(obj_constraints.values())
 
@@ -1001,7 +1032,6 @@ class PastisPM(object):
             bias=self.bias,
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
-            multiscale_variances=self.multiscale_variances,
             epsilon=epsilon,
             structures=structures,
             epsilon_bounds=self.epsilon_bounds,
@@ -1114,23 +1144,23 @@ class PastisPM(object):
         """Jointly fit structure & epsilon to counts data.
         """
 
-        # if self.multiscale_reform and self.verbose:
-        #     print(f"Epsilon init = {self.epsilon:.3g}, bounds = ["
-        #           f"{self.epsilon_bounds[0]:.3g},"
-        #           f" {self.epsilon_bounds[1]:.3g}]", flush=True)
-
-        only_infer_epsilon_once = True
-        if only_infer_epsilon_once:
-            self._fit_epsilon(
-                inferring_epsilon=True, alpha_loop=alpha_loop,
-                epsilon_loop=1)
-            return
+        if self.multiscale_reform and self.verbose:
+            print(f"Epsilon init = {self.epsilon:.3g}, bounds = ["
+                  f"{self.epsilon_bounds[0]:.3g},"
+                  f" {self.epsilon_bounds[1]:.3g}]", flush=True)
 
         fit_naive_multiscale = False
         #fit_naive_multiscale = self._fit_naive_multiscale()
 
-        if not self.multiscale_reform or not self.epsilon_coord_descent:
+        if not (self.multiscale_reform and self.epsilon_coord_descent):
             self._fit_structure()
+            return
+
+        only_infer_epsilon_once = False
+        if only_infer_epsilon_once:
+            self._fit_epsilon(
+                inferring_epsilon=True, alpha_loop=alpha_loop,
+                epsilon_loop=1)
             return
 
         if infer_structure_first and not fit_naive_multiscale:
