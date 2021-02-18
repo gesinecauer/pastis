@@ -79,7 +79,7 @@ def _pois_sum(arr, nnz):
 
 
 def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
-                           bias=None, multiscale_factor=1, mixture_coefs=None, assume_epsilon_small=False):
+                           bias=None, multiscale_factor=1, mixture_coefs=None):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
@@ -94,13 +94,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     epsilon_sq = ag_np.square(epsilon)
     alpha_sq = ag_np.square(alpha)
 
-    # assume_epsilon_small = False
-    # if assume_epsilon_small: # FIXME3
-    #     print('assume_epsilon_small !!')
-    taylor_theta = True  # FIXME True (obj errors if False)
-    taylor_k = False  # FIXME False (obj errors if True)
-    mu_is_theta_k = True  # FIXME True (obj errors if False)
-
     mu = ag_np.zeros((1, counts.nnz_lowres))
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
@@ -109,82 +102,17 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
         dis_sq = ag_np.square(dis)
-        if assume_epsilon_small:
-            dis_alpha = ag_np.power(dis, alpha)
-            if counts.ambiguity == 'ua':
-                mu_tmp = 1 + 1.5 * alpha * epsilon_sq / dis_sq
-                theta_tmp1 = alpha_sq * epsilon_sq * dis_alpha / dis_sq
-                if taylor_theta:
-                    theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq / dis_sq
-                else:
-                    theta_tmp2 = 1 / mu_tmp
-                k_tmp1 = dis_sq / alpha_sq / epsilon_sq
-                if taylor_k:
-                    k_tmp2 = 1 + 3 * alpha * epsilon_sq / dis_sq
-                else:
-                    k_tmp2 = ag_np.square(mu_tmp)
-            else:
-                raise ValueError("lol.")
-                sum_dis_2alpha_neg2 = _pois_sum(
-                    ag_np.power(dis, 2 * alpha - 2), counts.nnz_lowres)
-                sum_dis_alpha = _pois_sum(dis_alpha, counts.nnz_lowres)
-                sum_dis_alpha_neg2 = _pois_sum(
-                    dis_alpha / dis_sq, counts.nnz_lowres)
-                mu_tmp = 1 + 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
-                theta_tmp1 = alpha_sq * epsilon_sq * sum_dis_2alpha_neg2 / sum_dis_alpha
-                if taylor_theta:
-                    theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
-                else:
-                    theta_tmp2 = 1 / mu_tmp
-                k_tmp1 = ag_np.square(sum_dis_alpha) / alpha_sq / epsilon_sq / sum_dis_2alpha_neg2
-                if taylor_k:
-                    k_tmp2 = 1 + 3 * alpha * epsilon_sq * sum_dis_alpha_neg2 / sum_dis_alpha
-                else:
-                    k_tmp2 = ag_np.square(mu_tmp)
-            theta = theta + mix_coef * counts.beta * theta_tmp1 * theta_tmp2
-            k = k + mix_coef * k_tmp1 * k_tmp2
-            mu = mu + mix_coef * counts.beta * dis_alpha * mu_tmp
-        else:
-            gamma_tmp = dis_sq + 3 * epsilon_sq
-            gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
-            gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
-                4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
-            if counts.ambiguity != 'ua':
-                gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
-                gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
-            theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
-            k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
-            mu = mu + mix_coef * counts.beta * gamma_mean
-        # below is just for lambda_intensity, can remove
-        tmp1 = ag_np.power(dis, alpha)
-        tmp = tmp1.reshape(-1, counts.nnz_lowres).sum(axis=0)
-        lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
-            bias, ploidy) * counts.beta * tmp
 
-    if assume_epsilon_small and mu_is_theta_k:
-        mu = theta * k
-    elif type(theta).__name__ != 'ArrayBox' and not np.allclose(theta * k, mu): # and counts.type != 'zero':
-        from topsy.utils.misc import printvars  # FIXME
-        print(f"θk != μ for ε={epsilon}  ({counts.type})")
-        # printvars({
-        #     # 'θ': theta, 'k': k,
-        #     'θk': theta * k, 'μ': mu, 'λ': lambda_intensity,
-        #     'θk-μ': theta * k - mu})
-
-    if epsilon < 1e-10:
-        obj_pois_mu = (num_highres_per_lowres_bins * mu).sum() - (
-            counts.data_grouped.sum(axis=0) * ag_np.log(mu)).sum()
-
-        if ag_np.isnan(obj_pois_mu) or ag_np.isinf(obj_pois_mu):
-            from topsy.utils.misc import printvars  # FIXME
-            printvars({
-                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'λ': lambda_intensity, 'μ': mu,
-                'ag_np.log(μ)': ag_np.log(mu)})
-            raise ValueError(
-                f"Poisson component of objective function for {counts.name}"
-                f" is {obj_pois_mu}.")
-
-        return counts.weight * obj_pois_mu
+        gamma_tmp = dis_sq + 3 * epsilon_sq
+        gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
+        gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
+            4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
+        if counts.ambiguity != 'ua':
+            gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
+            gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
+        theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
+        k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
+        mu = mu + mix_coef * counts.beta * gamma_mean
 
     eps = 1e-6
     check_instability = False
@@ -212,76 +140,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                 counts.data_grouped / k)).sum(axis=0)
         obj = ag_np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5)
 
-    from topsy.utils.misc import printvars
-    if False and type(theta).__name__ != 'ArrayBox' and counts.type != 'zero' and np.allclose(epsilon, 1e-50):
-        obj_tmp4_theta0 = ag_np.sum(counts.data_grouped, axis=0) * (
-            ag_np.log(mu) - 0 - 1)
-        nxny_mu = num_highres_per_lowres_bins * mu
-        obj_pois = (num_highres_per_lowres_bins * lambda_intensity).sum() - (counts.data_grouped.sum(axis=0) * ag_np.log(
-            lambda_intensity)).sum()
-        obj_pois_mu = nxny_mu.sum() - (counts.data_grouped.sum(axis=0) * ag_np.log(mu)).sum()
-
-        log1p_theta = ag_np.log1p(theta)
-        obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
-
-        actual_pois_obj = _poisson_obj_single(
-            structures=structures, counts=counts, alpha=alpha, lengths=lengths,
-            bias=bias, multiscale_factor=multiscale_factor,
-            multiscale_variances=None, epsilon=0, mixture_coefs=mixture_coefs)
-        print()
-        printvars({
-            'obj_pois λ': -obj_pois,
-            'obj_pois μ': -obj_pois_mu,
-            'fix2_pois μ': - (nxny_mu.sum() - (counts.data_grouped * ag_np.log(mu)).sum()),  # fixes: nxny_mu (doesn't matter if you sum(axis=0) counts data grouped before mult by ln(μ))
-            '(∑cij)lnμ -nxnyμ': (counts.data_grouped * ag_np.log(mu)).sum() - \
-            nxny_mu.sum(),
-            'obj': obj,
-            'actual pois obj': -actual_pois_obj})  # 'obj + ∑cij': obj + counts.data_grouped.sum())
-        print()
-        A_ideal_mu = counts.data_grouped.sum(axis=0) * (ag_np.log(mu) - 1)
-        BpC_ideal_mu = -num_highres_per_lowres_bins * mu
-        D_ideal = counts.data_grouped.sum(axis=0)
-        printvars({
-            'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'nxny': num_highres_per_lowres_bins,
-            'λ': lambda_intensity, 'μ': mu, 'nxny μ': nxny_mu,
-            '': np.array([]),
-            # 'A': obj_tmp4,
-            # 'A θ=0': obj_tmp4_theta0,
-            # 'A ideal μ': A_ideal_mu,
-            # 'A ideal λ': counts.data_grouped.sum(axis=0) * (ag_np.log(lambda_intensity) - 1),
-            # 'B+C': obj_tmp1 + obj_tmp2 + obj_tmp3,
-            # 'B+C ideal μ': BpC_ideal_mu,
-            # 'B+C ideal λ': -num_highres_per_lowres_bins * lambda_intensity,
-            # 'tmp2+tmp3': obj_tmp2 + obj_tmp3,
-            # '    ': np.array([]),
-            # '-λ': -lambda_intensity,
-            # '-μ': -mu,
-            # '-k * log(1+θ)': -k * log1p_theta,
-            # 'D+E': obj_tmp5,
-            # 'D+E ideal': D_ideal,
-            # ' ': np.array([]),
-            'obj_tmp1': obj_tmp1, 'obj_tmp2': obj_tmp2, 'obj_tmp3': obj_tmp3,
-            'obj_tmp4': obj_tmp4, 'obj_tmp5': obj_tmp5,
-            'ag_np.log(μ)': ag_np.log(mu), 'ag_np.log1p(θ)': ag_np.log1p(theta),
-
-            '   ': np.array([]),
-            '(∑cij)lnμ -nxnyμ': (counts.data_grouped.sum(axis=0) * ag_np.log(mu)) - \
-            (num_highres_per_lowres_bins * mu),
-            'obj': (obj_tmp1 + obj_tmp2 + obj_tmp3) + obj_tmp4 + obj_tmp5,
-            'obj ideal': A_ideal_mu + BpC_ideal_mu + D_ideal,
-            '     ': np.array([]),
-            '∑cij': counts.data_grouped.sum(axis=0)})
-
-        print()
-        print(type(counts.data_grouped), counts.data_grouped.dtype)
-
-        exit(0)
-
-    #if ag_np.isnan(obj) or ag_np.isinf(obj): # FIXME3
-    #print(f" * * * * *    {counts.type}   obj={obj:.2g}   μ={mu.mean():.2g}   ln(μ)={ag_np.log(mu).mean():.2g}   ln(1+θ)={ag_np.log1p(theta).mean():.2g}")
-
-    # if ag_np.isnan(obj) or ag_np.isinf(obj): # FIXME3
-    if False: # FIXME3
+    if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars  # FIXME
         if counts.type == 'zero':
             printvars({
@@ -295,29 +154,12 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                 'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
                 'tmp3': obj_tmp3, 'tmp4': obj_tmp4,
                 'tmp5': obj_tmp5})
-        print(f"obj={-obj}")
-        # FIXME3
-        # raise ValueError(
-        #     f"Poisson component of objective function for {counts.name}"
-        #     f" is {- obj}.")
+        raise ValueError(
+            f"Poisson component of objective function for {counts.name}"
+            f" is {- obj}.")
 
     # FIXME FIXME FIXME below is temporary
     obj += (counts.data_grouped.sum(axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()
-
-    if type(theta).__name__ != 'ArrayBox' and False:
-        if isinstance(epsilon, np.ndarray):
-            print(f"       {counts.type}   ε={epsilon[0]:.3g}    obj={(-obj):.3g}", flush=True)
-        else:
-            print(f"       {counts.type}   ε={epsilon:.3g}    obj={(-obj):.3g}", flush=True)
-        from topsy.utils.misc import printvars  # FIXME
-        printvars({
-            'structures': structures[0], 'counts': counts.data_grouped,
-            'counts arr': counts.toarray(), 'alpha': alpha, 'lengths': lengths,
-            'bias': bias, 'multiscale_factor': multiscale_factor,
-            'mixture_coefs': mixture_coefs})
-        print('\n')
-        if counts.type == 'zero':
-            print('=====================================\n')
 
     return counts.weight * (- obj)
 
