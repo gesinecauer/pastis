@@ -31,10 +31,6 @@ def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    multiscale_variances : float or array of float, optional
-        For multiscale optimization at low resolution, the variances of each
-        group of full-resolution beads corresponding to a single low-resolution
-        bead.
 
     Returns
     -------
@@ -68,7 +64,6 @@ def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
 def objective_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
                               bias=None, constraints=None,
                               reorienter=None, multiscale_factor=1,
-                              multiscale_variances=None,
                               mixture_coefs=None, callback=None):
     """Objective function wrapper to match scipy.optimize's interface.
     """
@@ -83,7 +78,6 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilo
         structures=structures, epsilon=epsilon,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
-        multiscale_variances=multiscale_variances,
         mixture_coefs=mixture_coefs, return_extras=True)
 
     if callback is not None:
@@ -108,7 +102,6 @@ gradient_epsilon = grad(objective_epsilon)
 def fprime_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
                            bias=None, constraints=None,
                            reorienter=None, multiscale_factor=1,
-                           multiscale_variances=None,
                            mixture_coefs=None, callback=None):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
@@ -127,7 +120,6 @@ def fprime_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=N
             structures=structures, epsilon=epsilon,
             constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs)).flatten()
     if epsilon is None and new_grad[-1] == 0:
         print(f"* * * * EPSILON GRADIENT IS 0 * * * *")
@@ -137,7 +129,7 @@ def fprime_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=N
 
 def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
                      constraints=None, epsilon=None, structures=None,
-                     multiscale_factor=1, multiscale_variances=None,
+                     multiscale_factor=1,
                      epsilon_bounds=None, max_iter=30000, max_fun=None,
                      factr=10000000., pgtol=1e-05, callback=None,
                      alpha_loop=None, epsilon_loop=None,
@@ -166,10 +158,6 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    multiscale_variances : float or array_like of float, optional
-        For multiscale optimization at low resolution, the variances of each
-        group of full-resolution beads corresponding to a single low-resolution
-        bead.
     max_iter : int, optional
         Maximum number of iterations per optimization.
     max_fun : int, optional
@@ -237,7 +225,6 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
             structures=structures, epsilon=epsilon,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs, callback=callback)
     else:
         obj = np.nan
@@ -264,8 +251,7 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
             factr=factr,
             bounds=bounds,
             args=(counts, alpha, lengths, structures, epsilon, bias, constraints,
-                  reorienter, multiscale_factor, multiscale_variances,
-                  mixture_coefs, callback))
+                  reorienter, multiscale_factor, mixture_coefs, callback))
         X, obj, d = results
         converged = d['warnflag'] == 0
 
