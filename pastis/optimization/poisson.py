@@ -246,7 +246,7 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
 
 def _obj_single(structures, counts, alpha, lengths, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                mixture_coefs=None, assume_epsilon_small=False):
+                mixture_coefs=None):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -273,14 +273,14 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
         obj = _multiscale_reform_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs, assume_epsilon_small=assume_epsilon_small)
+            mixture_coefs=mixture_coefs)
         return obj
 
 
 def objective(X, counts, alpha, lengths, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False, epsilon=None, assume_epsilon_small=False):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+              inferring_alpha=False, epsilon=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -356,7 +356,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
             structures=structures, counts=counts_maps, alpha=alpha,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
-            mixture_coefs=mixture_coefs, assume_epsilon_small=assume_epsilon_small)
+            mixture_coefs=mixture_coefs)
     obj_poisson_sum = sum(obj_poisson.values())
     obj = obj_poisson_sum + sum(obj_constraints.values())
 
