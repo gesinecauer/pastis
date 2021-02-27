@@ -617,6 +617,13 @@ def get_multiscale_epsilon_from_dis(structures, lengths, multiscale_factor,
     structures = _format_structures(structures, lengths=lengths,
                                     ploidy=ploidy, mixture_coefs=mixture_coefs)
 
+    # # Reduce structure resolution
+    # lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    # structures_lowres = [
+    #     decrease_struct_res(
+    #         x, multiscale_factor=multiscale_factor,
+    #         lengths=lengths) for x in structures]
+
     std_all = []
     for struct in structures:
         mask = np.invert(np.isnan(structures[0][:, 0]))
@@ -648,7 +655,7 @@ def _get_epsilon_from_dis(dis_grouped, alpha=-3.):
     """
 
     from scipy.stats import norm, mode
-    import plotille
+    #import plotille  # FIXME
     #from topsy.datasets.samples_generator import get_diff_coords_from_euc_dis
 
     # dis_grouped.shape = (multiscale_factor ** 2, nbins)
@@ -713,6 +720,13 @@ def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
     ploidy = int(struct_length / lengths.sum())
     structures = _format_structures(structures, lengths=lengths,
                                     ploidy=ploidy, mixture_coefs=mixture_coefs)
+
+    # Reduce structure resolution
+    # lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    # structures_lowres = [
+    #     decrease_struct_res(
+    #         x, multiscale_factor=multiscale_factor,
+    #         lengths=lengths) for x in structures]
 
     std_per_bead = []
     std_all = []
