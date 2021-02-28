@@ -645,11 +645,13 @@ def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
             fullres_torm=fullres_torm_maps, weight=input_weight_maps,
             multiscale_reform=multiscale_reform))
         if not exclude_zeros and (counts_maps == 0).sum() > 0:
-            counts_reformatted.append(ZeroCountsMatrix(
+            zero_counts_maps = ZeroCountsMatrix(
                 counts_maps, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor, beta=beta_maps,
                 fullres_torm=fullres_torm_maps, weight=input_weight_maps,
-                multiscale_reform=multiscale_reform))
+                multiscale_reform=multiscale_reform)
+            if zero_counts_maps.nnz_lowres > 0:
+                counts_reformatted.append(zero_counts_maps)
 
     return counts_reformatted
 
@@ -1092,7 +1094,8 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         self.data_grouped, indices, indices3d, self.nnz_lowres = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform, dummy=True)
+            multiscale_reform=multiscale_reform, dummy=True,
+            exclude_all_highres_zeros=True)
         self.row_lowres, self.col_lowres = indices
         self.row3d, self.col3d = indices3d
 

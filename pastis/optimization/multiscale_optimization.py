@@ -268,7 +268,8 @@ def _process_multiscale_counts(counts, multiscale_factor, lengths, ploidy):
 
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
-                             multiscale_reform=False, dummy=False):
+                             multiscale_reform=False, dummy=False,
+                             exclude_all_highres_zeros=False):
     """TODO
     """
 
@@ -285,12 +286,23 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
             counts_coo, multiscale_factor=multiscale_factor,
             lengths=lengths, ploidy=ploidy)
-        indices = counts_lowres.row, counts_lowres.col
-        indices3d = _counts_indices_to_3d_indices(
-            counts_lowres, n=lengths_lowres.sum(), ploidy=ploidy)
+
         data_grouped = counts_coo.toarray()[rows_grp, cols_grp].reshape(
             multiscale_factor ** 2, -1)
         data_grouped = data_grouped[:, data_grouped.sum(axis=0) != 0]
+
+        if exclude_all_highres_zeros:
+            min_gt0 = data_grouped.min(axis=0) != 0
+            data_grouped = data_grouped[:, min_gt0]
+            counts_lowres = sparse.coo_matrix((
+                counts_lowres.data[min_gt0],
+                (counts_lowres.row[min_gt0], counts_lowres.col[min_gt0])),
+                shape=counts_lowres.shape)
+
+        indices = counts_lowres.row, counts_lowres.col
+        indices3d = _counts_indices_to_3d_indices(
+            counts_lowres, n=lengths_lowres.sum(), ploidy=ploidy)
+
         if dummy:
             data_grouped = np.zeros_like(data_grouped)
         nnz_lowres = counts_lowres.nnz
