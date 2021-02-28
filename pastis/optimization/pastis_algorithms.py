@@ -20,6 +20,7 @@ from .constraints import Constraints, distance_between_homologs
 from .constraints import _mean_interhomolog_counts
 from .poisson import PastisPM
 from .multiscale_optimization import get_multiscale_variances_from_struct
+from .multiscale_optimization import get_multiscale_epsilon_from_struct
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from ..io.read import load_data
@@ -270,7 +271,17 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
     else:
         multiscale_variances = None
 
-    # from .multiscale_optimization import get_multiscale_epsilon_from_struct
+    # MULTISCALE EPSILON
+    if multiscale_factor != 1 and multiscale_reform:
+        if struct_true is not None and verbose:
+            epsilon_true = get_multiscale_epsilon_from_struct(
+                struct_true, lengths=lengths,
+                multiscale_factor=multiscale_factor, verbose=False)
+            print(f"True epsilon ({multiscale_factor}x):"
+                  f" {epsilon_true:.3g}", flush=True)
+        else:
+            epsilon_true = None
+
     # from .multiscale_optimization import get_multiscale_epsilon_from_dis
     # print('\n\n\n')
     # for tmp_factor in (8, 4, 2):
@@ -344,9 +355,9 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
             bias=bias, multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, reorienter=reorienter,
             mixture_coefs=mixture_coefs, verbose=verbose)
-        if multiscale_reform and multiscale_factor != 1:  # FIXME
+        if multiscale_reform and multiscale_factor != 1:
             epsilon = random_state.rand()
-            epsilon = 1.2
+            #epsilon = epsilon_true   # FIXME
         else:
             epsilon = None
 
@@ -549,7 +560,6 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     (counts, alpha_, beta_, bias, torm, fullres_torm_for_multiscale,
         struct_init, constraints, callback, multiscale_variances,
         epsilon) = prepped
-    print(f"EPSILON!!!!! {epsilon}")
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
         # COMPUTE OBJECTIVE ON TRUE STRUCTURE
@@ -594,9 +604,10 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         struct_[torm] = np.nan
 
         # SAVE RESULTS
+        # TODO add conv_desc to main branch
         infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
                      'seed': seed, 'converged': pm.converged_,
-                     'epsilon': pm.epsilon_}
+                     'epsilon': pm.epsilon_, 'conv_desc': pm.conv_desc_}
         if hsc_lambda > 0:
             infer_var['hsc_r'] = hsc_r
         if mhs_lambda > 0:
@@ -611,7 +622,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                         f.write(
                             '%s\t%s\n' % (k, ' '.join(['%g' % x for x in v])))
                     elif v is not None:
-                        f.write('%s\t%g\n' % (k, v))
+                        f.write(f'{k}\t{v}\n')
             if reorienter is not None and reorienter.reorient:
                 np.savetxt(orient_file, pm.orientation_)
             if pm.converged_:
@@ -674,8 +685,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             else:
                 X_ = struct_
             alpha_ = infer_var['alpha']
-            epsilon_max = infer_var['epsilon']
-            exit(0)  # FIXME
+            # epsilon_max = infer_var['epsilon']  # FIXME??
+            # exit(0)  # FIXME
         return struct_, infer_var
 
 
