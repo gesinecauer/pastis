@@ -97,19 +97,61 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     mu = ag_np.zeros((1, counts.nnz_lowres))
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
-    lambda_intensity = ag_np.zeros(counts.nnz_lowres)
     for struct, mix_coef in zip(structures, mixture_coefs):
-        dis = ag_np.sqrt((ag_np.square(
-            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
-        dis_sq = ag_np.square(dis)
+        if counts.ambiguity == 'ua':
+            dis = ag_np.sqrt((ag_np.square(
+                struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+            dis_sq = ag_np.square(dis)
+            gamma_tmp = dis_sq + 3 * epsilon_sq
+            gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
+            gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
+                4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
+            # theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
+            # k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
+            # mu = mu + mix_coef * counts.beta * gamma_mean
+        else:
+            diff2 = ag_np.square(
+                struct[counts.row3d] - struct[counts.col3d])
+            dis2 = ag_np.sqrt(ag_np.sum(diff2, axis=1))
+            dis2 = dis2.reshape(-1, counts.nnz_lowres)
 
-        gamma_tmp = dis_sq + 3 * epsilon_sq
-        gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
-        gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
-            4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
-        if counts.ambiguity != 'ua':
-            gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
-            gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
+            diff = (struct[counts.row3d] - struct[counts.col3d]).reshape(
+                -1, counts.nnz_lowres, 3)
+            dis = ag_np.sqrt(ag_np.sum(ag_np.square(diff), axis=2))
+
+            dis_sq = ag_np.square(dis)
+            gamma_tmp = dis_sq + 3 * epsilon_sq
+
+            gamma_mean_tmp = ag_np.power(gamma_tmp, alpha / 2)
+            gamma_mean = ag_np.sum(gamma_mean_tmp, axis=0)
+
+            gamma_var_tmp1 = gamma_mean_tmp / gamma_tmp
+            gamma_var_tmp1_sq = ag_np.square(gamma_var_tmp1)
+            gamma_var_tmp2 = 4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4)
+            gamma_var = (alpha_sq / 4) * ag_np.sum(
+                gamma_var_tmp1_sq * gamma_var_tmp2, axis=0)
+
+            for i in range(diff.shape[0]):
+                for j in range(i + 1, diff.shape[0]):
+                    gamma_cov_tmp1 = gamma_var_tmp1[i] * gamma_var_tmp1[j]
+                    diff_dotprod = ag_np.sum(diff[i] * diff[j], axis=1)
+                    gamma_cov_tmp2 = 4 * epsilon_sq * diff_dotprod + 6 * ag_np.power(epsilon, 4)
+                    gamma_var += alpha_sq / 2 * gamma_cov_tmp1 * gamma_cov_tmp2
+
+            # print(np.array_equal(dis2, dis))
+            # print('diff', diff.shape)
+            # print('dis', dis.shape)
+            # print('gamma_mean_tmp', gamma_mean_tmp.shape)
+            # print('gamma_var_tmp1', gamma_var_tmp1.shape)
+            # print('diff[0]', diff[0].shape)
+            # print('diff_dotprod', diff_dotprod.shape)
+            # print('gamma_mean', gamma_mean.shape)
+            # print('gamma_var', gamma_var.shape)
+
+        # if counts.ambiguity != 'ua':
+        #     gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
+        #     gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
+
         theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
         k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
         mu = mu + mix_coef * counts.beta * gamma_mean
@@ -225,7 +267,11 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
         # print(obj0); print(obj1); print(obj2); exit(0)
     else:
         obj = lambda_intensity.sum() - (
-            counts.data_grouped * ag_np.log(lambda_intensity / num_highres_per_lowres_bins)).sum()
+            counts.data_grouped * ag_np.log(lambda_intensity)).sum()
+        # obj = lambda_intensity.sum() - (
+        #     counts.data_grouped * ag_np.log(lambda_intensity / num_highres_per_lowres_bins)).sum()
+        # # FIXME FIXME FIXME below is temporary
+        # obj -= (counts.data_grouped.sum(axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()
 
     #print('\n', obj, '\n'); exit(0) # TODO
 
@@ -613,9 +659,11 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
             print('CONVERGED\n', flush=True)
         else:
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
-            print(d['task'].decode('utf8') + '\n', flush=True)
+            print(conv_desc + '\n', flush=True)
 
-    return X, obj, converged, history
+    # TODO add conv_desc to main branch
+    conv_desc = d['task'].decode('utf8')
+    return X, obj, converged, history, conv_desc
 
 
 def _convergence_criteria(f_k, f_kplus1, factr=10000000.):
@@ -792,7 +840,7 @@ class PastisPM(object):
         """Fit structure to counts data, given current alpha.
         """
 
-        self.X_, self.obj_, self.converged_, self.history_ = estimate_X(  # TODO check self.history_
+        self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(  # TODO check self.history_
             counts=self.counts,
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
@@ -825,7 +873,7 @@ class PastisPM(object):
 
         from .estimate_alpha_beta import estimate_alpha
 
-        self.alpha_, self.alpha_obj_, self.converged_, self.history_ = estimate_alpha(  # TODO check self.history_
+        self.alpha_, self.alpha_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_alpha(  # TODO check self.history_
             counts=self.counts,
             X=self.X_.flatten(),
             alpha_init=self.alpha_,
@@ -866,7 +914,7 @@ class PastisPM(object):
             epsilon = self.epsilon_
             structures = None
 
-        new_X_, self.epsilon_obj_, self.converged_, self.history_ = estimate_epsilon(  # TODO check self.history_
+        new_X_, self.epsilon_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_epsilon(  # TODO check self.history_
             counts=self.counts,
             init_X=init_X,
             alpha=self.alpha_,
@@ -915,7 +963,7 @@ class PastisPM(object):
         _print_code_header(
             "Inferring with naive multiscale", max_length=50, blank_lines=1)
 
-        self.X_, self.obj_, self.converged_, self.history_ = estimate_X(  # TODO check self.history_
+        self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(  # TODO check self.history_
             counts=self.counts,
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
