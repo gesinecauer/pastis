@@ -79,9 +79,12 @@ def _pois_sum(arr, nnz):
 
 
 def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
-                           bias=None, multiscale_factor=1, mixture_coefs=None):
+                           bias=None, multiscale_factor=1, mixture_coefs=None,
+                           obj_type=None):
     """Computes the multiscale objective function for a given counts matrix.
     """
+
+    use_covar = obj_type is not None and obj_type == 'covar' and counts.ambiguity != 'ua'
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
@@ -98,7 +101,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
     for struct, mix_coef in zip(structures, mixture_coefs):
-        if counts.ambiguity == 'ua':
+        if counts.ambiguity == 'ua' or not use_covar:
             dis = ag_np.sqrt((ag_np.square(
                 struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
             dis_sq = ag_np.square(dis)
@@ -106,9 +109,10 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
             gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
                 4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
-            # theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
-            # k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
-            # mu = mu + mix_coef * counts.beta * gamma_mean
+
+            if counts.ambiguity != 'ua':
+                gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
+                gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
         else:
             diff2 = ag_np.square(
                 struct[counts.row3d] - struct[counts.col3d])
@@ -147,10 +151,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             # print('diff_dotprod', diff_dotprod.shape)
             # print('gamma_mean', gamma_mean.shape)
             # print('gamma_var', gamma_var.shape)
-
-        # if counts.ambiguity != 'ua':
-        #     gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
-        #     gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
 
         theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
         k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
@@ -292,7 +292,7 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
 
 def _obj_single(structures, counts, alpha, lengths, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                mixture_coefs=None):
+                mixture_coefs=None, obj_type=None):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -319,14 +319,14 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
         obj = _multiscale_reform_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs)
+            mixture_coefs=mixture_coefs, obj_type=obj_type)
         return obj
 
 
 def objective(X, counts, alpha, lengths, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False, epsilon=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+              inferring_alpha=False, epsilon=None, obj_type=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -402,7 +402,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
             structures=structures, counts=counts_maps, alpha=alpha,
             lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
-            mixture_coefs=mixture_coefs)
+            mixture_coefs=mixture_coefs, obj_type=obj_type)
     obj_poisson_sum = sum(obj_poisson.values())
     obj = obj_poisson_sum + sum(obj_constraints.values())
 
@@ -447,7 +447,7 @@ def _format_X(X, reorienter=None, multiscale_reform=False, mixture_coefs=None, e
 def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
                       reorienter=None, multiscale_factor=1,
                       multiscale_variances=None, multiscale_reform=False,
-                      mixture_coefs=None, callback=None):
+                      mixture_coefs=None, callback=None, obj_type=None):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
@@ -462,7 +462,7 @@ def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, return_extras=True)
+        mixture_coefs=mixture_coefs, return_extras=True, obj_type=obj_type)
 
     if callback is not None:
         if multiscale_reform:
@@ -487,7 +487,7 @@ gradient = grad(objective)
 def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
                    reorienter=None, multiscale_factor=1,
                    multiscale_variances=None, multiscale_reform=False,
-                   mixture_coefs=None, callback=None):
+                   mixture_coefs=None, callback=None, obj_type=None):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
@@ -506,7 +506,7 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform,
-            mixture_coefs=mixture_coefs)).flatten()
+            mixture_coefs=mixture_coefs, obj_type=obj_type)).flatten()
     if multiscale_reform and new_grad[-1] == 0:
         print(f"* * * * EPSILON GRADIENT IS 0 * * * *       (mean |other grad| = {np.mean(np.abs(new_grad[:-1]))})", flush=True)
     # elif multiscale_reform:
@@ -519,7 +519,7 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
                multiscale_factor=1, multiscale_variances=None,
                epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
                factr=10000000., pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
-               reorienter=None, mixture_coefs=None, verbose=True):
+               reorienter=None, mixture_coefs=None, verbose=True, obj_type=None):
     """Estimates a 3D structure, given current alpha.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -613,7 +613,7 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
-            callback=callback)
+            callback=callback, obj_type=obj_type)
     else:
         obj = np.nan
 
@@ -642,7 +642,7 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
             bounds=bounds,
             args=(counts, alpha, lengths, bias, constraints,
                   reorienter, multiscale_factor, multiscale_variances,
-                  multiscale_reform, mixture_coefs, callback))
+                  multiscale_reform, mixture_coefs, callback, obj_type))
         X, obj, d = results
         converged = d['warnflag'] == 0
 
@@ -748,7 +748,8 @@ class PastisPM(object):
                  multiscale_variances=None, epsilon=None, epsilon_bounds=None,
                  epsilon_coord_descent=False, alpha_init=-3., max_alpha_loop=20, max_iter=30000,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
-                 reorienter=None, null=False, mixture_coefs=None, verbose=True):
+                 reorienter=None, null=False, mixture_coefs=None, verbose=True,
+                 obj_type=None):
 
         from .piecewise_whole_genome import ChromReorienter
 
@@ -796,6 +797,8 @@ class PastisPM(object):
         self.null = null
         self.mixture_coefs = mixture_coefs
         self.verbose = verbose
+
+        self.obj_type = obj_type
 
         # FIXME this is obviously temporary...
         self.max_epsilon_loop = max_alpha_loop
@@ -858,7 +861,8 @@ class PastisPM(object):
             alpha_loop=alpha_loop,
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
-            verbose=self.verbose)
+            verbose=self.verbose,
+            obj_type=self.obj_type)
 
         # if len(history_) > 1:
         #     if self.history_ is None:
@@ -891,7 +895,8 @@ class PastisPM(object):
             alpha_loop=alpha_loop,
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
-            verbose=self.verbose)
+            verbose=self.verbose,
+            obj_type=self.obj_type)
 
         # if len(history_) > 1:
         #     if self.history_ is None:
@@ -933,7 +938,8 @@ class PastisPM(object):
             epsilon_loop=epsilon_loop,
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
-            verbose=self.verbose)
+            verbose=self.verbose,
+            obj_type=self.obj_type)
 
         if inferring_epsilon:
             self.epsilon_ = new_X_[0]
@@ -982,7 +988,8 @@ class PastisPM(object):
             epsilon_loop=-1,
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
-            verbose=self.verbose)
+            verbose=self.verbose,
+            obj_type=self.obj_type)
 
         return True
 
