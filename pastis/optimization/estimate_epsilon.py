@@ -58,7 +58,7 @@ def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_variances=None,
         multiscale_reform=True, mixture_coefs=mixture_coefs,
-        return_extras=return_extras, inferring_alpha=True, epsilon=my_epsilon)
+        return_extras=return_extras, epsilon=my_epsilon)
 
 
 def objective_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
@@ -268,6 +268,8 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
             print('CONVERGED\n', flush=True)
         else:
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
-            print(d['task'].decode('utf8') + '\n', flush=True)
+            print(conv_desc + '\n', flush=True)
 
-    return X, obj, converged, history
+    # TODO add conv_desc to main branch
+    conv_desc = d['task'].decode('utf8')
+    return X, obj, converged, history, conv_desc
