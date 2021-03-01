@@ -200,11 +200,18 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         from topsy.utils.misc import printvars  # FIXME
         if counts.type == 'zero':
             printvars({
-                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'λ': lambda_intensity, 'μ': mu,
+                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'μ': mu,
+                'mean(ΓRV)': gamma_mean, 'var(ΓRV)': gamma_var,
                 'obj_tmp1': obj_tmp1})
         else:
             printvars({
-                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'λ': lambda_intensity, 'μ': mu,
+                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'μ': mu,
+                'mean(ΓRV)': gamma_mean, 'var(ΓRV)': gamma_var,
+                'c_ij / k': (counts.data_grouped / k),
+                '1 + c_ij / k': (1 + counts.data_grouped / k),
+                '<0  1 + c_ij / k': (1 + counts.data_grouped / k)[(1 + counts.data_grouped / k) < 0],
+                'ln(1 + c_ij / k)': ag_np.log1p(counts.data_grouped / k).sum(axis=0),
+                'tmp_var': tmp_var, 'tmp_var sq': ag_np.square(tmp_var),
                 'ln(μ)': ag_np.log(mu),
                 'ln(1+θ)': ag_np.log1p(theta),
                 'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
