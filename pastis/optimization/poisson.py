@@ -84,7 +84,9 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     """Computes the multiscale objective function for a given counts matrix.
     """
 
-    use_covar = obj_type is not None and obj_type == 'covar' and counts.ambiguity != 'ua'
+    obj_type = [] if obj_type is None else (obj_type if isinstance(obj_type, list) else [obj_type])
+    use_covar = 'covar' in obj_type and counts.ambiguity != 'ua'
+    use_taylor2 = 'taylor2' in obj_type
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
@@ -105,10 +107,22 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             dis = ag_np.sqrt((ag_np.square(
                 struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
             dis_sq = ag_np.square(dis)
-            gamma_tmp = dis_sq + 3 * epsilon_sq
-            gamma_mean = ag_np.power(gamma_tmp, alpha / 2)
-            gamma_var = (alpha_sq / 4) * ag_np.power(gamma_tmp, alpha - 2) * (
-                4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4))
+
+            tmp_mean = dis_sq + 3 * epsilon_sq
+            tmp_var = 4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4)
+
+            gamma_mean_taylor1 = ag_np.power(tmp_mean, alpha / 2)
+            gamma_var_taylor1 = (alpha_sq / 4) * ag_np.power(
+                tmp_mean, alpha - 2) * tmp_var
+
+            if (not use_taylor2):
+                gamma_mean = gamma_mean_taylor1
+                gamma_var = gamma_var_taylor1
+            else:
+                taylor2 = (alpha_sq - 2 * alpha) / 8 * ag_np.power(
+                    tmp_mean, alpha / 2 - 2) * tmp_var
+                gamma_mean = gamma_mean_taylor1 + taylor2
+                gamma_var = gamma_var_taylor1 - ag_np.square(taylor2)
 
             if counts.ambiguity != 'ua':
                 gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
