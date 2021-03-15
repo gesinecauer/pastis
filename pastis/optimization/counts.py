@@ -910,10 +910,11 @@ class SparseCountsMatrix(CountsMatrix):
         else:
             self.highres_per_lowres_bead = None
 
-        self.data_grouped, indices, indices3d, self.nnz_lowres = _group_counts_multiscale(
+        tmp = _group_counts_multiscale(
             self._counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform)
+        self.data_grouped, indices, indices3d, self.nnz_lowres, self.mask = tmp
 
         # self.data_lowres = decrease_counts_res(
         #     self._counts, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -1091,11 +1092,12 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         else:
             self.highres_per_lowres_bead = None
 
-        self.data_grouped, indices, indices3d, self.nnz_lowres = _group_counts_multiscale(
+        tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, dummy=True,
-            exclude_all_highres_zeros=True)
+            exclude_all_highres_empty=True)
+        self.data_grouped, indices, indices3d, self.nnz_lowres, self.mask = tmp
         self.row_lowres, self.col_lowres = indices
         self.row3d, self.col3d = indices3d
 
@@ -1147,9 +1149,10 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         else:
             self.highres_per_lowres_bead = None
 
-        self.data_grouped, indices, indices3d, self.nnz_lowres = _group_counts_multiscale(
+        tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, dummy=True)
+        self.data_grouped, indices, indices3d, self.nnz_lowres, self.mask = tmp
         self.row_lowres, self.col_lowres = indices
         self.row3d, self.col3d = indices3d

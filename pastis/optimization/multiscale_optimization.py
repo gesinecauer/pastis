@@ -269,11 +269,11 @@ def _process_multiscale_counts(counts, multiscale_factor, lengths, ploidy):
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                              multiscale_reform=False, dummy=False,
-                             exclude_all_highres_zeros=False):
+                             exclude_all_highres_empty=False):
     """TODO
     """
 
-    from .counts import _counts_indices_to_3d_indices
+    from .counts import _counts_indices_to_3d_indices, _check_counts_matrix
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
 
@@ -282,16 +282,22 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     else:
         counts_coo = counts.tocoo()
 
+    count_arr = _check_counts_matrix(
+        counts_coo, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
+
     if multiscale_reform and multiscale_factor != 1:
         counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
             counts_coo, multiscale_factor=multiscale_factor,
             lengths=lengths, ploidy=ploidy)
 
-        data_grouped = counts_coo.toarray()[rows_grp, cols_grp].reshape(
+        data_grouped = count_arr[rows_grp, cols_grp].reshape(
             multiscale_factor ** 2, -1)
-        data_grouped = data_grouped[:, data_grouped.sum(axis=0) != 0]
+        data_grouped = data_grouped[:, np.nansum(data_grouped, axis=0) != 0]
 
-        if exclude_all_highres_zeros:
+        if exclude_all_highres_empty:
+            #data_grouped[np.isnan(data_grouped)] = 0  # FIXME remove junk
+            #min_gt0 = np.min(data_grouped, axis=0) != 0
+            #min_gt0 = data_grouped.min(axis=0) != 0
             min_gt0 = data_grouped.min(axis=0) != 0
             data_grouped = data_grouped[:, min_gt0]
             counts_lowres = sparse.coo_matrix((
@@ -299,9 +305,25 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                 (counts_lowres.row[min_gt0], counts_lowres.col[min_gt0])),
                 shape=counts_lowres.shape)
 
+        mask = ~np.isnan(data_grouped)
+        data_grouped[~mask] = 0
+
         indices = counts_lowres.row, counts_lowres.col
         indices3d = _counts_indices_to_3d_indices(
             counts_lowres, n=lengths_lowres.sum(), ploidy=ploidy)
+
+        # # FIXME remove junk
+        # print(exclude_all_highres_empty, dummy)
+        # print('lengths', lengths_lowres)
+        # print('# nan', np.isnan(data_grouped).sum())
+        # rows_countnan = np.isnan(data_grouped).sum(axis=0)
+        # hasnan = rows_countnan != 0
+        # rows_countnan_hasnan = rows_countnan[hasnan]
+        # print('# rows with >0 NaNs', rows_countnan_hasnan.shape[0])
+        # # print(rows_countnan)
+        # # print('\n')
+        # print(np.array(list(zip(counts_lowres.row[hasnan], counts_lowres.col[hasnan], rows_countnan[hasnan]))))
+        # exit(0)
 
         if dummy:
             data_grouped = np.zeros_like(data_grouped)
@@ -311,9 +333,10 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         indices3d = _counts_indices_to_3d_indices(
             counts_coo, n=lengths_lowres.sum(), ploidy=ploidy)
         data_grouped = None
+        mask = None
         nnz_lowres = counts_coo.nnz
 
-    return data_grouped, indices, indices3d, nnz_lowres
+    return data_grouped, indices, indices3d, nnz_lowres, mask
 
 
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
