@@ -1,0 +1,52 @@
+import sys
+import pytest
+import numpy as np
+from numpy.testing import assert_array_almost_equal
+from scipy.special import gammaln as gammaln
+
+pytestmark = pytest.mark.skipif(
+    sys.version_info < (3, 6), reason="Requires python3.6 or higher")
+
+if sys.version_info[0] >= 3:
+    from pastis.optimization.poisson import _stirling, _polyval
+
+
+sterling_coefs = [
+    8.11614167470508450300E-4, -5.95061904284301438324E-4,
+    7.93650340457716943945E-4, -2.77777777730099687205E-3,
+    8.33333333333331927722E-2]
+
+
+def stirling_with_np_polyval(z):
+    z_sq_inv = 1. / (z * z)
+    return np.polyval(sterling_coefs, x=z_sq_inv) / z
+
+
+def gammaln_via_stirling_approx(x, stirling_fxn):
+    LS2PI = np.log(2 * np.pi) / 2
+    return (x - 0.5) * np.log(x) - x + LS2PI + stirling_fxn(x)
+
+
+@pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
+def test_polyval(x):
+    correct_polyval = np.polyval(sterling_coefs, x=x)
+    test_polyval = _polyval(x, coefs=sterling_coefs)
+    assert_array_almost_equal(correct_polyval, test_polyval)
+
+
+@pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
+def test_stirling(x):
+    correct_stirling = stirling_with_np_polyval(x)
+    test_stirling = _stirling(x)
+    assert_array_almost_equal(correct_stirling, test_stirling)
+
+
+@pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
+def test_gammaln(x):
+    correct_gammaln = gammaln(x)
+    my_gammaln = gammaln_via_stirling_approx(
+        x, stirling_fxn=_stirling)
+    np_gammaln = gammaln_via_stirling_approx(
+        x, stirling_fxn=stirling_with_np_polyval)
+    assert_array_almost_equal(correct_gammaln, my_gammaln)
+    assert_array_almost_equal(correct_gammaln, np_gammaln)
