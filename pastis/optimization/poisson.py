@@ -39,60 +39,8 @@ def _stirling(z):
     z_sq_inv = 1. / (z * z)
     return _polyval(z_sq_inv, coefs=sterling_coefs) / z
 
-
-# @primitive
-# def _stirling_polyval(z):
-#     """TODO
-#     """
-#     sterling_coefs = [
-#         8.11614167470508450300E-4, -5.95061904284301438324E-4,
-#         7.93650340457716943945E-4, -2.77777777730099687205E-3,
-#         8.33333333333331927722E-2]
-#     z_sq_inv = 1. / (z * z)
-#     return ag_np.polyval(sterling_coefs, z_sq_inv) / z
-
-
-# def _stirling_polyval_deriv(z):
-#     """TODO
-#     """
-#     # FIXME if z >= 1e17 then return 0
-#     sterling_coefs_deriv = [
-#         8.33333333333333333333E-2, -2.10927960927960927961E-2,
-#         7.57575757575757575758E-3, -4.16666666666666666667E-3,
-#         3.96825396825396825397E-3, -8.33333333333333333333E-3,
-#         8.33333333333333333333E-2]
-#     z_sq_inv = 1. / (z * z)
-#     return - ag_np.polyval(sterling_coefs_deriv, z_sq_inv) * z_sq_inv
-
-
-# defvjp(_stirling_polyval, lambda ans, x: lambda g: g * _stirling_polyval_deriv(x))
-
-
 def _masksum(x, mask, axis=None):
     """Sum of masked array (for autograd)"""
-
-    # if axis is None:
-    #     return ag_np.sum(x[~ag_np.isnan(x)])
-    # if isinstance(x, np.ndarray):
-    #     print(type(x[0]), x.dtype)
-    #     return np.nansum(x, axis=axis)
-    # try:
-    #     ag_np.nansum(ag_np.zeros(0))
-    #     return ag_np.nansum(x, axis=axis)
-    #     print('dontcha know'); exit(0)
-    # except NotImplementedError:
-    #     #x = ag_np.array(x, copy=True)
-    #     #x[ag_np.isnan(x)] = 0
-    #     # print(type(x), x.dtype, type(x[0]), ag_np.sum(x))
-    #     #x = ag_np.nan_to_num(x)
-    #     x = ag_np.where(ag_np.isnan(x), 0, x)
-    #     #x = ag_np.where(True, 0., x)
-    #     # print(type(x), x.dtype, type(x[0]), ag_np.sum(x))
-    #     # exit(0)
-    #     print('well ok'); exit(0)
-    #     return ag_np.sum(x, axis=axis)
-    #return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
-    #print(mask.shape, x.shape)
     return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
@@ -113,6 +61,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     use_covar = 'covar' in obj_type and counts.ambiguity != 'ua'
     use_taylor2 = 'taylor2' in obj_type
     use_no0var = 'no0var' in obj_type
+    use_assume = 'assume' in obj_type
     dis_with_neg_var = np.array([])
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
