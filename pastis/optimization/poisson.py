@@ -11,9 +11,6 @@ from datetime import timedelta
 import autograd.numpy as ag_np
 from autograd.builtins import SequenceBox
 from autograd import grad
-from autograd.extend import primitive, defvjp
-from autograd.scipy.special import gammaln as ag_gammaln
-from autograd.scipy.special import gamma as ag_gamma
 from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .constraints import Constraints
@@ -21,9 +18,9 @@ from .callbacks import Callback
 from .utils_poisson import _print_code_header
 
 
-def my_polevl(x, coefs):
-    """TODO
-    """
+def _polyval(x, coefs):
+    """Analagous to np.polyval (which sadly is not differentiable with
+    autograd)"""
     ans = 0
     power = len(coefs) - 1
     for coef in coefs:
@@ -32,43 +29,71 @@ def my_polevl(x, coefs):
     return ans
 
 
-def stirling_polyval_good(z):
-    """TODO
+def _stirling(z):
+    """Computes B_N(z)
     """
     sterling_coefs = [
         8.11614167470508450300E-4, -5.95061904284301438324E-4,
         7.93650340457716943945E-4, -2.77777777730099687205E-3,
         8.33333333333331927722E-2]
     z_sq_inv = 1. / (z * z)
-    return my_polevl(z_sq_inv, coefs=sterling_coefs) / z
+    return _polyval(z_sq_inv, coefs=sterling_coefs) / z
 
 
-@primitive
-def _stirling_polyval(z):
-    """TODO
-    """
-    sterling_coefs = [
-        8.11614167470508450300E-4, -5.95061904284301438324E-4,
-        7.93650340457716943945E-4, -2.77777777730099687205E-3,
-        8.33333333333331927722E-2]
-    z_sq_inv = 1. / (z * z)
-    return ag_np.polyval(sterling_coefs, z_sq_inv) / z
+# @primitive
+# def _stirling_polyval(z):
+#     """TODO
+#     """
+#     sterling_coefs = [
+#         8.11614167470508450300E-4, -5.95061904284301438324E-4,
+#         7.93650340457716943945E-4, -2.77777777730099687205E-3,
+#         8.33333333333331927722E-2]
+#     z_sq_inv = 1. / (z * z)
+#     return ag_np.polyval(sterling_coefs, z_sq_inv) / z
 
 
-def _stirling_polyval_deriv(z):
-    """TODO
-    """
-    # FIXME if z >= 1e17 then return 0
-    sterling_coefs_deriv = [
-        8.33333333333333333333E-2, -2.10927960927960927961E-2,
-        7.57575757575757575758E-3, -4.16666666666666666667E-3,
-        3.96825396825396825397E-3, -8.33333333333333333333E-3,
-        8.33333333333333333333E-2]
-    z_sq_inv = 1. / (z * z)
-    return - ag_np.polyval(sterling_coefs_deriv, z_sq_inv) * z_sq_inv
+# def _stirling_polyval_deriv(z):
+#     """TODO
+#     """
+#     # FIXME if z >= 1e17 then return 0
+#     sterling_coefs_deriv = [
+#         8.33333333333333333333E-2, -2.10927960927960927961E-2,
+#         7.57575757575757575758E-3, -4.16666666666666666667E-3,
+#         3.96825396825396825397E-3, -8.33333333333333333333E-3,
+#         8.33333333333333333333E-2]
+#     z_sq_inv = 1. / (z * z)
+#     return - ag_np.polyval(sterling_coefs_deriv, z_sq_inv) * z_sq_inv
 
 
-defvjp(_stirling_polyval, lambda ans, x: lambda g: g * _stirling_polyval_deriv(x))
+# defvjp(_stirling_polyval, lambda ans, x: lambda g: g * _stirling_polyval_deriv(x))
+
+
+def _masksum(x, mask, axis=None):
+    """Sum of masked array (for autograd)"""
+
+    # if axis is None:
+    #     return ag_np.sum(x[~ag_np.isnan(x)])
+    # if isinstance(x, np.ndarray):
+    #     print(type(x[0]), x.dtype)
+    #     return np.nansum(x, axis=axis)
+    # try:
+    #     ag_np.nansum(ag_np.zeros(0))
+    #     return ag_np.nansum(x, axis=axis)
+    #     print('dontcha know'); exit(0)
+    # except NotImplementedError:
+    #     #x = ag_np.array(x, copy=True)
+    #     #x[ag_np.isnan(x)] = 0
+    #     # print(type(x), x.dtype, type(x[0]), ag_np.sum(x))
+    #     #x = ag_np.nan_to_num(x)
+    #     x = ag_np.where(ag_np.isnan(x), 0, x)
+    #     #x = ag_np.where(True, 0., x)
+    #     # print(type(x), x.dtype, type(x[0]), ag_np.sum(x))
+    #     # exit(0)
+    #     print('well ok'); exit(0)
+    #     return ag_np.sum(x, axis=axis)
+    #return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
+    #print(mask.shape, x.shape)
+    return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
 def _pois_sum(arr, nnz):
@@ -87,6 +112,8 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     obj_type = [] if obj_type is None else (obj_type if isinstance(obj_type, list) else [obj_type])
     use_covar = 'covar' in obj_type and counts.ambiguity != 'ua'
     use_taylor2 = 'taylor2' in obj_type
+    use_no0var = 'no0var' in obj_type
+    dis_with_neg_var = np.array([])
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
@@ -124,9 +151,16 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                 gamma_mean = gamma_mean_taylor1 + taylor2
                 gamma_var = gamma_var_taylor1 - ag_np.square(taylor2)
 
+                if (gamma_var <= 0).sum() > 0:
+                    dis_with_neg_var = dis[gamma_var <= 0]
+
+                gamma_var = ag_np.where(gamma_var > 0, gamma_var, 0.)
+
             if counts.ambiguity != 'ua':
                 gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
                 gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
+        elif use_taylor2:
+            raise NotImplementedError
         else:
             diff2 = ag_np.square(
                 struct[counts.row3d] - struct[counts.col3d])
@@ -167,7 +201,10 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
             # print('gamma_var', gamma_var.shape)
 
         theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
-        k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
+        #k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
+        k = k + mix_coef * (
+            ag_np.square(gamma_mean) / ag_np.where(
+                gamma_var > 0, gamma_var, 1.))  ## NEW
         mu = mu + mix_coef * counts.beta * gamma_mean
 
     eps = 1e-6
@@ -176,25 +213,38 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     log1p_theta = ag_np.log1p(theta)
     obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
     if counts.type == 'zero':
-        obj = ag_np.sum(obj_tmp1)
+        obj_tmp_sum = obj_tmp1
     else:
-        obj_tmp2 = -num_highres_per_lowres_bins * stirling_polyval_good(k)
-        obj_tmp3 = ag_np.sum(stirling_polyval_good(counts.data_grouped + k), axis=0)
-        obj_tmp4 = ag_np.sum(counts.data_grouped, axis=0) * (
+        obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k)
+        obj_tmp3 = _masksum(
+            _stirling(counts.data_grouped + k), mask=counts.mask,
+            axis=0)
+        obj_tmp4 = _masksum(counts.data_grouped, mask=counts.mask, axis=0) * (
             ag_np.log(mu) - log1p_theta - 1)
         if check_instability:
             possible_instability = counts.data_grouped / k < eps
             stable_rows, stable_cols = ag_np.where(~possible_instability)
             stable_counts = counts.data_grouped[stable_rows, stable_cols]
             stable_k = k[:, stable_cols]
-            obj_tmp5 = counts.data_grouped[possible_instability].sum() + (
+            obj_tmp5 = _masksum(
+                counts.data_grouped[possible_instability], mask=counts.mask) + (
                 (stable_counts + stable_k - 0.5) * ag_np.log1p(
-                    stable_counts / stable_k)).sum()
+                    stable_counts / stable_k))
             # FIXME make sure dimensions of obj_tmp5 are correct here (1, -1)
         else:
-            obj_tmp5 = ((counts.data_grouped + k - 0.5) * ag_np.log1p(
-                counts.data_grouped / k)).sum(axis=0)
-        obj = ag_np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5)
+            obj_tmp5 = _masksum(
+                (counts.data_grouped + (k - 0.5)) * ag_np.log1p(
+                    counts.data_grouped / k), mask=counts.mask, axis=0)
+        obj_tmp_sum = obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5
+
+    obj_tmp_sum = ag_np.where(gamma_var > 0, obj_tmp_sum, 0.)  ## NEW
+    obj = ag_np.sum(obj_tmp_sum)
+
+    if not use_no0var:
+        obj_var0 = _masksum(counts.data_grouped * ag_np.log(
+            ag_np.where(gamma_var > 0, 1., mu)), mask=counts.mask) - ag_np.sum(
+            num_highres_per_lowres_bins * ag_np.where(gamma_var > 0, 0., mu))  ## NEW
+        obj = obj + obj_var0
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars  # FIXME
@@ -210,19 +260,24 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                 'c_ij / k': (counts.data_grouped / k),
                 '1 + c_ij / k': (1 + counts.data_grouped / k),
                 '<0  1 + c_ij / k': (1 + counts.data_grouped / k)[(1 + counts.data_grouped / k) < 0],
-                'ln(1 + c_ij / k)': ag_np.log1p(counts.data_grouped / k).sum(axis=0),
+                'ln(1 + c_ij / k)': ag_np.sum(ag_np.log1p(counts.data_grouped / k), axis=0),
+                #'dis @ NaN': dis[np.isnan(obj_tmp_sum)],
+                'dis_with_neg_var': dis_with_neg_var,
                 'tmp_var': tmp_var, 'tmp_var sq': ag_np.square(tmp_var),
                 'ln(μ)': ag_np.log(mu),
                 'ln(1+θ)': ag_np.log1p(theta),
                 'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
                 'tmp3': obj_tmp3, 'tmp4': obj_tmp4,
-                'tmp5': obj_tmp5})
+                'tmp5': obj_tmp5, 'obj': obj_tmp_sum})
         raise ValueError(
             f"Poisson component of objective function for {counts.name}"
             f" is {- obj}.")
 
     # FIXME FIXME FIXME below is temporary
-    obj += (counts.data_grouped.sum(axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()
+    obj_constant = (_masksum(
+        counts.data_grouped, mask=counts.mask, axis=0) * ag_np.log(
+        num_highres_per_lowres_bins)).sum()
+    obj = obj + obj_constant
 
     return counts.weight * (- obj)
 
@@ -287,12 +342,13 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
         #         num_highres_per_lowres_bins)).sum()
         # print(obj0); print(obj1); print(obj2); exit(0)
     else:
-        obj = lambda_intensity.sum() - (
-            counts.data_grouped * ag_np.log(lambda_intensity)).sum()
-        # obj = lambda_intensity.sum() - (
-        #     counts.data_grouped * ag_np.log(lambda_intensity / num_highres_per_lowres_bins)).sum()
+        #print(f'{counts.type}     eps=0')
+        obj = lambda_intensity.sum() - _masksum(
+            counts.data_grouped * ag_np.log(lambda_intensity), mask=counts.mask)
+        # obj = lambda_intensity.sum() - _masksum(
+        #     counts.data_grouped * ag_np.log(lambda_intensity / num_highres_per_lowres_bins))
         # # FIXME FIXME FIXME below is temporary
-        # obj -= (counts.data_grouped.sum(axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()
+        # obj -= (_masksum(counts.data_grouped, axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()
 
     #print('\n', obj, '\n'); exit(0) # TODO
 
