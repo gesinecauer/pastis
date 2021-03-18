@@ -40,19 +40,6 @@ def _stirling(z):
     return _polyval(z_sq_inv, coefs=sterling_coefs) / z
 
 
-LS2PI = np.log(2 * np.pi) / 2
-
-
-# def _gammaln_stirling(x):
-#     """TODO"""
-#     return (x - 0.5) * np.log(x) - x + LS2PI + _stirling(x)
-
-
-# def _gammaln(x):
-#     """TODO"""
-#     return _gammaln_stirling(x + 1) - np.log(x)
-
-
 def _masksum(x, mask, axis=None):
     """Sum of masked array (for autograd)"""
     return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
@@ -178,10 +165,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                     gamma_cov_tmp2 = 4 * epsilon_sq * diff_dotprod + 6 * ag_np.power(epsilon, 4)
                     gamma_var += alpha_sq / 2 * gamma_cov_tmp1 * gamma_cov_tmp2
 
-        # Simple forumulas for k and theta are below:
-        # theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
-        # k = k + mix_coef * (ag_np.square(gamma_mean) / gamma_var)
-
         # Where gamma_var is 0, theta will be 0
         theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
         # Where gamma_var is 0, k will be 1 as a placeholder (true k = inf)
@@ -196,7 +179,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     check_instability = False
 
     log1p_theta = ag_np.log1p(theta)
-    #x k_var0as0 = ag_np.where(gamma_var > 0, k, 0.)
     obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
     if counts.type == 'zero':
         obj_tmp_sum = obj_tmp1
@@ -216,7 +198,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     else:
         obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k)
 
-        #x c_plus_k_var0as0 = ag_np.where(gamma_var > 0, counts.data_grouped + k, 0.)
         obj_tmp3 = _masksum(
             _stirling(counts.data_grouped + k), mask=counts.mask, axis=0)
 
@@ -234,10 +215,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
                     stable_counts / stable_k))
             # FIXME make sure dimensions of obj_tmp5 are correct here (1, -1)
         else:
-            # c_plus_k_minus_half_var0as0 = ag_np.where(
-            #     gamma_var > 0, counts.data_grouped + k - 0.5, 0.)
-            # c_div_k_var0as0 = ag_np.where(
-            #     gamma_var > 0, counts.data_grouped / k, 0.)
             obj_tmp5 = _masksum((counts.data_grouped + k - 0.5) * ag_np.log1p(
                 counts.data_grouped / k), mask=counts.mask, axis=0)
 
