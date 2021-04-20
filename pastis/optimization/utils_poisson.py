@@ -45,6 +45,11 @@ def _load_infer_var(infer_var_file):
     if 'orient' in infer_var:
         infer_var['orient'] = np.array([float(
             r) for r in infer_var['orient'].split()])
+    if 'multiscale_variances' in infer_var:
+        infer_var['multiscale_variances'] = float(
+            infer_var['multiscale_variances'])
+    if 'epsilon' in infer_var:
+        infer_var['epsilon'] = float(infer_var['epsilon'])
     infer_var['alpha'] = float(infer_var['alpha'])
     infer_var['converged'] = strtobool(infer_var['converged'])
     return infer_var

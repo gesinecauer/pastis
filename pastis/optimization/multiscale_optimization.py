@@ -34,6 +34,106 @@ def decrease_lengths_res(lengths, multiscale_factor):
         np.array(lengths).astype(float) / multiscale_factor).astype(int)
 
 
+def increase_struct_res_gaussian(struct, current_multiscale_factor,
+                                 final_multiscale_factor, lengths, std_dev,
+                                 random_state=None):
+    """Estimate a high-resolution structure from a low-resolution structure.
+
+    Increase resolution of a structure by assuming that the difference between
+    each high-resolution bead and it's corresponding low-resolution bead
+    is normally distributed along each of the 3 axes  (with mean = 0 and
+    standard deviation = epsilon/2)
+
+    Parameters
+    ----------
+    struct : array of float
+        3D chromatin structure at the current low resolution.
+    current_multiscale_factor : int
+        Multiscale factor of the current low-resolution structure.
+    multiscale_factor : int
+        Desired multiscale factor of the output (higher-resolution) structure.
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome at FULL resolution
+        (at multiscale_factor of 1).
+    std_dev : float
+        Standard deviation of the normal distributions.
+    seed : int, optional
+        Random seed used when sampling from the normal distributions.
+
+    Returns
+    -------
+    struct_highres : array of float
+        3D chromatin structure that has been updated to match the specified high
+        resolution.
+    """
+
+    if current_multiscale_factor == final_multiscale_factor:
+        return struct
+
+    rescale_by = current_multiscale_factor / final_multiscale_factor
+    if rescale_by != int(rescale_by):
+        raise ValueError(
+            'The factor by which to increase resolution must be an integer. The'
+            f' current multiscale factor is {current_multiscale_factor} and the'
+            f' desired output multiscale factor is {final_multiscale_factor}'
+            f' (ratio of {rescale_by:.3g})')
+
+    if isinstance(struct, str):
+        struct = np.loadtxt(struct)
+    struct = struct.reshape(-1, 3)
+    if isinstance(lengths, str):
+        lengths = load_lengths(lengths)
+
+    lengths = np.array(lengths).astype(int)
+    lengths_current = decrease_lengths_res(
+        lengths=lengths, multiscale_factor=current_multiscale_factor)
+
+    ploidy = struct.shape[0] / lengths_current.sum()
+    if ploidy != 1 and ploidy != 2:
+        raise ValueError("Not consistent with haploid or diploid... struct has"
+                         f" {struct.reshape(-1, 3).shape[0]} beads (and 3 cols)"
+                         f", sum of lengths is {lengths_current.sum()}")
+    ploidy = int(ploidy)
+
+    if random_state is None:
+        random_state = np.random.RandomState(0)
+
+    # Estimate full-resolution structure
+    grouped_indices = _get_struct_indices(
+        ploidy=ploidy, multiscale_factor=current_multiscale_factor,
+        lengths=lengths).reshape(current_multiscale_factor, -1)
+
+    struct_fullres = []
+    for i in range(struct.shape[0]):
+        lowres_bead = struct[i]
+        if np.isnan(lowres_bead[0]):  # Linearly interpolate lowres bead if NaN
+            lowres_bead = np.nanmean(struct[(i - 1):(i + 2)], axis=0)
+        num_highres_beads = np.invert(np.isnan(grouped_indices[:, i])).sum()
+        highres_beads = random_state.normal(
+            lowres_bead, std_dev, (num_highres_beads, 3))
+        struct_fullres.append(highres_beads)
+    struct_fullres = np.concatenate(struct_fullres)
+
+    if final_multiscale_factor == 1:
+        struct_highres = struct_fullres
+    else:
+        struct_highres = decrease_struct_res(
+            struct_fullres, multiscale_factor=final_multiscale_factor,
+            lengths=lengths)
+
+    # TODO add the below to future unit test...
+    # from numpy.testing import assert_array_almost_equal
+    # rescale_by = int(current_multiscale_factor / final_multiscale_factor)
+    # lengths_final = decrease_lengths_res(
+    #     lengths=lengths, multiscale_factor=final_multiscale_factor)
+    # struct_lowres_redo = decrease_struct_res(
+    #     struct_highres, multiscale_factor=rescale_by, lengths=lengths_final)
+    # mask = np.invert(np.isnan(struct[:, 0]))
+    # assert_array_almost_equal(struct[mask], struct_lowres_redo[mask])
+
+    return struct_highres
+
+
 def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     """Linearly interpolate structure to increase resolution.
 
@@ -42,13 +142,13 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     Parameters
     ----------
     struct : array of float
-        3D chromatin structure at low resolution.
-    lengths : array_like of int
-        Number of beads per homolog of each chromosome at high resolution (the
-        desired resolution of the output structure).
-    multiscale_factor : int, optional
+        3D chromatin structure at the current low resolution.
+    multiscale_factor : int
         Factor by which to increase the resolution. A value of 2 doubles the
         resolution. A value of 1 does not change the resolution.
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome at increased resolution
+        (the desired resolution of the output structure).
 
     Returns
     -------
@@ -84,7 +184,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
         indices[~mask.reshape(multiscale_factor, -1)] = np.nan
 
     struct_highres = np.full((lengths.sum() * ploidy, 3), np.nan)
-    begin_lowres, end_lowres = 0, 0
+    begin_lowres = end_lowres = 0
     for i in range(lengths.shape[0] * ploidy):
         end_lowres += np.tile(lengths_lowres, ploidy)[i]
 
@@ -152,22 +252,28 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     return struct_highres
 
 
-def _convert_indices_to_full_res(rows, cols, rows_max, cols_max,
+def _convert_indices_to_full_res(rows_lowres, cols_lowres, rows_max, cols_max,
                                  multiscale_factor, lengths, n, counts_shape,
                                  ploidy):
     """Return full-res counts indices grouped by the corresponding low-res bin.
     """
 
     if multiscale_factor == 1:
-        return rows, cols
+        return rows_lowres, cols_lowres
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    n = lengths_lowres.sum()  # FIXME remove n from args
 
     # Convert low-res indices to full-res
-    nnz = len(rows)
+    nnz_lowres = len(rows_lowres)
     x, y = np.indices((multiscale_factor, multiscale_factor))
-    rows = np.repeat(x.flatten(), nnz)[:nnz * multiscale_factor ** 2] + \
-        np.tile(rows * multiscale_factor, multiscale_factor ** 2)
-    cols = np.repeat(y.flatten(), nnz)[:nnz * multiscale_factor ** 2] + \
-        np.tile(cols * multiscale_factor, multiscale_factor ** 2)
+    rows = np.repeat(x.flatten(), nnz_lowres)[
+        :nnz_lowres * multiscale_factor ** 2] + \
+        np.tile(rows_lowres * multiscale_factor, multiscale_factor ** 2)
+    cols = np.repeat(y.flatten(), nnz_lowres)[
+        :nnz_lowres * multiscale_factor ** 2] + \
+        np.tile(cols_lowres * multiscale_factor, multiscale_factor ** 2)
     rows = rows.reshape(multiscale_factor ** 2, -1)
     cols = cols.reshape(multiscale_factor ** 2, -1)
     # Figure out which rows / cols are out of bounds
@@ -176,12 +282,12 @@ def _convert_indices_to_full_res(rows, cols, rows_max, cols_max,
     for i in range(lengths.shape[0] * ploidy):
         rows_binned = np.digitize(rows, bins_for_rows)
         cols_binned = np.digitize(cols, bins_for_cols)
-        incorrect_rows = np.invert(
-            np.equal(rows_binned, np.floor(rows_binned.mean(axis=0))))
-        incorrect_cols = np.invert(
-            np.equal(cols_binned, np.floor(cols_binned.mean(axis=0))))
-        row_mask = np.floor(rows_binned.mean(axis=0)) == i
-        col_mask = np.floor(cols_binned.mean(axis=0)) == i
+        rows_good_bin = np.floor(rows_binned.mean(axis=0))
+        cols_good_bin = np.floor(cols_binned.mean(axis=0))
+        incorrect_rows = np.invert(np.equal(rows_binned, rows_good_bin))
+        incorrect_cols = np.invert(np.equal(cols_binned, cols_good_bin))
+        row_mask = rows_good_bin == i
+        col_mask = cols_good_bin == i
         row_vals = np.unique(rows[:, row_mask][incorrect_rows[:, row_mask]])
         col_vals = np.unique(cols[:, col_mask][incorrect_cols[:, col_mask]])
         for val in np.flip(row_vals, axis=0):
@@ -192,18 +298,18 @@ def _convert_indices_to_full_res(rows, cols, rows_max, cols_max,
         # all zero, that could mess up indices for subsequent
         # homologs/chromosomes
         rows_binned = np.digitize(rows, bins_for_rows)
-        row_mask = np.floor(rows_binned.mean(axis=0)) == i
-        current_rows = rows[:, row_mask][
-            np.invert(incorrect_rows)[:, row_mask]]
+        rows_good_bin = np.floor(rows_binned.mean(axis=0))
+        row_mask = rows_good_bin == i
+        current_rows = rows[:, row_mask][np.invert(incorrect_rows)[:, row_mask]]
         if current_rows.shape[0] > 0 and i < bins_for_rows.shape[0]:
             max_row = current_rows.max()
             if max_row < bins_for_rows[i] - 1:
                 rows[rows > max_row] -= multiscale_factor - \
                     (bins_for_rows[i] - max_row - 1)
         cols_binned = np.digitize(cols, bins_for_cols)
-        col_mask = np.floor(cols_binned.mean(axis=0)) == i
-        current_cols = cols[:, col_mask][
-            np.invert(incorrect_cols)[:, col_mask]]
+        cols_good_bin = np.floor(cols_binned.mean(axis=0))
+        col_mask = cols_good_bin == i
+        current_cols = cols[:, col_mask][np.invert(incorrect_cols)[:, col_mask]]
         if current_cols.shape[0] > 0 and i < bins_for_cols.shape[0]:
             max_col = current_cols.max()
             if max_col < bins_for_cols[i] - 1:
@@ -216,6 +322,7 @@ def _convert_indices_to_full_res(rows, cols, rows_max, cols_max,
     cols[incorrect_indices] = 0
     rows = rows.flatten()
     cols = cols.flatten()
+    incorrect_indices = incorrect_indices.flatten()
     return rows, cols
 
 
@@ -269,11 +376,23 @@ def _process_multiscale_counts(counts, multiscale_factor, lengths, ploidy):
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                              multiscale_reform=False, dummy=False,
-                             exclude_all_highres_empty=False):
+                             exclude_each_highres_empty=False):
     """TODO
     """
 
+    revert_bug_fix = False
+    unmask_zeros_in_sparse = False
+    ignore_exclude_each_highres_empty = False
+
+    if ignore_exclude_each_highres_empty:
+        exclude_each_highres_empty = False
+    if unmask_zeros_in_sparse and exclude_each_highres_empty:
+        data_grouped = indices = indices3d = mask = np.array([])
+        nnz_lowres = 0
+        return data_grouped, indices, indices3d, nnz_lowres, mask
+
     from .counts import _counts_indices_to_3d_indices, _check_counts_matrix
+    from .counts import _row_and_col
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
 
@@ -282,52 +401,65 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     else:
         counts_coo = counts.tocoo()
 
-    count_arr = _check_counts_matrix(
-        counts_coo, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
-
     if multiscale_reform and multiscale_factor != 1:
+        counts_arr = _check_counts_matrix(
+            counts_coo, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
+
         counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
             counts_coo, multiscale_factor=multiscale_factor,
             lengths=lengths, ploidy=ploidy)
+        row_lowres = counts_lowres.row
+        col_lowres = counts_lowres.col
+        nnz_lowres = counts_lowres.nnz
 
-        data_grouped = count_arr[rows_grp, cols_grp].reshape(
+        if unmask_zeros_in_sparse:
+            counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
+                counts_arr, multiscale_factor=multiscale_factor,
+                lengths=lengths, ploidy=ploidy)
+            row_lowres, col_lowres = _row_and_col(counts_lowres)
+            nnz_lowres = len(row_lowres)
+
+        data_grouped = counts_arr[rows_grp, cols_grp].reshape(
             multiscale_factor ** 2, -1)
-        data_grouped = data_grouped[:, np.nansum(data_grouped, axis=0) != 0]
+        if not unmask_zeros_in_sparse:
+            data_grouped = data_grouped[:, np.nansum(data_grouped, axis=0) != 0]
 
-        if exclude_all_highres_empty:
+        if revert_bug_fix or unmask_zeros_in_sparse:
+            exclude_each_highres_empty = False
+            data_grouped[np.isnan(data_grouped)] = 0
+
+        if exclude_each_highres_empty:
             #data_grouped[np.isnan(data_grouped)] = 0  # FIXME remove junk
             #min_gt0 = np.min(data_grouped, axis=0) != 0
             #min_gt0 = data_grouped.min(axis=0) != 0
-            min_gt0 = data_grouped.min(axis=0) != 0
+
+            # latest bug fix 3/26:
+            ####### min_gt0 = data_grouped.min(axis=0) != 0
+            ####### min_gt0 = (data_grouped.min(axis=0) != 0) & (~np.isnan(data_grouped.min(axis=0)))
+
+            # If any of the highres bins are zero, remove the entire group
+            # Highres NaN bins are ok and don't warrant the group's removal
+            # However, previously excluded groups where all highres bins are NaN
+            min_gt0 = np.nanmin(data_grouped, axis=0) != 0
             data_grouped = data_grouped[:, min_gt0]
             counts_lowres = sparse.coo_matrix((
                 counts_lowres.data[min_gt0],
-                (counts_lowres.row[min_gt0], counts_lowres.col[min_gt0])),
+                (row_lowres[min_gt0], col_lowres[min_gt0])),
                 shape=counts_lowres.shape)
+            row_lowres = counts_lowres.row
+            col_lowres = counts_lowres.col
+            nnz_lowres = counts_lowres.nnz
 
         mask = ~np.isnan(data_grouped)
         data_grouped[~mask] = 0
 
-        indices = counts_lowres.row, counts_lowres.col
+        indices = row_lowres, col_lowres
         indices3d = _counts_indices_to_3d_indices(
             counts_lowres, n=lengths_lowres.sum(), ploidy=ploidy)
 
-        # # FIXME remove junk
-        # print(exclude_all_highres_empty, dummy)
-        # print('lengths', lengths_lowres)
-        # print('# nan', np.isnan(data_grouped).sum())
-        # rows_countnan = np.isnan(data_grouped).sum(axis=0)
-        # hasnan = rows_countnan != 0
-        # rows_countnan_hasnan = rows_countnan[hasnan]
-        # print('# rows with >0 NaNs', rows_countnan_hasnan.shape[0])
-        # # print(rows_countnan)
-        # # print('\n')
-        # print(np.array(list(zip(counts_lowres.row[hasnan], counts_lowres.col[hasnan], rows_countnan[hasnan]))))
-        # exit(0)
-
         if dummy:
             data_grouped = np.zeros_like(data_grouped)
-        nnz_lowres = counts_lowres.nnz
+        # nnz_lowres = counts_lowres.nnz
     else:
         indices = counts_coo.row, counts_coo.col
         indices3d = _counts_indices_to_3d_indices(
@@ -737,6 +869,70 @@ def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
                                        mixture_coefs=None, replace_nan=True,
                                        verbose=True):
     """Compute multiscale epsilon from full-res structure.
+
+    Generates multiscale epsilons at the specified resolution from the
+    inputted full-resolution structure(s). Multiscale epsilons are defined as
+    follows: for each low-resolution bead, the variances of the distances
+    between all high-resolution beads that correspond to that low-resolution
+    bead. FIXME
+
+    Parameters
+    ----------
+    structures : array of float or list of array of float
+        3D chromatin structure(s) at full resolution.
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome at full resolution.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 does not change the resolution.
+
+    Returns
+    -------
+    array of float
+        Multiscale variances: for each low-resolution bead, the variances of the
+        distances between all high-resolution beads that correspond to that
+        low-resolution bead.
+    """
+
+    from .utils_poisson import _format_structures
+
+    if multiscale_factor == 1:
+        return None
+
+    structures = _format_structures(structures, mixture_coefs=mixture_coefs)
+    struct_length = set([s.shape[0] for s in structures])
+    if len(struct_length) > 1:
+        raise ValueError("Structures are of different shapes.")
+    else:
+        struct_length = struct_length.pop()
+    if struct_length / lengths.sum() not in (1, 2):
+        raise ValueError("Structures do not appear to be haploid or diploid.")
+    ploidy = int(struct_length / lengths.sum())
+    structures = _format_structures(structures, lengths=lengths,
+                                    ploidy=ploidy, mixture_coefs=mixture_coefs)
+
+    multiscale_variances = []
+    for struct in structures:
+        struct_grouped = _group_highres_struct(
+            struct, multiscale_factor, lengths)
+        multiscale_variances.append(
+            _var3d(struct_grouped, replace_nan=replace_nan))
+    multiscale_variances = np.mean(multiscale_variances, axis=0)
+
+    multiscale_epsilon = np.sqrt(multiscale_variances * 2 / 3)
+
+    if verbose:
+        print(f"MULTISCALE EPSILON ({multiscale_factor}x):"
+              f" {np.mean(multiscale_epsilon):.3g}", flush=True)
+
+    return multiscale_epsilon
+
+
+
+def get_multiscale_epsilon_from_struct_old(structures, lengths, multiscale_factor,
+                                           mixture_coefs=None, replace_nan=True,
+                                           verbose=True):
+    """Compute multiscale epsilon from full-res structure.
     """
 
     from .utils_poisson import _format_structures
@@ -781,7 +977,7 @@ def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
         print(f"MULTISCALE EPSILON all-beads ({multiscale_factor}x):"
               f" {std_all:.3g}", flush=True)
 
-    return std_all
+    return std_all, std_per_bead
 
 
 def _get_epsilon(struct_grouped, replace_nan=True):

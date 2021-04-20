@@ -136,6 +136,33 @@ def test_increase_struct_res():
         struct_highres_true, struct_highres)
 
 
+def test_increase_struct_res_gaussian():
+    lengths = np.array([10, 21])
+    ploidy = 1
+    current_multiscale_factor = 2
+    rescale_by = 2
+    seed = 0
+    final_multiscale_factor = int(current_multiscale_factor / rescale_by)
+
+    lengths_current = multiscale_optimization.decrease_lengths_res(
+        lengths=lengths, multiscale_factor=current_multiscale_factor)
+    lengths_final = multiscale_optimization.decrease_lengths_res(
+        lengths=lengths, multiscale_factor=final_multiscale_factor)
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_current = random_state.rand(lengths_current.sum() * ploidy, 3)
+
+    struct_highres = multiscale_optimization.increase_struct_res_gaussian(
+        struct_current, current_multiscale_factor=current_multiscale_factor,
+        final_multiscale_factor=final_multiscale_factor, lengths=lengths,
+        std_dev=0.000001)
+
+    struct_lowres_new = multiscale_optimization.decrease_struct_res(
+        struct_highres, multiscale_factor=rescale_by, lengths=lengths_final)
+    mask = np.invert(np.isnan(struct_current[:, 0]))
+    assert_array_almost_equal(struct_current[mask], struct_lowres_new[mask])
+
+
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 3, 4])
 def test_decrease_counts_res(multiscale_factor):
     lengths = np.array([10, 21])

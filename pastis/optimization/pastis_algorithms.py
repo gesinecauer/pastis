@@ -208,7 +208,7 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
                         mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
                         struct_draft_fullres=None, draft=False, simple_diploid=False,
                         callback_freq=None, callback_function=None, reorienter=None,
-                        multiscale_reform=False,
+                        multiscale_reform=False, init_std_dev=None,
                         alpha_true=None, struct_true=None, input_weight=None,
                         exclude_zeros=False, null=False, mixture_coefs=None, out_file=None, verbose=True):
     """TODO
@@ -354,7 +354,7 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
             alpha=alpha_init if alpha_ is None else alpha_,
             bias=bias, multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, reorienter=reorienter,
-            mixture_coefs=mixture_coefs, verbose=verbose)
+            std_dev=init_std_dev, mixture_coefs=mixture_coefs, verbose=verbose)
         if multiscale_reform and multiscale_factor != 1:
             epsilon = random_state.rand()
             #epsilon = epsilon_true   # FIXME
@@ -388,7 +388,8 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
         callback = None
 
     return (counts, alpha_, beta_, bias, torm, fullres_torm_for_multiscale,
-            struct_init, constraints, callback, multiscale_variances, epsilon)
+            struct_init, constraints, callback, struct_draft_fullres,
+            multiscale_variances, epsilon)
 
 
 def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -402,7 +403,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
           multiscale_reform=False, epsilon_min=1e-6, epsilon_max=1e6,
-          epsilon_coord_descent=False,
+          epsilon_coord_descent=False, init_std_dev=None,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True):
     """Infer 3D structures with PASTIS via Poisson model.
@@ -553,13 +554,13 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
         simple_diploid=simple_diploid, callback_freq=callback_freq,
         callback_function=callback_function, reorienter=reorienter,
-        multiscale_reform=multiscale_reform, alpha_true=alpha_true,
-        struct_true=struct_true, input_weight=input_weight,
+        multiscale_reform=multiscale_reform, init_std_dev=init_std_dev,
+        alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
         out_file=out_file, verbose=verbose)
     (counts, alpha_, beta_, bias, torm, fullres_torm_for_multiscale,
-        struct_init, constraints, callback, multiscale_variances,
-        epsilon) = prepped
+        struct_init, constraints, callback, struct_draft_fullres,
+        multiscale_variances, epsilon) = prepped
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
         # COMPUTE OBJECTIVE ON TRUE STRUCTURE
@@ -607,7 +608,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         # TODO add conv_desc to main branch
         infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
                      'seed': seed, 'converged': pm.converged_,
-                     'epsilon': pm.epsilon_, 'conv_desc': pm.conv_desc_}
+                     'epsilon': pm.epsilon_, 'conv_desc': pm.conv_desc_,
+                     'multiscale_variances': multiscale_variances}
         if hsc_lambda > 0:
             infer_var['hsc_r'] = hsc_r
         if mhs_lambda > 0:
@@ -643,6 +645,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         all_multiscale_factors = 2 ** np.flip(
             np.arange(multiscale_rounds), axis=0)
         X_ = init
+        prev_std_dev = None
 
         for i in all_multiscale_factors:
             if verbose:
@@ -674,7 +677,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 callback_freq=callback_freq, reorienter=reorienter,
                 multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
                 epsilon_max=epsilon_max,
-                epsilon_coord_descent=epsilon_coord_descent, alpha_true=alpha_true,
+                epsilon_coord_descent=epsilon_coord_descent,
+                init_std_dev=prev_std_dev, alpha_true=alpha_true,
                 struct_true=struct_true, input_weight=input_weight,
                 exclude_zeros=exclude_zeros, null=null,
                 mixture_coefs=mixture_coefs, verbose=verbose)
@@ -685,6 +689,15 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             else:
                 X_ = struct_
             alpha_ = infer_var['alpha']
+
+            use_prev_std_dev = True
+            if use_prev_std_dev:
+                if multiscale_reform:
+                    prev_std_dev = infer_var['epsilon'] / 2
+                elif use_multiscale_variance:
+                    #prev_std_dev = np.sqrt(infer_var['multiscale_variances'])
+                    pass
+
             # epsilon_max = infer_var['epsilon']  # FIXME??
             # exit(0)  # FIXME
         return struct_, infer_var

@@ -902,6 +902,9 @@ class SparseCountsMatrix(CountsMatrix):
             raise ValueError(f"Counts weight may not be {self.weight}.")
         self.type = 'sparse'
         self.null = False
+        # TODO add self.lengths and self.ploidy to main branch...
+        self.lengths = lengths
+        self.ploidy = ploidy
 
         if multiscale_factor != 1:
             self.highres_per_lowres_bead = _count_fullres_per_lowres_bead(
@@ -947,8 +950,11 @@ class SparseCountsMatrix(CountsMatrix):
         return self._counts.shape
 
     def toarray(self):
-        # TODO this array should really have NaNs in it...
-        return self._counts.toarray()
+        # TODO add this to main branch...
+        # TODO decide what this fxn should actually do, and make AtypicalCM match
+        return _check_counts_matrix(
+            self._counts.toarray(), lengths=self.lengths, ploidy=self.ploidy,
+            exclude_zeros=False)
 
     def tocoo(self):
         return self._counts
@@ -1066,6 +1072,9 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             lengths_counts = lengths_lowres
         counts = counts.copy()
         if sparse.issparse(counts):
+            # FIXME I think this should be _check_counts_matrix with exclude_zeros=False, right?
+            # because you don't want beads that are all zero to be included - they should be nan
+            # TODO if so add to main branch
             counts = counts.toarray()
         self.input_sum = np.nansum(counts)
         counts[counts != 0] = np.nan
@@ -1084,6 +1093,9 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             raise ValueError(f"Counts weight may not be {self.weight}.")
         self.type = 'zero'
         self.null = False
+        # TODO add self.lengths and self.ploidy to main branch...
+        self.lengths = lengths
+        self.ploidy = ploidy
 
         if multiscale_factor != 1:
             self.highres_per_lowres_bead = _count_fullres_per_lowres_bead(
@@ -1096,7 +1108,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, dummy=True,
-            exclude_all_highres_empty=True)
+            exclude_each_highres_empty=True)
         self.data_grouped, indices, indices3d, self.nnz_lowres, self.mask = tmp
         self.row_lowres, self.col_lowres = indices
         self.row3d, self.col3d = indices3d
@@ -1134,6 +1146,9 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         self.weight = 0.
         self.type = 'null'
         self.null = True
+        # TODO add self.lengths and self.ploidy to main branch...
+        self.lengths = lengths
+        self.ploidy = ploidy
 
         self.input_sum = 0.
         for counts_maps in counts:

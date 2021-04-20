@@ -59,6 +59,11 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     use_new_gammaln = 'new_gammaln' in obj_type
     dis_with_neg_var = np.array([])
 
+    # use_taylor2 = True
+    # use_new_gammaln = True
+
+    ####
+
     taylor_theta = True  # FIXME True (obj errors if False)
     taylor_k = False  # FIXME False (obj errors if True)
     mu_is_theta_k = True  # FIXME True (obj errors if False)
@@ -128,6 +133,9 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
 
                 if (gamma_var <= 0).sum() > 0:
                     dis_with_neg_var = dis[gamma_var <= 0]
+
+                # if type(gamma_var).__name__ != 'ArrayBox':
+                #     print(f"{counts.type}\t{(gamma_var <= 0).sum()}\t({gamma_var.shape[0]})")
 
                 gamma_var = ag_np.where(gamma_var > 0, gamma_var, 0.)
 
