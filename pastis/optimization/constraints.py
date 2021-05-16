@@ -168,7 +168,7 @@ class Constraints(object):
                     lambda_all[k] = float(v)
         self.lambdas = lambda_all
 
-        params_defaults = {"hsc": None, "mhs": None}
+        params_defaults = {"hsc": None, "mhs": None, 'bcc': 1}
         params_all = params_defaults
         if self.params is not None:
             for k, v in self.params.items():
@@ -191,7 +191,7 @@ class Constraints(object):
                                      " but constraint is not" % k)
             elif k in self.params and not np.array_equal(self.params[k],
                                                          params_defaults[k]):
-                print(self.params[k], type(self.params[k]))
+                # print(self.params[k], type(self.params[k])) # TODO remove on main branch
                 raise ValueError("Constraint for %s is supplied, but lambda is"
                                  " 0" % k)
 
@@ -208,7 +208,9 @@ class Constraints(object):
             for constraint, lambda_val in lambda_to_print.items():
                 print("CONSTRAINT: %s lambda = %.2g" % (
                     constraint_names[constraint], lambda_val), flush=True)
-                if constraint in self.params and constraint in ("hsc", "mhs"):
+                if constraint not in self.params:
+                    continue
+                if constraint in ("hsc", "mhs"):
                     if self.params[constraint] is None:
                         print("            param = inferred", flush=True)
                     elif isinstance(self.params[constraint], np.ndarray):
@@ -218,11 +220,14 @@ class Constraints(object):
                             formatter={'float_kind': lambda x: "%.3g" % x},
                             prefix=" " * len(label), separator=", "))
                     elif isinstance(self.params[constraint], float):
-                        print("            param = %.3g" % self.params[constraint],
-                              flush=True)
+                        print(f"            param = "
+                              f"{self.params[constraint]:.3g}", flush=True)
                     else:
-                        print("            %s" % self.params[constraint],
+                        print(f"            {self.params[constraint]}",
                               flush=True)
+                if constraint == 'bcc':
+                    print(f"            param = {self.params[constraint]:.3g}",
+                          flush=True)
 
     def apply(self, structures, alpha=None, inferring_alpha=False,
               mixture_coefs=None):
@@ -269,9 +274,11 @@ class Constraints(object):
                 neighbor_dis = ag_np.sqrt((ag_np.square(
                     struct[self.row_adj] - struct[self.col_adj])).sum(axis=1))
                 n_edges = neighbor_dis.shape[0]
-                obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * \
-                    (n_edges * ag_np.square(neighbor_dis).sum() / ag_np.square(
-                        neighbor_dis.sum()) - 1.)
+                obj_bcc = (
+                    n_edges * ag_np.square(neighbor_dis).sum() / ag_np.square(
+                    neighbor_dis.sum()) - 1.)
+                obj_bcc = ag_np.power(obj_bcc, self.params["bcc"])
+                obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
                 homo_sep = self._homolog_separation(struct)

@@ -71,6 +71,9 @@ parser.add_argument("--bcc_lambda", type=float, default=0.,
 parser.add_argument("--hsc_lambda", type=float, default=0.,
                     help="For diploid organisms, lambda of the homolog-"
                          " separating constraint.")
+parser.add_argument("--bcc_power", type=float, default=1.,
+                    help="Power to which the bead chain connectivity constraint"
+                         " is raised.")
 parser.add_argument("--hsc_r", default=None, type=float, nargs="+",
                     help="For diploid organisms, hyperparameter of the"
                          " homolog-separating constraint specificying the"

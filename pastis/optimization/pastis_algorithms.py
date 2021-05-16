@@ -204,7 +204,7 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
                         multiscale_rounds=1, use_multiscale_variance=True,
                         final_multiscale_round=False, init='mds', max_iter=30000,
                         factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
-                        bcc_lambda=0., hsc_lambda=0., hsc_r=None, hsc_min_beads=5,
+                        bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
                         mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
                         struct_draft_fullres=None, draft=False, simple_diploid=False,
                         callback_freq=None, callback_function=None, reorienter=None,
@@ -274,9 +274,9 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
     # MULTISCALE EPSILON
     if multiscale_factor != 1 and multiscale_reform:
         if struct_true is not None and verbose:
-            epsilon_true = get_multiscale_epsilon_from_struct(
+            epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
                 struct_true, lengths=lengths,
-                multiscale_factor=multiscale_factor, verbose=False)
+                multiscale_factor=multiscale_factor, verbose=False))
             print(f"True epsilon ({multiscale_factor}x):"
                   f" {epsilon_true:.3g}", flush=True)
         else:
@@ -362,25 +362,23 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
             epsilon = None
 
         # SETUP CONSTRAINTS
-        constraints = Constraints(counts=counts, lengths=lengths, ploidy=ploidy,
-                                  multiscale_factor=multiscale_factor,
-                                  multiscale_reform=multiscale_reform,
-                                  constraint_lambdas={'bcc': bcc_lambda,
-                                                      'hsc': hsc_lambda,
-                                                      'mhs': mhs_lambda},
-                                  constraint_params={'hsc': hsc_r,
-                                                     'mhs': mhs_k},
-                                  verbose=verbose)
+        constraints = Constraints(
+            counts=counts, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor,
+            multiscale_reform=multiscale_reform,
+            constraint_lambdas={
+                'bcc': bcc_lambda, 'hsc': hsc_lambda, 'mhs': mhs_lambda},
+            constraint_params={
+                'bcc': bcc_power, 'hsc': hsc_r, 'mhs': mhs_k}, verbose=verbose)
 
         # SETUP CALLBACKS
         if callback_freq is None:
             callback_freq = {'print': 100, 'history': 100, 'save': None}
-        callback = Callback(lengths, ploidy, counts=counts,
-                            multiscale_factor=multiscale_factor,
-                            multiscale_reform=multiscale_reform,
-                            analysis_function=callback_function,
-                            frequency=callback_freq, directory=outdir,
-                            struct_true=struct_true, alpha_true=alpha_true)
+        callback = Callback(
+            lengths, ploidy, counts=counts, multiscale_factor=multiscale_factor,
+            multiscale_reform=multiscale_reform,
+            analysis_function=callback_function, frequency=callback_freq,
+            directory=outdir, struct_true=struct_true, alpha_true=alpha_true)
     else:
         struct_init = None
         epsilon = None
@@ -398,7 +396,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           multiscale_rounds=1, use_multiscale_variance=True,
           final_multiscale_round=False, init='mds', max_iter=30000,
           factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
-          bcc_lambda=0., hsc_lambda=0., hsc_r=None, hsc_min_beads=5,
+          bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_function=None, reorienter=None,
@@ -467,6 +465,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     hsc_lambda : float, optional
         For diploid organisms: lambda of the homolog-separating
         constraint.
+    bcc_power : int or float, optional
+        TODO
     hsc_r : list of float, optional
         For diploid organisms: hyperparameter of the homolog-separating
         constraint specificying the expected distance between homolog
@@ -548,7 +548,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         use_multiscale_variance=use_multiscale_variance,
         final_multiscale_round=final_multiscale_round, init=init,
         max_iter=max_iter, factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
-        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_power=bcc_power, hsc_r=hsc_r,
         hsc_min_beads=hsc_min_beads, mhs_lambda=mhs_lambda, mhs_k=mhs_k,
         excluded_counts=excluded_counts, fullres_torm=fullres_torm,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
@@ -604,11 +604,26 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         struct_ = pm.struct_.reshape(-1, 3)
         struct_[torm] = np.nan
 
+        # If inferred epsilon is near epsilon_max, rerun with higher epsilon_max
+        # FIXME not sure about whether to include this
+        if (pm.epsilon_ is not None) and multiscale_factor == 2 ** (multiscale_rounds - 1):
+            i = 1
+            while pm.epsilon_ >= epsilon_max * 0.9:
+                i += 1
+                epsilon_max *= 2
+                if verbose:
+                    _print_code_header(
+                        [f'RE-INFERRING: MULTISCALE FACTOR {multiscale_factor}',
+                        f'Try {i}, new epsilon_max={epsilon_max:.3g}'],
+                        max_length=60, blank_lines=1)
+                pm.epsilon_bounds = [epsilon_min, epsilon_max]
+                pm.fit()
+
         # SAVE RESULTS
         # TODO add conv_desc to main branch
         infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
                      'seed': seed, 'converged': pm.converged_,
-                     'epsilon': pm.epsilon_, 'conv_desc': pm.conv_desc_,
+                     'conv_desc': pm.conv_desc_, 'epsilon': pm.epsilon_,
                      'multiscale_variances': multiscale_variances}
         if hsc_lambda > 0:
             infer_var['hsc_r'] = hsc_r
@@ -650,7 +665,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         for i in all_multiscale_factors:
             if verbose:
                 _print_code_header(
-                    'MULTISCALE FACTOR %d' % i, max_length=60, blank_lines=1)
+                    f'MULTISCALE FACTOR {i}', max_length=60, blank_lines=1)
             if i == 1:
                 multiscale_outdir = outdir
                 final_multiscale_round = True
@@ -669,7 +684,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 final_multiscale_round=final_multiscale_round, init=X_,
                 max_iter=max_iter, factr=factr, pgtol=pgtol,
                 alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-                hsc_lambda=hsc_lambda, hsc_r=hsc_r, hsc_min_beads=hsc_min_beads,
+                hsc_lambda=hsc_lambda, bcc_power=bcc_power,
+                hsc_r=hsc_r, hsc_min_beads=hsc_min_beads,
                 mhs_lambda=mhs_lambda, mhs_k=mhs_k,
                 fullres_torm=fullres_torm_for_multiscale,
                 struct_draft_fullres=struct_draft_fullres,
@@ -690,7 +706,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 X_ = struct_
             alpha_ = infer_var['alpha']
 
-            use_prev_std_dev = True
+            use_prev_std_dev = False
             if use_prev_std_dev:
                 if multiscale_reform:
                     prev_std_dev = infer_var['epsilon'] / 2
@@ -698,7 +714,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     #prev_std_dev = np.sqrt(infer_var['multiscale_variances'])
                     pass
 
-            # epsilon_max = infer_var['epsilon']  # FIXME??
+            epsilon_max = infer_var['epsilon']  # FIXME??
             # exit(0)  # FIXME
         return struct_, infer_var
 
@@ -709,7 +725,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    beta=None, multiscale_rounds=1, use_multiscale_variance=True,
                    max_iter=30000, factr=10000000., pgtol=1e-05,
                    alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,
-                   hsc_r=None, hsc_min_beads=5, mhs_lambda=0., mhs_k=None,
+                   bcc_power=1, hsc_r=None, hsc_min_beads=5, mhs_lambda=0., mhs_k=None,
                    struct_draft_fullres=None,
                    callback_function=None, print_freq=100, history_freq=100,
                    save_freq=None, piecewise=False, piecewise_step=None,
@@ -840,8 +856,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             use_multiscale_variance=use_multiscale_variance, init=init,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-            hsc_lambda=hsc_lambda, hsc_r=hsc_r, hsc_min_beads=hsc_min_beads,
-            mhs_lambda=mhs_lambda, mhs_k=mhs_k,
+            hsc_lambda=hsc_lambda, bcc_power=bcc_power, hsc_r=hsc_r,
+            hsc_min_beads=hsc_min_beads, mhs_lambda=mhs_lambda, mhs_k=mhs_k,
             struct_draft_fullres=struct_draft_fullres,
             callback_function=callback_function, callback_freq=callback_freq,
             multiscale_reform=multiscale_reform,
@@ -860,8 +876,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             multiscale_rounds=multiscale_rounds,
             use_multiscale_variance=use_multiscale_variance, max_iter=max_iter,
             factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
-            bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
-            mhs_lambda=mhs_lambda, mhs_k=mhs_k,
+            bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_power=bcc_power,
+            hsc_r=hsc_r, mhs_lambda=mhs_lambda, mhs_k=mhs_k,
             struct_draft_fullres=struct_draft_fullres,
             hsc_min_beads=hsc_min_beads, callback_function=callback_function,
             callback_freq=callback_freq,
