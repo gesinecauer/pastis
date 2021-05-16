@@ -18,6 +18,10 @@ from .callbacks import Callback
 from .utils_poisson import _print_code_header
 
 
+coefs_mean = [5.549172757571418e-20, -1.6470775119344408e-17, 2.2606861003877433e-15, -1.903579023849604e-13, 1.1000461737635397e-11, -4.6239683202570464e-10, 1.4619806820341588e-08, -3.546250613583712e-07, 6.670958632097694e-06, -9.772260096077662e-05, 0.0011130662843361946, -0.00978764088393751, 0.0655592914191458, -0.3273049894339556, 1.1766273423250435, -2.872565184957617, 4.228635441434826, -2.533538222083517, -1.3991509787571033, 0.5364137375876942, -0.014652303861952376]
+coefs_var = [-8.89723012160453e-20, 2.6939031920163006e-17, -3.780088866833452e-15, 3.262503889748274e-13, -1.9384315351972383e-11, 8.408736957761065e-10, -2.7561824714335875e-08, 6.969965186508444e-07, -1.3766418318829012e-05, 0.00021367122264464005, -0.002609568682021054, 0.025003741308379887, -0.18663053580505512, 1.0728333419317682, -4.671837208672972, 15.062582659039125, -34.8224086368473, 55.041717936059165, -54.63542672952499, 25.766016969084514, -5.116935512532633]
+
+
 def _polyval(x, coefs):
     """Analagous to np.polyval (which sadly is not differentiable with
     autograd)"""
@@ -52,21 +56,10 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     """
 
     obj_type = [] if obj_type is None else (obj_type if isinstance(obj_type, list) else [obj_type])
-    use_covar = 'covar' in obj_type and counts.ambiguity != 'ua'
-    use_taylor2 = 'taylor2' in obj_type
     use_no0var = 'no0var' in obj_type
-    use_assume_smalleps = 'assume_smalleps' in obj_type
-    use_new_gammaln = 'new_gammaln' in obj_type
     dis_with_neg_var = np.array([])
 
-    # use_taylor2 = True
-    # use_new_gammaln = True
-
     ####
-
-    taylor_theta = True  # FIXME True (obj errors if False)
-    taylor_k = False  # FIXME False (obj errors if True)
-    mu_is_theta_k = True  # FIXME True (obj errors if False)
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
@@ -83,184 +76,76 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     theta = ag_np.zeros((1, counts.nnz_lowres))
     k = ag_np.zeros((1, counts.nnz_lowres))
     for struct, mix_coef in zip(structures, mixture_coefs):
+        dis = ag_np.sqrt((ag_np.square(
+            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+        dis_alpha = ag_np.power(dis, alpha)
+        epsilon_over_dis = epsilon / dis
 
-        if use_assume_smalleps:
-            dis = ag_np.sqrt((ag_np.square(
-                struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
-            dis_sq = ag_np.square(dis)
-            dis_alpha = ag_np.power(dis, alpha)
-            if counts.ambiguity == 'ua':
-                mu_tmp = 1 + 1.5 * alpha * epsilon_sq / dis_sq
-                theta_tmp1 = alpha_sq * epsilon_sq * dis_alpha / dis_sq
-                if taylor_theta:
-                    theta_tmp2 = 1 - 1.5 * alpha * epsilon_sq / dis_sq
-                else:
-                    theta_tmp2 = 1 / mu_tmp
-                k_tmp1 = dis_sq / alpha_sq / epsilon_sq
-                if taylor_k:
-                    k_tmp2 = 1 + 3 * alpha * epsilon_sq / dis_sq
-                else:
-                    k_tmp2 = ag_np.square(mu_tmp)
-            else:
-                raise ValueError("lol.")
-            theta = theta + mix_coef * counts.beta * theta_tmp1 * theta_tmp2
-            k = k + mix_coef * k_tmp1 * k_tmp2
-            mu = mu + mix_coef * counts.beta * dis_alpha * mu_tmp
-            if mu_is_theta_k:
-                mu = theta * k
-            continue
+        # FIXME the below is likely source of abnormal term (grad != obj)
+        max_epsilon_over_dis = 25
+        epsilon_over_dis = ag_np.where(
+            epsilon_over_dis > max_epsilon_over_dis, max_epsilon_over_dis, epsilon_over_dis)
 
-        if counts.ambiguity == 'ua' or not use_covar:
-            dis = ag_np.sqrt((ag_np.square(
-                struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
-            dis_sq = ag_np.square(dis)
+        ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
+        ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
 
-            tmp_mean = dis_sq + 3 * epsilon_sq
-            tmp_var = 4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4)
+        gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
+        gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
+        gamma_var = ag_np.where(gamma_var > 0, gamma_var, 0)
 
-            gamma_mean_taylor1 = ag_np.power(tmp_mean, alpha / 2)
-            gamma_var_taylor1 = (alpha_sq / 4) * ag_np.power(
-                tmp_mean, alpha - 2) * tmp_var
+        if counts.ambiguity == 'ua':
+            theta_tmp = dis_alpha * ag_np.exp(ln_gamma_var - ln_gamma_mean)
 
-            if (not use_taylor2):
-                gamma_mean = gamma_mean_taylor1
-                gamma_var = gamma_var_taylor1
-            else:
-                taylor2 = (alpha_sq - 2 * alpha) / 8 * ag_np.power(
-                    tmp_mean, alpha / 2 - 2) * tmp_var
-                gamma_mean = gamma_mean_taylor1 + taylor2
-                gamma_var = gamma_var_taylor1 - ag_np.square(taylor2)
-
-                if (gamma_var <= 0).sum() > 0:
-                    dis_with_neg_var = dis[gamma_var <= 0]
-
-                # if type(gamma_var).__name__ != 'ArrayBox':
-                #     print(f"{counts.type}\t{(gamma_var <= 0).sum()}\t({gamma_var.shape[0]})")
-
-                gamma_var = ag_np.where(gamma_var > 0, gamma_var, 0.)
-
+            k_tmp = ag_np.exp(2 * ln_gamma_mean - ln_gamma_var)
+        else:
             if counts.ambiguity != 'ua':
                 gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
                 gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
-        elif use_taylor2:
-            raise NotImplementedError
-        else:
-            diff2 = ag_np.square(
-                struct[counts.row3d] - struct[counts.col3d])
-            dis2 = ag_np.sqrt(ag_np.sum(diff2, axis=1))
-            dis2 = dis2.reshape(-1, counts.nnz_lowres)
 
-            diff = (struct[counts.row3d] - struct[counts.col3d]).reshape(
-                -1, counts.nnz_lowres, 3)
-            dis = ag_np.sqrt(ag_np.sum(ag_np.square(diff), axis=2))
+            theta_tmp = gamma_var / gamma_mean
+            k_tmp = ag_np.square(gamma_mean) / gamma_var
 
-            dis_sq = ag_np.square(dis)
-            gamma_tmp = dis_sq + 3 * epsilon_sq
-
-            gamma_mean_tmp = ag_np.power(gamma_tmp, alpha / 2)
-            gamma_mean = ag_np.sum(gamma_mean_tmp, axis=0)
-
-            gamma_var_tmp1 = gamma_mean_tmp / gamma_tmp
-            gamma_var_tmp1_sq = ag_np.square(gamma_var_tmp1)
-            gamma_var_tmp2 = 4 * epsilon_sq * dis_sq + 6 * ag_np.power(epsilon, 4)
-            gamma_var = (alpha_sq / 4) * ag_np.sum(
-                gamma_var_tmp1_sq * gamma_var_tmp2, axis=0)
-
-            for i in range(diff.shape[0]):
-                for j in range(i + 1, diff.shape[0]):
-                    gamma_cov_tmp1 = gamma_var_tmp1[i] * gamma_var_tmp1[j]
-                    diff_dotprod = ag_np.sum(diff[i] * diff[j], axis=1)
-                    gamma_cov_tmp2 = 4 * epsilon_sq * diff_dotprod + 6 * ag_np.power(epsilon, 4)
-                    gamma_var += alpha_sq / 2 * gamma_cov_tmp1 * gamma_cov_tmp2
-
-        # Where gamma_var is 0, theta will be 0
-        theta = theta + mix_coef * counts.beta * (gamma_var / gamma_mean)
-        # Where gamma_var is 0, k will be 1 as a placeholder (true k = inf)
-        gamma_mean_var0as1 = ag_np.where(gamma_var > 0, gamma_mean, 1.)
-        gamma_var_var0as1 = ag_np.where(gamma_var > 0, gamma_var, 1.)
-        k_tmp = ag_np.square(gamma_mean_var0as1) / gamma_var_var0as1  ## NEW
+        theta = theta + mix_coef * counts.beta * theta_tmp
         k = k + mix_coef * k_tmp
-
         mu = mu + mix_coef * counts.beta * gamma_mean
 
-    eps = 1e-6
-    check_instability = False
 
     log1p_theta = ag_np.log1p(theta)
     obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
     if counts.type == 'zero':
         obj_tmp_sum = obj_tmp1
-    elif use_new_gammaln:
+    else:
         k_plus_1 = k + 1
         obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k_plus_1)
         obj_tmp3 = _masksum(_stirling(
             counts.data_grouped + k_plus_1), mask=counts.mask, axis=0)
-        theta_var0as1 = ag_np.where(gamma_var > 0, theta, 1.)
         obj_tmp4 = _masksum(counts.data_grouped, mask=counts.mask, axis=0) * (
-            ag_np.log(theta_var0as1) + ag_np.log1p(k) - log1p_theta - 1)
+            ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1)
         obj_tmp5 = _masksum((counts.data_grouped + k + 0.5) * ag_np.log1p(
             counts.data_grouped / k_plus_1), mask=counts.mask, axis=0)
         obj_tmp6 = -_masksum(
             ag_np.log1p(counts.data_grouped / k), mask=counts.mask, axis=0)
         obj_tmp_sum = (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
-    else:
-        obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k)
-
-        obj_tmp3 = _masksum(
-            _stirling(counts.data_grouped + k), mask=counts.mask, axis=0)
-
-        obj_tmp4 = _masksum(counts.data_grouped, mask=counts.mask, axis=0) * (
-            ag_np.log(mu) - log1p_theta - 1)
-
-        if check_instability:
-            possible_instability = counts.data_grouped / k < eps
-            stable_rows, stable_cols = ag_np.where(~possible_instability)
-            stable_counts = counts.data_grouped[stable_rows, stable_cols]
-            stable_k = k[:, stable_cols]
-            obj_tmp5 = _masksum(
-                counts.data_grouped[possible_instability], mask=counts.mask) + (
-                (stable_counts + stable_k - 0.5) * ag_np.log1p(
-                    stable_counts / stable_k))
-            # FIXME make sure dimensions of obj_tmp5 are correct here (1, -1)
-        else:
-            obj_tmp5 = _masksum((counts.data_grouped + k - 0.5) * ag_np.log1p(
-                counts.data_grouped / k), mask=counts.mask, axis=0)
-
-        obj_tmp_sum = obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5
-
-    if use_assume_smalleps:
-        obj = ag_np.sum(obj_tmp_sum)
-    else:
-        obj_tmp_sum = ag_np.where(gamma_var > 0, obj_tmp_sum, 0.)  ## NEW
-        obj = ag_np.sum(obj_tmp_sum)
-
-        if not use_no0var:
-            # Where gamma_var is 0, use standard Poisson obj
-            mu_varnon0as1 = ag_np.where(gamma_var > 0, 1., mu)
-            mu_varnon0as0 = ag_np.where(gamma_var > 0, 0., mu)
-            obj_var0 = _masksum(counts.data_grouped * ag_np.log(
-                mu_varnon0as1), mask=counts.mask) - ag_np.sum(
-                num_highres_per_lowres_bins * mu_varnon0as0)  ## NEW
-            obj = obj + obj_var0
+    obj = ag_np.sum(obj_tmp_sum)
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars  # FIXME
         if counts.type == 'zero':
             printvars({
                 'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'μ': mu,
-                'mean(ΓRV)': gamma_mean, 'var(ΓRV)': gamma_var,
+                'ln mean(ΓRV)': ln_gamma_mean, 'ln var(ΓRV)': ln_gamma_var,
+                'mean(ΓRV)': ag_np.exp(ln_gamma_mean), 'var(ΓRV)': ag_np.exp(ln_gamma_var),
                 'obj_tmp1': obj_tmp1})
         else:
             printvars({
                 'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'μ': mu,
-                'mean(ΓRV)': gamma_mean, 'var(ΓRV)': gamma_var,
+                'ln mean(ΓRV)': ln_gamma_mean, 'ln var(ΓRV)': ln_gamma_var,
+                'mean(ΓRV)': ag_np.exp(ln_gamma_mean), 'var(ΓRV)': ag_np.exp(ln_gamma_var),
                 'c_ij / k': (counts.data_grouped / k),
                 '1 + c_ij / k': (1 + counts.data_grouped / k),
                 '<0  1 + c_ij / k': (1 + counts.data_grouped / k)[(1 + counts.data_grouped / k) < 0],
                 'ln(1 + c_ij / k)': ag_np.sum(ag_np.log1p(counts.data_grouped / k), axis=0),
-                #'dis @ NaN': dis[np.isnan(obj_tmp_sum)],
                 'dis_with_neg_var': dis_with_neg_var,
-                'tmp_var': tmp_var, 'tmp_var sq': ag_np.square(tmp_var),
                 'ln(μ)': ag_np.log(mu),
                 'ln(1+θ)': ag_np.log1p(theta),
                 'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
@@ -275,11 +160,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
         counts.data_grouped, mask=counts.mask, axis=0) * ag_np.log(
         num_highres_per_lowres_bins)).sum()
     obj = obj + obj_constant
-
-    # if type(obj).__name__ != 'ArrayBox' and counts.type != 'zero':
-    #     from topsy.utils.misc import printvars  # FIXME
-    #     printvars({'ε': epsilon, 'k': k, '-B_N(k)': obj_tmp2, 'B_N(c+k)': obj_tmp3})
-    #     print()
 
     return counts.weight * (- obj)
 
@@ -550,7 +430,7 @@ def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
             epsilon = None
         callback.on_epoch_end(obj_logs, structures, alpha, X, epsilon=epsilon)
 
-    if epsilon is not None:
+    if epsilon is not None and False:  # FIXME remove
         spacer = ' ' * (12 - len(f"{new_obj:.3g}"))
         if epsilon == 0:
             print(f'    obj {new_obj:.3g}{spacer}ε ---', flush=True)
@@ -706,6 +586,7 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
     if max_iter == 0:
         X = x0
         converged = True
+        conv_desc = ''
     else:
         if max_fun is None:
             max_fun = max_iter
@@ -724,6 +605,8 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
                   multiscale_reform, mixture_coefs, callback, obj_type))
         X, obj, d = results
         converged = d['warnflag'] == 0
+        # TODO add conv_desc to main branch
+        conv_desc = d['task'].decode('utf8')
 
     history = None
     if callback is not None:
@@ -740,8 +623,6 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
             print(conv_desc + '\n', flush=True)
 
-    # TODO add conv_desc to main branch
-    conv_desc = d['task'].decode('utf8')
     return X, obj, converged, history, conv_desc
 
 
@@ -883,6 +764,10 @@ class PastisPM(object):
         self.max_epsilon_loop = max_alpha_loop
         self.epsilon_factr = alpha_factr
 
+        # TODO update this on the main branch too...?
+        self._clear()
+
+    def _clear(self):
         # TODO update this on the main branch too...?
         self.X_ = self.init_X
         if self.alpha is not None:
@@ -1186,6 +1071,8 @@ class PastisPM(object):
         -------
         self : returns an instance of self.
         """
+
+        self._clear()
 
         if self.null:
             print('GENERATING NULL STRUCTURE', flush=True)
