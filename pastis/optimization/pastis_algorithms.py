@@ -282,15 +282,6 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
         else:
             epsilon_true = None
 
-    # from .multiscale_optimization import get_multiscale_epsilon_from_dis
-    # print('\n\n\n')
-    # for tmp_factor in (8, 4, 2):
-    #     get_multiscale_epsilon_from_struct(struct_true, lengths, multiscale_factor=tmp_factor, verbose=True)
-    #     print('---')
-    #     get_multiscale_epsilon_from_dis(struct_true, lengths, multiscale_factor=tmp_factor, verbose=True)
-    #     print('\n')
-    # exit(0)
-
     # PREPARE COUNTS OBJECTS
     if simple_diploid:
         if ploidy != 2:  # TODO add this if stmt on the main branch too
