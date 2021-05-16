@@ -615,8 +615,11 @@ def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask
             mask)).astype(bool).astype(int)
 
     # Apply to struct, and set incorrect indices to np.nan
-    return np.where(np.repeat(incorrect_indices.reshape(-1, 1), 3, axis=1), np.nan,
-                    struct.reshape(-1, 3)[indices, :]).reshape(multiscale_factor, -1, 3)
+    grouped_struct = np.where(
+        np.repeat(incorrect_indices.reshape(-1, 1), 3, axis=1), np.nan,
+        struct.reshape(-1, 3)[indices, :]).reshape(multiscale_factor, -1, 3)
+
+    return grouped_struct
 
 
 def decrease_struct_res(struct, multiscale_factor, lengths, indices=None, mask=None):
@@ -722,7 +725,7 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
     multiscale_variances = []
     for struct in structures:
         struct_grouped = _group_highres_struct(
-            struct, multiscale_factor, lengths)
+            struct, multiscale_factor=multiscale_factor, lengths=lengths)
         multiscale_variances.append(
             _var3d(struct_grouped, replace_nan=replace_nan))
     multiscale_variances = np.mean(multiscale_variances, axis=0)
@@ -914,7 +917,7 @@ def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
     multiscale_variances = []
     for struct in structures:
         struct_grouped = _group_highres_struct(
-            struct, multiscale_factor, lengths)
+            struct, multiscale_factor=multiscale_factor, lengths=lengths)
         multiscale_variances.append(
             _var3d(struct_grouped, replace_nan=replace_nan))
     multiscale_variances = np.mean(multiscale_variances, axis=0)
