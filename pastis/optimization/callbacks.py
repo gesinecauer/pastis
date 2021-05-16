@@ -205,6 +205,8 @@ class Callback(object):
             info_dict = {'At iterate': ' ' * (6 - len(str(self.epoch))) + str(
                 self.epoch), 'f= ': '%.6g' % self.obj['obj'],
                 'time= ': self.time}
+            if self.epsilon is not None:
+                info_dict['epsilon= '] = f"{self.epsilon:.3g}"
             print('\t\t'.join(['%s%s' % (k, v)
                                for k, v in info_dict.items()]), flush=True)
             if self.epoch == 10:
