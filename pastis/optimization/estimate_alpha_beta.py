@@ -363,6 +363,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
 
     alpha, obj, d = results
     converged = d['warnflag'] == 0
+    # TODO add conv_desc to main branch
+    conv_desc = d['task'].decode('utf8')
 
     if verbose:
         print(f'INIT ALPHA: {alpha_init:.3g},  FINAL ALPHA: {alpha:.3g}',
@@ -373,6 +375,4 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
             print(conv_desc + '\n', flush=True)
 
-    # TODO add conv_desc to main branch
-    conv_desc = d['task'].decode('utf8')
     return float(alpha), obj, converged, history, conv_desc

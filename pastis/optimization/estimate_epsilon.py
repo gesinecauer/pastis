@@ -238,6 +238,7 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
     if max_iter == 0:
         X = init_X
         converged = True
+        conv_desc = ''
     else:
         if max_fun is None:
             max_fun = max_iter
@@ -255,6 +256,8 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
                   reorienter, multiscale_factor, mixture_coefs, callback, obj_type))
         X, obj, d = results
         converged = d['warnflag'] == 0
+        # TODO add conv_desc to main branch
+        conv_desc = d['task'].decode('utf8')
 
     history = None
     if callback is not None:
@@ -271,6 +274,4 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
             print(conv_desc + '\n', flush=True)
 
-    # TODO add conv_desc to main branch
-    conv_desc = d['task'].decode('utf8')
     return X, obj, converged, history, conv_desc
