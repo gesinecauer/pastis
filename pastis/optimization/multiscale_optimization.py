@@ -42,7 +42,7 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     Increase resolution of a structure by assuming that the difference between
     each high-resolution bead and it's corresponding low-resolution bead
     is normally distributed along each of the 3 axes  (with mean = 0 and
-    standard deviation = epsilon/2)
+    standard deviation = epsilon / sqrt(2).)
 
     Parameters
     ----------
@@ -955,18 +955,11 @@ def get_multiscale_epsilon_from_struct_old(structures, lengths, multiscale_facto
     structures = _format_structures(structures, lengths=lengths,
                                     ploidy=ploidy, mixture_coefs=mixture_coefs)
 
-    # Reduce structure resolution
-    # lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    # structures_lowres = [
-    #     decrease_struct_res(
-    #         x, multiscale_factor=multiscale_factor,
-    #         lengths=lengths) for x in structures]
-
     std_per_bead = []
     std_all = []
     for struct in structures:
         struct_grouped = _group_highres_struct(
-            struct, multiscale_factor, lengths)
+            struct, multiscale_factor=multiscale_factor, lengths=lengths)
         std_per_bead_tmp, std_all_tmp = _get_epsilon(
             struct_grouped, replace_nan=replace_nan)
         std_per_bead.append(std_per_bead_tmp)
