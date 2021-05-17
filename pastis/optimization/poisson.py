@@ -91,7 +91,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
 
         gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
         gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
-        gamma_var = ag_np.where(gamma_var > 0, gamma_var, 0)
+        #gamma_var = ag_np.where(gamma_var > 0, gamma_var, 0) ## FIXME this used to be uncommented...
 
         if counts.ambiguity == 'ua':
             theta_tmp = dis_alpha * ag_np.exp(ln_gamma_var - ln_gamma_mean)
