@@ -700,7 +700,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             use_prev_std_dev = False
             if use_prev_std_dev:
                 if multiscale_reform:
-                    prev_std_dev = infer_var['epsilon'] / 2
+                    prev_std_dev = infer_var['epsilon'] / np.sqrt(2)
                 elif use_multiscale_variance:
                     #prev_std_dev = np.sqrt(infer_var['multiscale_variances'])
                     pass
