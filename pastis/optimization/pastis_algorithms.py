@@ -572,8 +572,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             _, obj_true, _, _ = objective(
                 X_true_lowres, counts=counts,
                 alpha=alpha_init if alpha_ is None else alpha_,
-                lengths=lengths, bias=bias, constraints=constraints,
-                multiscale_factor=multiscale_factor,
+                lengths=lengths, ploidy=ploidy, bias=bias,
+                constraints=constraints, multiscale_factor=multiscale_factor,
                 multiscale_variances=multiscale_variances,
                 multiscale_reform=multiscale_reform,
                 mixture_coefs=mixture_coefs, return_extras=True)

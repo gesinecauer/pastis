@@ -83,7 +83,9 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, ploidy,
 
     if callback is not None:
         if epsilon is None:
-            callback.on_epoch_end(obj_logs, structures, alpha, X, epsilon=X[0])
+            callback.on_epoch_end(
+                obj_logs, structures, alpha, X,
+                epsilon=(X[0] if X.size == 1 else X))
         else:
             callback.on_epoch_end(obj_logs, structures, alpha, X,
                                   epsilon=epsilon)
@@ -264,7 +266,8 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
 
     if verbose:
         if inferring_epsilon:
-            print(f'INIT EPSILON: {init_X[0]:.3g},  FINAL EPSILON: {X[0]:.3g}',
+            print(f'INIT EPSILON: {np.asarray(init_X).mean():.3g},'
+                  f'  FINAL EPSILON: {np.asarray(X).mean():.3g}',
                   flush=True)
         if converged:
             print('CONVERGED\n', flush=True)

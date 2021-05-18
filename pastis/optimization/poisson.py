@@ -358,8 +358,9 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         return obj
 
 
-def _format_X(X, lengths, ploidy, multiscale_factor=1, reorienter=None,
-              multiscale_reform=False, epsilon=None, mixture_coefs=None):
+def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
+              reorienter=None, multiscale_reform=False, epsilon=None,
+              mixture_coefs=None):
     """Reformat and check X.
     """
     # FIXME epsilon shouldn't be inputted to here unless inferring struct/eps separately
@@ -367,11 +368,16 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1, reorienter=None,
     if mixture_coefs is None:
         mixture_coefs = [1]
 
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-    nbeads = lengths_lowres.sum() * ploidy
+    if lengths is None or ploidy is None:
+        nbeads = None
+    else:
+        lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
+        nbeads = lengths_lowres.sum() * ploidy
 
     if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # FIXME epsilon
+        if nbeads is None:
+            raise ValueError("Must input `lengths` and `ploidy`.")
         if X.size == nbeads * 3 * len(mixture_coefs) + 1:
             epsilon = X[-1]
             X = X[:-1]
@@ -400,7 +406,7 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1, reorienter=None,
             raise ValueError("X.shape[0] should be divisible by the length of"
                              f" mixture_coefs, {k}. X.shape ="
                              f" ({', '.join(map(str, X.shape))})")
-        if n != nbeads:
+        if nbeads is not None and n != nbeads:
             raise ValueError(f"Structures must be of length {nbeads}. They are"
                              f" of length {n}.")
         X = [X[i * n:(i + 1) * n] for i in range(k)]
@@ -608,7 +614,13 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
 
     if verbose:
         if multiscale_reform:
-            print(f'INIT EPSILON: {epsilon:.3g},  FINAL EPSILON: {X[-1]:.3g}',
+            _, final_epsilon, _ = _format_X(
+                X, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, reorienter=reorienter,
+                multiscale_reform=multiscale_reform,
+                mixture_coefs=mixture_coefs)
+            print(f'INIT EPSILON: {np.asarray(epsilon).mean():.3g},'
+                  f'  FINAL EPSILON: {np.asarray(final_epsilon).mean():.3g}',
                   flush=True)
         if converged:
             print('CONVERGED\n', flush=True)
@@ -902,7 +914,9 @@ class PastisPM(object):
             obj_type=self.obj_type)
 
         if inferring_epsilon:
-            self.epsilon_ = new_X_[0]
+            self.epsilon_ = new_X_
+            if self.epsilon_.size == 1:
+                self.epsilon_ = self.epsilon_[0]
         else:
             self.X_ = new_X_
 
