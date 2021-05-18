@@ -312,8 +312,8 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
 
     # Format X
     X, epsilon, mixture_coefs = _format_X(
-        X, reorienter=reorienter,
-        multiscale_reform=(multiscale_factor != 1 and multiscale_reform),
+        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        reorienter=reorienter, multiscale_reform=multiscale_reform,
         epsilon=epsilon, mixture_coefs=mixture_coefs)
 
     # Optionally translate & rotate structures
@@ -358,7 +358,8 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         return obj
 
 
-def _format_X(X, reorienter=None, multiscale_reform=False, epsilon=None, mixture_coefs=None):
+def _format_X(X, lengths, ploidy, multiscale_factor=1, reorienter=None,
+              multiscale_reform=False, epsilon=None, mixture_coefs=None):
     """Reformat and check X.
     """
     # FIXME epsilon shouldn't be inputted to here unless inferring struct/eps separately
@@ -366,9 +367,20 @@ def _format_X(X, reorienter=None, multiscale_reform=False, epsilon=None, mixture
     if mixture_coefs is None:
         mixture_coefs = [1]
 
-    if multiscale_reform and epsilon is None:  # FIXME epsilon
-        epsilon = X[-1]
-        X = X[:-1]
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    nbeads = lengths_lowres.sum() * ploidy
+
+    if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # FIXME epsilon
+        if X.size == nbeads * 3 * len(mixture_coefs) + 1:
+            epsilon = X[-1]
+            X = X[:-1]
+        elif X.size == nbeads * 3 * len(mixture_coefs) + nbeads:
+            epsilon = X[-nbeads]
+            X = X[:-nbeads]
+        else:
+            raise ValueError(f"Epsilon must be of length 1 or {nbeads}."
+                             f"X.shape = ({', '.join(map(str, X.shape))})")
     else:
         #epsilon = None  # FIXME epsilon
         pass
@@ -379,11 +391,18 @@ def _format_X(X, reorienter=None, multiscale_reform=False, epsilon=None, mixture
         try:
             X = X.reshape(-1, 3)
         except ValueError:
-            raise ValueError(
-                f"X should contain k 3D structures, X.shape = ({X.shape[0]},)")
+            raise ValueError("X should contain k 3D structures, X.shape ="
+                             f" ({', '.join(map(str, X.shape))})")
+
         k = len(mixture_coefs)
         n = int(X.shape[0] / k)
-
+        if n != X.shape[0] / k:
+            raise ValueError("X.shape[0] should be divisible by the length of"
+                             f" mixture_coefs, {k}. X.shape ="
+                             f" ({', '.join(map(str, X.shape))})")
+        if n != nbeads:
+            raise ValueError(f"Structures must be of length {nbeads}. They are"
+                             f" of length {n}.")
         X = [X[i * n:(i + 1) * n] for i in range(k)]
 
     return X, epsilon, mixture_coefs

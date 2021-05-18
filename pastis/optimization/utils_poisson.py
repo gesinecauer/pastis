@@ -106,7 +106,9 @@ def _format_structures(structures, lengths=None, ploidy=None,
             structures = structures.reshape(-1, 3)
         except ValueError:
             raise ValueError("Structure should be composed of 3D coordinates")
-        structures, _, _ = _format_X(structures, mixture_coefs=mixture_coefs)
+        structures, _, _ = _format_X(
+            structures, lengths=lengths, ploidy=ploidy,
+            mixture_coefs=mixture_coefs)
 
     if mixture_coefs is not None and len(structures) != len(mixture_coefs):
         raise ValueError("The number of structures (%d) and of mixture "

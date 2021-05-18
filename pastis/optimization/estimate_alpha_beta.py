@@ -75,7 +75,8 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
         alpha = alpha[0]
 
     structures, epsilon, mixture_coefs = _format_X(
-        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
+        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        reorienter=reorienter, multiscale_reform=multiscale_reform,
         mixture_coefs=mixture_coefs)
 
     if reorienter is not None and reorienter.reorient:
@@ -197,7 +198,8 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
     X, epsilon, mixture_coefs = _format_X(
-        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
+        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        reorienter=reorienter, multiscale_reform=multiscale_reform,
         mixture_coefs=mixture_coefs)
 
     new_obj, obj_logs, structures, alpha = objective_alpha(
@@ -229,7 +231,8 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
     X, epsilon, mixture_coefs = _format_X(
-        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
+        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        reorienter=reorienter, multiscale_reform=multiscale_reform,
         mixture_coefs=mixture_coefs)
 
     with warnings.catch_warnings():
