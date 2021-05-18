@@ -44,12 +44,10 @@ def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
         raise ValueError("Either structures or epsilon must be None")
     elif epsilon is None:
         # Inferring epsilon, not inferring structure
-        #struct_epsilon = np.append(structures.flatten(), X)
-        my_epsilon = X # X[0]
+        my_epsilon = X
         my_struct = structures.flatten()
     else:
         # Inferring structure, not inferring epsilon
-        #struct_epsilon = np.append(X, epsilon)
         my_epsilon = epsilon
         my_struct = X
 

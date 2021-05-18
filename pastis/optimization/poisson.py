@@ -166,7 +166,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
 
 def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
                         multiscale_factor=1, multiscale_variances=None,
-                        epsilon=None, mixture_coefs=None):
+                        mixture_coefs=None):
     """Computes the Poisson objective function for a given counts matrix.
     """
 
@@ -211,28 +211,12 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
     # Sum main objective function
     if counts.type == 'zero':
         obj = lambda_intensity.sum()
-    elif lambda_intensity.shape == counts.data.shape:  # TODO decide: elif epsilon is None:
+    elif lambda_intensity.shape == counts.data.shape:
         obj = lambda_intensity.sum() - (counts.data * ag_np.log(
             lambda_intensity)).sum()
-        # obj0 = lambda_intensity.sum() - (counts.data * ag_np.log(
-        #     lambda_intensity)).sum()
-        # obj1 = lambda_intensity.sum() - (counts.data * ag_np.log(
-        #     lambda_intensity / num_highres_per_lowres_bins)).sum()
-        # obj2 = lambda_intensity.sum() - (counts.data * ag_np.log(
-        #     lambda_intensity / num_highres_per_lowres_bins)).sum() - (
-        #     counts.data * ag_np.log(
-        #         num_highres_per_lowres_bins)).sum()
-        # print(obj0); print(obj1); print(obj2); exit(0)
     else:
-        #print(f'{counts.type}     eps=0')
         obj = lambda_intensity.sum() - _masksum(
             counts.data_grouped * ag_np.log(lambda_intensity), mask=counts.mask)
-        # obj = lambda_intensity.sum() - _masksum(
-        #     counts.data_grouped * ag_np.log(lambda_intensity / num_highres_per_lowres_bins))
-        # # FIXME FIXME FIXME below is temporary
-        # obj -= (_masksum(counts.data_grouped, axis=0) * ag_np.log(num_highres_per_lowres_bins)).sum()
-
-    #print('\n', obj, '\n'); exit(0) # TODO
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars
@@ -271,7 +255,7 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
         obj = _poisson_obj_single(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
             bias=bias, multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances, epsilon=epsilon,
+            multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs)
         return obj
     else:
@@ -410,11 +394,6 @@ def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
-    '''X, epsilon, mixture_coefs = _format_X(
-        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs)
-    X = X + [epsilon]'''
-
     new_obj, obj_logs, structures, alpha = objective(
         X, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
         constraints=constraints, reorienter=reorienter,
@@ -450,11 +429,6 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
-    '''X, epsilon, mixture_coefs = _format_X(
-        X, reorienter=reorienter, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs)
-    X = X + [epsilon]'''
-
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore", message="Using a non-tuple sequence for multidimensional"
@@ -466,10 +440,6 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform,
             mixture_coefs=mixture_coefs, obj_type=obj_type)).flatten()
-    if multiscale_reform and new_grad[-1] == 0:
-        print(f"* * * * EPSILON GRADIENT IS 0 * * * *       (mean |other grad| = {np.mean(np.abs(new_grad[:-1]))})", flush=True)
-    # elif multiscale_reform:
-    #     print(f"*                 epsilon grad = {new_grad[-1]:.2g}   (mean |other grad| = {np.mean(np.abs(new_grad[:-1]))})", flush=True)
 
     return new_grad
 
