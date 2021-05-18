@@ -5,8 +5,8 @@ from autograd import grad
 from .poisson import objective
 
 
-def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
-                      bias=None, constraints=None, reorienter=None,
+def objective_epsilon(X, counts, alpha, lengths, ploidy, structures=None,
+                      epsilon=None, bias=None, constraints=None, reorienter=None,
                       multiscale_factor=1, mixture_coefs=None,
                       return_extras=False, obj_type=None):
     """Computes the objective function.
@@ -24,6 +24,8 @@ def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
         counts to wish distances.
     lengths : array of int
         Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -52,17 +54,18 @@ def objective_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
         my_struct = X
 
     return objective(
-        my_struct, counts, alpha=alpha, lengths=lengths, bias=bias,
-        constraints=constraints, reorienter=reorienter,
+        my_struct, counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_variances=None,
         multiscale_reform=True, mixture_coefs=mixture_coefs,
         return_extras=return_extras, epsilon=my_epsilon, obj_type=obj_type)
 
 
-def objective_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
-                              bias=None, constraints=None,
-                              reorienter=None, multiscale_factor=1,
-                              mixture_coefs=None, callback=None, obj_type=None):
+def objective_wrapper_epsilon(X, counts, alpha, lengths, ploidy,
+                              structures=None, epsilon=None, bias=None,
+                              constraints=None, reorienter=None,
+                              multiscale_factor=1, mixture_coefs=None,
+                              callback=None, obj_type=None):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
@@ -72,8 +75,8 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilo
         raise ValueError("Either structures or epsilon must be None")
 
     new_obj, obj_logs, structures, alpha = objective_epsilon(
-        X, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-        structures=structures, epsilon=epsilon,
+        X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, structures=structures, epsilon=epsilon,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
         mixture_coefs=mixture_coefs, return_extras=True, obj_type=obj_type)
@@ -82,14 +85,8 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilo
         if epsilon is None:
             callback.on_epoch_end(obj_logs, structures, alpha, X, epsilon=X[0])
         else:
-            callback.on_epoch_end(obj_logs, structures, alpha, X, epsilon=epsilon)
-
-    if epsilon is None:
-        spacer = ' ' * (12 - len(f"{new_obj:.3g}"))
-        if X[0] == 0:
-            print(f'    obj {new_obj:.3g}{spacer}ε ---', flush=True)
-        else:
-            print(f'    obj {new_obj:.3g}{spacer}ε {X[0]:.6g}', flush=True)
+            callback.on_epoch_end(obj_logs, structures, alpha, X,
+                                  epsilon=epsilon)
 
     return new_obj
 
@@ -97,8 +94,8 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilo
 gradient_epsilon = grad(objective_epsilon)
 
 
-def fprime_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=None,
-                           bias=None, constraints=None,
+def fprime_wrapper_epsilon(X, counts, alpha, lengths, ploidy, structures=None,
+                           epsilon=None, bias=None, constraints=None,
                            reorienter=None, multiscale_factor=1,
                            mixture_coefs=None, callback=None, obj_type=None):
     """Gradient function wrapper to match scipy.optimize's interface.
@@ -114,8 +111,8 @@ def fprime_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=N
             "ignore", message="Using a non-tuple sequence for multidimensional"
             " indexing is deprecated", category=FutureWarning)
         new_grad = np.array(gradient_epsilon(
-            X, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-            structures=structures, epsilon=epsilon,
+            X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+            bias=bias, structures=structures, epsilon=epsilon,
             constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
             mixture_coefs=mixture_coefs, obj_type=obj_type)).flatten()
@@ -125,7 +122,7 @@ def fprime_wrapper_epsilon(X, counts, alpha, lengths, structures=None, epsilon=N
     return new_grad
 
 
-def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
+def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
                      constraints=None, epsilon=None, structures=None,
                      multiscale_factor=1,
                      epsilon_bounds=None, max_iter=30000, max_fun=None,
@@ -150,6 +147,8 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
         inferred.
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -220,7 +219,7 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
         callback.on_training_begin(
             opt_type=opt_type, alpha_loop=alpha_loop, epsilon_loop=epsilon_loop)
         obj = objective_wrapper_epsilon(
-            init_X, counts=counts, alpha=alpha, lengths=lengths,
+            init_X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
             structures=structures, epsilon=epsilon,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
@@ -250,8 +249,9 @@ def estimate_epsilon(counts, init_X, alpha, lengths, bias=None,
             pgtol=pgtol,
             factr=factr,
             bounds=bounds,
-            args=(counts, alpha, lengths, structures, epsilon, bias, constraints,
-                  reorienter, multiscale_factor, mixture_coefs, callback, obj_type))
+            args=(counts, alpha, lengths, ploidy, structures, epsilon, bias,
+                  constraints, reorienter, multiscale_factor, mixture_coefs,
+                  callback, obj_type))
         X, obj, d = results
         converged = d['warnflag'] == 0
         # TODO add conv_desc to main branch

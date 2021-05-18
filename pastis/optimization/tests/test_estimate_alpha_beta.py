@@ -35,10 +35,11 @@ def test_estimate_alpha_beta_haploid():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths)
+        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths,
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -71,11 +72,11 @@ def test_estimate_alpha_beta_haploid_biased():
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
         X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        bias=bias)
+        ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-        verbose=False).values())[0]
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, verbose=False).values())[0]
 
     assert converged
     assert obj < -1e3
@@ -103,10 +104,11 @@ def test_estimate_alpha_beta_diploid_unambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths)
+        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths,
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -139,11 +141,11 @@ def test_estimate_alpha_beta_diploid_unambig_biased():
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
         X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        bias=bias)
+        ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-        verbose=False).values())[0]
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, verbose=False).values())[0]
 
     #assert converged
     assert obj < -1e4
@@ -172,10 +174,11 @@ def test_estimate_alpha_beta_diploid_ambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths)
+        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths,
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -209,11 +212,11 @@ def test_estimate_alpha_beta_diploid_ambig_biased():
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
         X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        bias=bias)
+        ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-        verbose=False).values())[0]
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, verbose=False).values())[0]
 
     assert converged
     assert obj < -1e4
@@ -243,10 +246,11 @@ def test_estimate_alpha_beta_diploid_partially_ambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths)
+        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths,
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -282,11 +286,11 @@ def test_estimate_alpha_beta_diploid_partially_ambig_biased():
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
         X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        bias=bias)
+        ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-        verbose=False).values())[0]
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, verbose=False).values())[0]
 
     assert converged
     assert obj < -1e4
@@ -334,11 +338,11 @@ def test_estimate_alpha_beta_diploid_combo():
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
         X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        bias=bias)
+        ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-        verbose=False).values())[0]
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, verbose=False).values())[0]
 
     assert converged
     assert obj < -1e4
@@ -393,10 +397,10 @@ def test_estimate_alpha_beta_diploid_mhs_constraint():
 
     alpha, obj, converged, _ = estimate_alpha_beta.estimate_alpha(
         X=X_true, counts=null_counts, alpha_init=alpha_true, lengths=lengths,
-        constraints=constraint)
+        ploidy=ploidy, constraints=constraint)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths,
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     print(alpha, obj, converged, beta)

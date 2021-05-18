@@ -10,7 +10,7 @@ from .counts import _update_betas_in_counts_matrices
 from .multiscale_optimization import decrease_lengths_res
 
 
-def _estimate_beta_single(structures, counts, alpha, lengths, bias=None,
+def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                           multiscale_factor=1, multiscale_variances=None,
                           multiscale_reform=False, mixture_coefs=None):
     """Facilitates estimation of beta for a single counts object.
@@ -35,7 +35,6 @@ def _estimate_beta_single(structures, counts, alpha, lengths, bias=None,
         lengths_counts = lengths
     else:
         lengths_counts = lengths_lowres
-    ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
 
     if multiscale_variances is not None:
         if isinstance(multiscale_variances, np.ndarray):
@@ -63,9 +62,10 @@ def _estimate_beta_single(structures, counts, alpha, lengths, bias=None,
     return lambda_intensity_sum
 
 
-def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
-                   multiscale_factor=1, multiscale_variances=None,
-                   multiscale_reform=False, mixture_coefs=None, verbose=False):
+def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
+                   reorienter=None, multiscale_factor=1,
+                   multiscale_variances=None, multiscale_reform=False,
+                   mixture_coefs=None, verbose=False):
     """Estimates beta for all counts matrices.
     """
 
@@ -100,7 +100,7 @@ def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
     for counts_maps in counts:
         K[counts_maps.ambiguity] += _estimate_beta_single(
             structures, counts_maps, alpha=alpha, lengths=lengths,
-            bias=bias, multiscale_factor=multiscale_factor,
+            ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs)
 
@@ -124,8 +124,8 @@ def _estimate_beta(X, counts, alpha, lengths, bias=None, reorienter=None,
     return beta
 
 
-def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
-                    reorienter=None, multiscale_factor=1,
+def objective_alpha(alpha, counts, X, lengths, ploidy, bias=None,
+                    constraints=None, reorienter=None, multiscale_factor=1,
                     multiscale_variances=None, epsilon=None,
                     mixture_coefs=None, return_extras=False):
     """Computes the objective function.
@@ -143,6 +143,8 @@ def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
         Structure being inferred.
     lengths : array of int
         Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -167,7 +169,7 @@ def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
         alpha = alpha[0]
 
     return objective(
-        X, counts, alpha=alpha, lengths=lengths, bias=bias,
+        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
@@ -178,7 +180,7 @@ def objective_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
 gradient_alpha = grad(objective_alpha)
 
 
-def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
+def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
                             constraints=None, reorienter=None,
                             multiscale_factor=1, multiscale_variances=None,
                             multiscale_reform=False, mixture_coefs=None,
@@ -187,7 +189,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
     """
 
     new_beta = _estimate_beta(
-        X, counts, alpha=alpha, lengths=lengths, bias=bias,
+        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
@@ -199,7 +201,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
         mixture_coefs=mixture_coefs)
 
     new_obj, obj_logs, structures, alpha = objective_alpha(
-        alpha, counts=counts, X=X, lengths=lengths, bias=bias,
+        alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy, bias=bias,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances, epsilon=epsilon,
@@ -211,15 +213,15 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, bias=None,
     return new_obj
 
 
-def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
-                         reorienter=None, multiscale_factor=1,
+def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
+                         constraints=None, reorienter=None, multiscale_factor=1,
                          multiscale_variances=None, multiscale_reform=False,
                          mixture_coefs=None, callback=None):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
     new_beta = _estimate_beta(
-        X, counts, alpha=alpha, lengths=lengths, bias=bias,
+        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
@@ -235,8 +237,8 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
             "ignore", message='Using a non-tuple sequence for multidimensional'
                               ' indexing is deprecated', category=FutureWarning)
         new_grad = np.array(gradient_alpha(
-            alpha, counts=counts, X=X, lengths=lengths, bias=bias,
-            constraints=constraints, reorienter=reorienter,
+            alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy,
+            bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
             mixture_coefs=mixture_coefs)).flatten()
@@ -244,7 +246,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, bias=None, constraints=None,
     return new_grad
 
 
-def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
+def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
                    constraints=None, multiscale_factor=1,
                    multiscale_variances=None, multiscale_reform=False,
                    random_state=None, max_iter=30000, max_fun=None,
@@ -268,6 +270,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
         function used in converting counts to wish distances.
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -334,8 +338,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
         callback.on_training_begin(opt_type=opt_type, alpha_loop=alpha_loop)
         objective_wrapper_alpha(
             alpha=alpha_init, counts=counts, X=X.flatten(), lengths=lengths,
-            bias=bias, constraints=constraints, reorienter=reorienter,
-            multiscale_factor=multiscale_factor,
+            ploidy=ploidy, bias=bias, constraints=constraints,
+            reorienter=reorienter, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
             callback=callback)
@@ -352,7 +356,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, bias=None,
         pgtol=pgtol,
         factr=factr,
         bounds=np.array([[-100, -1e-2]]),
-        args=(counts, X.flatten(), lengths, bias, constraints,
+        args=(counts, X.flatten(), lengths, ploidy, bias, constraints,
               reorienter, multiscale_factor, multiscale_variances,
               multiscale_reform, mixture_coefs, callback))
 

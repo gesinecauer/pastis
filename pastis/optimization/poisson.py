@@ -49,7 +49,7 @@ def _masksum(x, mask, axis=None):
     return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
-def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
+def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            bias=None, multiscale_factor=1, mixture_coefs=None,
                            obj_type=None):
     """Computes the multiscale objective function for a given counts matrix.
@@ -60,9 +60,6 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     dis_with_neg_var = np.array([])
 
     ####
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
 
     num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
         multiscale_factor).reshape(1, -1)
@@ -164,7 +161,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths,
     return counts.weight * (- obj)
 
 
-def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
+def _poisson_obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
                         multiscale_factor=1, multiscale_variances=None,
                         mixture_coefs=None):
     """Computes the Poisson objective function for a given counts matrix.
@@ -181,9 +178,6 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
                          (len(structures), len(mixture_coefs)))
     elif mixture_coefs is None:
         mixture_coefs = [1.]
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    ploidy = int(structures[0].shape[0] / lengths_lowres.sum())
 
     if multiscale_variances is not None:
         if isinstance(multiscale_variances, np.ndarray):
@@ -233,7 +227,7 @@ def _poisson_obj_single(structures, counts, alpha, lengths, bias=None,
     return counts.weight * obj
 
 
-def _obj_single(structures, counts, alpha, lengths, bias=None,
+def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
                 mixture_coefs=None, obj_type=None):
     """Computes the objective function for a given individual counts matrix.
@@ -254,19 +248,20 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
     if epsilon is None or multiscale_factor == 1 or np.all(epsilon == 0):
         obj = _poisson_obj_single(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
-            bias=bias, multiscale_factor=multiscale_factor,
+            ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs)
         return obj
     else:
         obj = _multiscale_reform_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
-            lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs, obj_type=obj_type)
+            lengths=lengths, ploidy=ploidy, bias=bias,
+            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
+            obj_type=obj_type)
         return obj
 
 
-def objective(X, counts, alpha, lengths, bias=None, constraints=None,
+def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
               inferring_alpha=False, epsilon=None, obj_type=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
@@ -285,6 +280,8 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
         counts to wish distances.
     lengths : array of int
         Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -303,6 +300,17 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
         The total negative log likelihood of the poisson model and constraints.
     """
 
+    # Check format of input
+    counts = (counts if isinstance(counts, list) else [counts])
+    if lengths is None:
+        lengths = np.array([min([min(counts_maps.shape)
+                                 for counts_maps in counts])])
+    lengths = np.asarray(lengths)
+    if bias is None:
+        bias = np.ones((min([min(counts_maps.shape)
+                             for counts_maps in counts]),))
+
+    # Format X
     X, epsilon, mixture_coefs = _format_X(
         X, reorienter=reorienter,
         multiscale_reform=(multiscale_factor != 1 and multiscale_reform),
@@ -314,15 +322,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     else:
         structures = X
 
-    # Check format of input
-    counts = (counts if isinstance(counts, list) else [counts])
-    if lengths is None:
-        lengths = np.array([min([min(counts_maps.shape)
-                                 for counts_maps in counts])])
-    lengths = np.asarray(lengths)
-    if bias is None:
-        bias = np.ones((min([min(counts_maps.shape)
-                             for counts_maps in counts]),))
+    # Check format of structures and mixture_coefs
     if not (isinstance(structures, list) or isinstance(structures, SequenceBox)):
         structures = [structures]
     if mixture_coefs is None:
@@ -343,7 +343,8 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     for counts_maps in counts:
         obj_poisson['obj_' + counts_maps.name] = _obj_single(
             structures=structures, counts=counts_maps, alpha=alpha,
-            lengths=lengths, bias=bias, multiscale_factor=multiscale_factor,
+            lengths=lengths, ploidy=ploidy, bias=bias,
+            multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
             mixture_coefs=mixture_coefs, obj_type=obj_type)
     obj_poisson_sum = sum(obj_poisson.values())
@@ -388,16 +389,16 @@ def _format_X(X, reorienter=None, multiscale_reform=False, epsilon=None, mixture
     return X, epsilon, mixture_coefs
 
 
-def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
-                      reorienter=None, multiscale_factor=1,
+def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
+                      constraints=None, reorienter=None, multiscale_factor=1,
                       multiscale_variances=None, multiscale_reform=False,
                       mixture_coefs=None, callback=None, obj_type=None):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
     new_obj, obj_logs, structures, alpha = objective(
-        X, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-        constraints=constraints, reorienter=reorienter,
+        X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform,
@@ -423,8 +424,8 @@ def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
 gradient = grad(objective)
 
 
-def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
-                   reorienter=None, multiscale_factor=1,
+def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
+                   constraints=None, reorienter=None, multiscale_factor=1,
                    multiscale_variances=None, multiscale_reform=False,
                    mixture_coefs=None, callback=None, obj_type=None):
     """Gradient function wrapper to match scipy.optimize's interface.
@@ -435,8 +436,8 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
             "ignore", message="Using a non-tuple sequence for multidimensional"
             " indexing is deprecated", category=FutureWarning)
         new_grad = np.array(gradient(
-            X, counts=counts, alpha=alpha, lengths=lengths, bias=bias,
-            constraints=constraints, reorienter=reorienter,
+            X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+            bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform,
@@ -445,8 +446,8 @@ def fprime_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
     return new_grad
 
 
-def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
-               multiscale_factor=1, multiscale_variances=None,
+def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
+               constraints=None, multiscale_factor=1, multiscale_variances=None,
                epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
                factr=10000000., pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
                reorienter=None, mixture_coefs=None, verbose=True, obj_type=None):
@@ -467,6 +468,8 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
         inferred.
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -538,7 +541,7 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
         callback.on_training_begin(
             opt_type=opt_type, alpha_loop=alpha_loop, epsilon_loop=epsilon_loop)
         obj = objective_wrapper(
-            x0, counts=counts, alpha=alpha, lengths=lengths,
+            x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
@@ -571,7 +574,7 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
             pgtol=pgtol,
             factr=factr,
             bounds=bounds,
-            args=(counts, alpha, lengths, bias, constraints,
+            args=(counts, alpha, lengths, ploidy, bias, constraints,
                   reorienter, multiscale_factor, multiscale_variances,
                   multiscale_reform, mixture_coefs, callback, obj_type))
         X, obj, d = results
@@ -763,7 +766,7 @@ class PastisPM(object):
 
         new_beta = _estimate_beta(
             self.X_.flatten(), self.counts, alpha=self.alpha_,
-            lengths=self.lengths, bias=self.bias,
+            lengths=self.lengths, ploidy=self.ploidy, bias=self.bias,
             multiscale_factor=self.multiscale_factor,
             multiscale_variances=self.multiscale_variances,
             epsilon=self.epsilon_,
@@ -783,6 +786,7 @@ class PastisPM(object):
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
             lengths=self.lengths,
+            ploidy=self.ploidy,
             bias=self.bias,
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
@@ -817,6 +821,7 @@ class PastisPM(object):
             X=self.X_.flatten(),
             alpha_init=self.alpha_,
             lengths=self.lengths,
+            ploidy=self.ploidy,
             bias=self.bias,
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
@@ -859,6 +864,7 @@ class PastisPM(object):
             init_X=init_X,
             alpha=self.alpha_,
             lengths=self.lengths,
+            ploidy=self.ploidy,
             bias=self.bias,
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
@@ -909,6 +915,7 @@ class PastisPM(object):
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
             lengths=self.lengths,
+            ploidy=self.ploidy,
             bias=self.bias,
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
