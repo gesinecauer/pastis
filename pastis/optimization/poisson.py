@@ -251,7 +251,7 @@ def _obj_single(structures, counts, alpha, lengths, bias=None,
     elif mixture_coefs is None:
         mixture_coefs = [1.]
 
-    if epsilon is None or multiscale_factor == 1 or epsilon == 0:
+    if epsilon is None or multiscale_factor == 1 or np.all(epsilon == 0):
         obj = _poisson_obj_single(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
             bias=bias, multiscale_factor=multiscale_factor,
@@ -306,7 +306,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     X, epsilon, mixture_coefs = _format_X(
         X, reorienter=reorienter,
         multiscale_reform=(multiscale_factor != 1 and multiscale_reform),
-        mixture_coefs=mixture_coefs, epsilon=epsilon)  # FIXME epsilon
+        epsilon=epsilon, mixture_coefs=mixture_coefs)
 
     # Optionally translate & rotate structures
     if reorienter is not None and reorienter.reorient:
@@ -319,7 +319,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
     if lengths is None:
         lengths = np.array([min([min(counts_maps.shape)
                                  for counts_maps in counts])])
-    lengths = np.array(lengths)
+    lengths = np.asarray(lengths)
     if bias is None:
         bias = np.ones((min([min(counts_maps.shape)
                              for counts_maps in counts]),))
@@ -357,9 +357,10 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
         return obj
 
 
-def _format_X(X, reorienter=None, multiscale_reform=False, mixture_coefs=None, epsilon=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+def _format_X(X, reorienter=None, multiscale_reform=False, epsilon=None, mixture_coefs=None):
     """Reformat and check X.
     """
+    # FIXME epsilon shouldn't be inputted to here unless inferring struct/eps separately
 
     if mixture_coefs is None:
         mixture_coefs = [1]
