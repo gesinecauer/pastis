@@ -272,6 +272,7 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
         multiscale_variances = None
 
     # MULTISCALE EPSILON
+    epsilon_true = None
     if multiscale_factor != 1 and multiscale_reform:
         if struct_true is not None and verbose:
             epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
@@ -279,8 +280,6 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
                 multiscale_factor=multiscale_factor, verbose=False))
             print(f"True epsilon ({multiscale_factor}x):"
                   f" {epsilon_true:.3g}", flush=True)
-        else:
-            epsilon_true = None
 
     # PREPARE COUNTS OBJECTS
     if simple_diploid:
@@ -369,7 +368,8 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
             lengths, ploidy, counts=counts, multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform,
             analysis_function=callback_function, frequency=callback_freq,
-            directory=outdir, struct_true=struct_true, alpha_true=alpha_true)
+            directory=outdir, struct_true=struct_true, alpha_true=alpha_true,
+            epsilon_true=epsilon_true)
     else:
         struct_init = None
         epsilon = None

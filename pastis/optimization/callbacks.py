@@ -125,7 +125,7 @@ class Callback(object):
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
                  on_epoch_end=None, directory=None, struct_true=None,
-                 alpha_true=None, verbose=False):
+                 alpha_true=None, epsilon_true=None, verbose=False):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.epsilon = None
@@ -162,6 +162,7 @@ class Callback(object):
         else:
             self.struct_true = None
         self.alpha_true = alpha_true
+        self.epsilon_true = epsilon_true
         self.verbose = verbose
 
         if history is None:
