@@ -280,13 +280,49 @@ class Constraints(object):
                 obj_bcc = ag_np.power(obj_bcc, self.params["bcc"])
                 obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
         if self.lambdas["hsc"] and not inferring_alpha:
+
+            #hsc_type = []
+            #hsc_type = ['scaleR', 'lt0', 'power4'] # hsc_scaleR_lt0_power4
+            #hsc_type = ['scaleR', 'power4'] # hsc_scaleR_power4
+            #hsc_type = ['scaleR', 'div2', 'power4'] # hsc_scaleR_div2_power4
+
+
             for struct, gamma in zip(structures, mixture_coefs):
                 homo_sep = self._homolog_separation(struct)
-                hsc_diff = 0.
-                for i in range(len(self.lengths_lowres)):
-                    hsc_diff = hsc_diff + ag_np.square(
-                        ag_np.max([self.params["hsc"][i] - homo_sep[i], 0]))
-                obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc_diff
+                homo_sep_diff = self.params["hsc"] - homo_sep
+
+                homo_sep_diff = ag_np.where(
+                        homo_sep_diff < 0, 0, homo_sep_diff)
+                hsc = ag_np.sum(ag_np.square(homo_sep_diff))
+
+                # if 'scaleR' in hsc_type:
+                #     homo_sep_diff = homo_sep_diff / self.params["hsc"]
+
+                # if 'div2' in hsc_type:
+                #     homo_sep_diff = ag_np.where(
+                #         homo_sep_diff < 0, homo_sep_diff / 2, homo_sep_diff)
+                # elif 'lt0' not in hsc_type:
+                #     homo_sep_diff = ag_np.where(
+                #         homo_sep_diff < 0, 0, homo_sep_diff)
+
+                # if 'power4' in hsc_type:
+                #     hsc = ag_np.sum(ag_np.power(homo_sep_diff, 4))
+                # if 'power10' in hsc_type:
+                #     hsc = ag_np.sum(ag_np.power(homo_sep_diff, 10))
+                # else:
+                #     hsc = ag_np.sum(ag_np.square(homo_sep_diff))
+
+                # hsc = 0.
+                # for i in range(len(self.lengths_lowres)):
+                #     hsc_diff = self.params["hsc"][i] - homo_sep[i]
+                #     if hsc_type == 'hsc_div2':
+                #         if hsc_diff < 0:
+                #             hsc_diff = hsc_diff / 2
+                #         hsc = hsc + ag_np.square(hsc_diff)
+                #     else:
+                #         hsc = hsc + ag_np.square(ag_np.max([hsc_diff, 0]))
+
+                obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
         if self.lambdas["mhs"]:
             if alpha is None:
                 raise ValueError("Must input alpha for multiscale-based homolog"
