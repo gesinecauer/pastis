@@ -377,7 +377,7 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
         callback = None
 
     return (counts, alpha_, beta_, bias, torm, fullres_torm_for_multiscale,
-            struct_init, constraints, callback, struct_draft_fullres,
+            struct_init, constraints, hsc_r, callback, struct_draft_fullres,
             multiscale_variances, epsilon)
 
 
@@ -550,7 +550,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
         out_file=out_file, verbose=verbose)
     (counts, alpha_, beta_, bias, torm, fullres_torm_for_multiscale,
-        struct_init, constraints, callback, struct_draft_fullres,
+        struct_init, constraints, hsc_r, callback, struct_draft_fullres,
         multiscale_variances, epsilon) = prepped
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
@@ -561,9 +561,10 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 struct_true, multiscale_factor=multiscale_factor,
                 lengths=lengths)
             if simple_diploid:
+                # TODO add bug fix below to main branch
                 struct_true_lowres = np.nanmean(
-                    [struct_true_lowres[:int(struct_true.shape[0] / 2)],
-                     struct_true_lowres[int(struct_true.shape[0] / 2):]],
+                    [struct_true_lowres[:int(struct_true_lowres.shape[0] / 2)],
+                     struct_true_lowres[int(struct_true_lowres.shape[0] / 2):]],
                     axis=0)
             if multiscale_reform and multiscale_factor != 1:
                 X_true_lowres = np.append(struct_true_lowres.flatten(), epsilon)
@@ -572,8 +573,9 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             _, obj_true, _, _ = objective(
                 X_true_lowres, counts=counts,
                 alpha=alpha_init if alpha_ is None else alpha_,
-                lengths=lengths, ploidy=ploidy, bias=bias,
-                constraints=constraints, multiscale_factor=multiscale_factor,
+                lengths=lengths, ploidy=(1 if simple_diploid else ploidy),
+                bias=bias, constraints=constraints,
+                multiscale_factor=multiscale_factor,
                 multiscale_variances=multiscale_variances,
                 multiscale_reform=multiscale_reform,
                 mixture_coefs=mixture_coefs, return_extras=True)
@@ -582,7 +584,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
         # INFER STRUCTURE
         pm = PastisPM(
-            counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha_,
+            counts=counts, lengths=lengths,
+            ploidy=(1 if simple_diploid else ploidy), alpha=alpha_,
             init=struct_init, bias=bias, constraints=constraints,
             callback=callback, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
@@ -705,7 +708,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     #prev_std_dev = np.sqrt(infer_var['multiscale_variances'])
                     pass
 
-            epsilon_max = infer_var['epsilon']  # FIXME??
+            if 'epsilon' in infer_var:
+                epsilon_max = infer_var['epsilon']  # FIXME??
             # exit(0)  # FIXME
         return struct_, infer_var
 
