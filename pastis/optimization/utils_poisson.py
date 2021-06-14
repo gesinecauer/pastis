@@ -49,7 +49,10 @@ def _load_infer_var(infer_var_file):
         infer_var['multiscale_variances'] = float(
             infer_var['multiscale_variances'])
     if 'epsilon' in infer_var:
-        infer_var['epsilon'] = float(infer_var['epsilon'])
+        if ' ' not in infer_var['epsilon']:
+            infer_var['epsilon'] = float(infer_var['epsilon'])
+        else:
+            infer_var['epsilon'] = np.array(map(float, infer_var['epsilon'].split(' ')))
     infer_var['alpha'] = float(infer_var['alpha'])
     infer_var['converged'] = strtobool(infer_var['converged'])
     return infer_var
