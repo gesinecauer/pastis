@@ -66,8 +66,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     bias_per_bin = counts.bias_per_bin(bias, ploidy)  # TODO
 
-    epsilon_sq = ag_np.square(epsilon)
-    alpha_sq = ag_np.square(alpha)
+    sqrt_2 = ag_np.sqrt(2)
 
     mu = ag_np.zeros((1, counts.nnz_lowres))
     theta = ag_np.zeros((1, counts.nnz_lowres))
@@ -76,7 +75,13 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
         dis_alpha = ag_np.power(dis, alpha)
-        epsilon_over_dis = epsilon / dis
+        if ag_np.asarray(epsilon).size == 1:
+            epsilon_over_dis = epsilon / dis
+        else:
+            epsilon_per_bin = ag_np.sqrt(
+                ag_np.square(epsilon[counts.row3d]) + ag_np.square(
+                    epsilon[counts.col3d])) / sqrt_2
+            epsilon_over_dis = epsilon_per_bin / dis
 
         # FIXME the below is likely source of abnormal term (grad != obj)
         max_epsilon_over_dis = 25
@@ -434,7 +439,8 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             epsilon = X[-1]
         else:
             epsilon = None
-        callback.on_epoch_end(obj_logs, structures, alpha, X, epsilon=epsilon)
+        callback.on_epoch_end(obj_logs=obj_logs, structures=structures,
+                              alpha=alpha, Xi=X, epsilon=epsilon)
 
     if epsilon is not None and False:  # FIXME remove
         spacer = ' ' * (12 - len(f"{new_obj:.3g}"))
