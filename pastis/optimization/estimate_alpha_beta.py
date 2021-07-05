@@ -1,10 +1,24 @@
 import numpy as np
 from scipy import optimize
 import warnings
-import autograd.numpy as ag_np
-from autograd import grad
-from autograd.builtins import SequenceBox
 from sklearn.utils import check_random_state
+
+use_jax = True
+if use_jax:
+    from absl import logging as absl_logging
+    absl_logging.set_verbosity('error')
+    from jax.config import config as jax_config
+    jax_config.update("jax_platform_name", "cpu")
+    jax_config.update("jax_enable_x64", True)
+
+    import jax.numpy as ag_np #import autograd.numpy as ag_np
+    SequenceBox = list #from autograd.builtins import SequenceBox
+    from jax import grad #from autograd import grad
+else:
+    import autograd.numpy as ag_np
+    from autograd.builtins import SequenceBox
+    from autograd import grad
+
 from .poisson import _format_X, objective
 from .counts import _update_betas_in_counts_matrices
 from .multiscale_optimization import decrease_lengths_res
@@ -246,7 +260,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
             mixture_coefs=mixture_coefs)).flatten()
 
-    return new_grad
+    return np.asarray(new_grad, dtype=np.float64)
 
 
 def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,

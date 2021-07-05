@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 
+#import jax; jax.config.update('jax_platform_name', 'cpu')
 from pastis.optimization.pastis_algorithms import pastis_poisson
 import argparse
 

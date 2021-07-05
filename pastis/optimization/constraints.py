@@ -4,8 +4,23 @@ if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
 import numpy as np
-import autograd.numpy as ag_np
-from autograd.builtins import SequenceBox
+
+use_jax = True
+if use_jax:
+    from absl import logging as absl_logging
+    absl_logging.set_verbosity('error')
+    from jax.config import config as jax_config
+    jax_config.update("jax_platform_name", "cpu")
+    jax_config.update("jax_enable_x64", True)
+
+    import jax.numpy as ag_np #import autograd.numpy as ag_np
+    SequenceBox = list #from autograd.builtins import SequenceBox
+    from jax import lax
+    from jax.nn import relu
+else:
+    import autograd.numpy as ag_np
+    from autograd.builtins import SequenceBox
+
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .utils_poisson import find_beads_to_remove, _inter_counts
@@ -69,8 +84,9 @@ class Constraints(object):
                  multiscale_reform=False, constraint_lambdas=None,
                  constraint_params=None, verbose=True):
 
-        self.lengths = np.array(lengths)
-        self.lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+        self.lengths = np.array(lengths).astype(np.int32)
+        self.lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor).astype(np.int32)
         if multiscale_reform:
             self.lengths_counts = self.lengths
         else:
@@ -120,6 +136,7 @@ class Constraints(object):
                 begin = end
             self.bead_weights = np.repeat(
                 bead_weights.reshape(-1, 1), 3, axis=1)
+            self.bead_weights = self.bead_weights # .astype(np.float32) # FIXME revert
 
         self.subtracted = None
         if self.lambdas["mhs"]:
@@ -165,7 +182,7 @@ class Constraints(object):
                     raise ValueError(
                         "constraint_lambdas key not recognized - %s" % k)
                 elif v is not None:
-                    lambda_all[k] = float(v)
+                    lambda_all[k] = float(v) # np.float32(v) # FIXME revert
         self.lambdas = lambda_all
 
         params_defaults = {"hsc": None, "mhs": None, 'bcc': 1}
@@ -175,8 +192,10 @@ class Constraints(object):
                 if k not in params_all:
                     raise ValueError('params key not recognized - %s' % k)
                 elif v is not None:
-                    if isinstance(v, int):
-                        v = float(v)
+                    # if isinstance(v, int) or isinstance(v, float):  # FIXME revert
+                    #     v = np.float32(v)  # FIXME revert
+                    if isinstance(v, list) or isinstance(v, np.ndarray):
+                        v = np.asarray(v) #.astype(np.float32)  # FIXME revert
                     params_all[k] = v
         self.params = params_all
 
@@ -280,37 +299,47 @@ class Constraints(object):
                 obj_bcc = ag_np.power(obj_bcc, self.params["bcc"])
                 obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
         if self.lambdas["hsc"] and not inferring_alpha:
-
-            #hsc_type = []
-            #hsc_type = ['scaleR', 'lt0', 'power4'] # hsc_scaleR_lt0_power4
-            #hsc_type = ['scaleR', 'power4'] # hsc_scaleR_power4
-            #hsc_type = ['scaleR', 'div2', 'power4'] # hsc_scaleR_div2_power4
-
-
             for struct, gamma in zip(structures, mixture_coefs):
-                homo_sep = self._homolog_separation(struct)
+                homo_sep = self._homolog_separation_new(struct) # FIXME revert
                 homo_sep_diff = self.params["hsc"] - homo_sep
+                # homo_sep_diff = 1 - homo_sep / self.params["hsc"]  # with scaleR
 
-                homo_sep_diff = ag_np.where(
-                        homo_sep_diff < 0, 0, homo_sep_diff)
-                hsc = ag_np.sum(ag_np.square(homo_sep_diff))
+                # OLD WAY
+                # homo_sep_diff = ag_np.where(
+                #         homo_sep_diff < 0, 0, homo_sep_diff)  # with where()
 
-                # if 'scaleR' in hsc_type:
-                #     homo_sep_diff = homo_sep_diff / self.params["hsc"]
+                # TESTS
+                homo_sep_diff = relu(homo_sep_diff) # relu!
 
-                # if 'div2' in hsc_type:
-                #     homo_sep_diff = ag_np.where(
-                #         homo_sep_diff < 0, homo_sep_diff / 2, homo_sep_diff)
-                # elif 'lt0' not in hsc_type:
-                #     homo_sep_diff = ag_np.where(
-                #         homo_sep_diff < 0, 0, homo_sep_diff)
+                # homo_sep_diff = ag_np.maximum(homo_sep_diff, 0.) # with maximum() + 0.
 
-                # if 'power4' in hsc_type:
-                #     hsc = ag_np.sum(ag_np.power(homo_sep_diff, 4))
-                # if 'power10' in hsc_type:
-                #     hsc = ag_np.sum(ag_np.power(homo_sep_diff, 10))
-                # else:
-                #     hsc = ag_np.sum(ag_np.square(homo_sep_diff))
+                # homo_sep_diff = homo_sep_diff[homo_sep_diff > 0]
+
+                # homo_sep_diff = ag_np.maximum(homo_sep_diff, 0) + \
+                #     ag_np.maximum(-homo_sep_diff, 0)  # test
+
+                # homo_sep_diff = ag_np.maximum(homo_sep_diff, 0) # with maximum()
+
+                # homo_sep_diff = ag_np.maximum(
+                #     homo_sep_diff, ag_np.zeros_like(homo_sep_diff)) # with maximum() & hsc-f32
+
+                # homo_sep_diff = ag_np.max(ag_np.array([
+                #     homo_sep_diff, ag_np.zeros_like(homo_sep_diff)]), axis=0) # with max() & hsc-f32
+
+                # homo_sep_diff = ag_np.where(
+                #         self.params["hsc"] < homo_sep, 0,
+                #         self.params["hsc"] - homo_sep)  # with where() reformulated
+
+
+                homo_sep_diff_sq = ag_np.square(homo_sep_diff)
+
+
+                # HOPEFULLY THIS WORKS - jk hah it does not
+                # homo_sep_diff_sq = ag_np.where(
+                #     homo_sep_diff < 0, 0, homo_sep_diff_sq)
+
+
+                hsc = ag_np.sum(homo_sep_diff_sq)  # TODO fix on main branch: mean not sum!
 
                 # hsc = 0.
                 # for i in range(len(self.lengths_lowres)):
@@ -345,7 +374,34 @@ class Constraints(object):
 
         return {'obj_' + k: v for k, v in obj.items()}
 
-    def _homolog_separation(self, struct):
+    def _homolog_separation_new(self, struct):
+        """Compute distance between homolog centers of mass per chromosome.
+        """
+
+        struct_bw = struct * self.bead_weights
+        n = ag_np.int32(self.lengths_lowres.sum())
+
+        # homo_sep = []
+        # homo_sep = ag_np.zeros(self.lengths_lowres.shape, dtype=ag_np.float32) # FIXME revert
+        homo_sep = ag_np.zeros(self.lengths_lowres.shape)
+        begin = end = 0
+        # for l in self.lengths_lowres:
+        for i in range(self.lengths_lowres.shape[0]):
+            #end = end + l
+            end = end + ag_np.int32(self.lengths_lowres[i])
+
+            chrom1_mean = ag_np.sum(struct_bw[begin:end], axis=0)
+            chrom2_mean = ag_np.sum(struct_bw[(n + begin):(n + end)], axis=0)
+            # homo_sep.append(ag_np.sqrt(ag_np.sum(ag_np.square(
+            #     chrom1_mean - chrom2_mean))))
+            homo_sep.at[i].set(ag_np.sqrt(ag_np.sum(ag_np.square(
+                chrom1_mean - chrom2_mean))))
+            begin = end
+
+        #return ag_np.array(homo_sep)
+        return homo_sep
+
+    def _homolog_separation_old(self, struct):
         """Compute distance between homolog centers of mass per chromosome.
         """
 
@@ -356,6 +412,7 @@ class Constraints(object):
         begin = end = 0
         for l in self.lengths_lowres:
             end = end + l
+
             chrom1_mean = ag_np.sum(struct_bw[begin:end], axis=0)
             chrom2_mean = ag_np.sum(struct_bw[(n + begin):(n + end)], axis=0)
             homo_sep.append(ag_np.sqrt(ag_np.sum(ag_np.square(
@@ -363,6 +420,86 @@ class Constraints(object):
             begin = end
 
         return ag_np.array(homo_sep)
+
+
+def hsc_homolog_separation(struct, lengths_lowres, bead_weights):
+    """Compute distance between homolog centers of mass per chromosome.
+    """
+
+    #lengths_lowres = ag_np.asarray(lengths_lowres, dtype=ag_np.int32)
+
+    struct_bw = struct * bead_weights
+
+    n = lengths_lowres.sum()
+
+    #print(type(struct).__name__)
+    print('struct * 10^10'); print(struct[0, 0] * (10 ** 10)); print(struct.dtype, struct_bw.dtype); print()
+    #print(struct_bw[0, 0] * (10 ** 10))
+
+    #homo_sep = []
+    homo_sep = ag_np.zeros(lengths_lowres.shape, dtype=ag_np.float32)
+    begin = end = 0
+    #for l in lengths_lowres:
+    for i in range(lengths_lowres.shape[0]):
+        end = end + lengths_lowres[i]
+        begin = ag_np.int32(begin); end = ag_np.int32(end); n = ag_np.int32(n)
+        chrom1_mean = ag_np.sum(struct_bw[begin:end], axis=0)
+        chrom2_mean = ag_np.sum(struct_bw[(n + begin):(n + end)], axis=0)
+        # homo_sep.append(ag_np.sqrt(ag_np.sum(ag_np.square(
+        #     chrom1_mean - chrom2_mean))))
+        homo_sep.at[i].set(ag_np.sqrt(ag_np.sum(ag_np.square(
+            chrom1_mean - chrom2_mean))))
+        begin = end
+
+    #return ag_np.array(homo_sep)
+    return homo_sep
+
+
+def obj_hsc_tmp(struct, lengths_lowres, hsc_param, hsc_lambda, bead_weights):
+    print('\n' + ('=' * 10))
+
+    print(hsc_param)
+
+    #print(struct.dtype, lengths_lowres.dtype, hsc_param.dtype, type(hsc_lambda), bead_weights.dtype)
+    homo_sep = hsc_homolog_separation(
+        struct=struct, lengths_lowres=lengths_lowres, bead_weights=bead_weights)
+    print('homo_sep[0]'); print(homo_sep[0]); print()
+
+    if ag_np.all(homo_sep == 0):
+        print('ALL ZERO')
+        homo_sep_diff = hsc_param
+    else:
+        # homo_sep_diff = hsc_param - homo_sep
+        # homo_sep_diff = ag_np.subtract(hsc_param, homo_sep) # nope
+        homo_sep_diff = lax.sub(hsc_param, homo_sep) # nope
+    print(homo_sep_diff)
+
+    # homo_sep_diff = ag_np.maximum(homo_sep_diff, 0.) # with maximum() + 0.
+
+    hsc = ag_np.sum(ag_np.square(homo_sep_diff))  # TODO fix on main branch: mean not sum
+
+    if True:
+        # return struct[0, 0] * (10 ** 10) # seems to be fine
+        # return homo_sep[0] # with homo_sep initiated as array this seems to work?
+        # return homo_sep.sum() # ok with homo_sep array
+        # return homo_sep # ok with homo_sep array
+        # return hsc_param # bad
+        # return homo_sep_diff.sum() # bad
+        # return homo_sep_diff # bad
+        # return (homo_sep / hsc_param) # seems to work?
+        return 1 - (homo_sep / hsc_param) # seems to work???!
+        # return hsc # bad
+
+    obj = hsc * hsc_lambda
+
+    print('HSC OBJ'); print(obj)
+    try:
+        print(obj.dtype)
+    except:
+        print(type(obj))
+    print(('=' * 10) + '\n')
+
+    return obj
 
 
 def _mean_interhomolog_counts(counts, lengths, bias=None):

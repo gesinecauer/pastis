@@ -4,13 +4,28 @@ import numpy as np
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
+use_jax = True
+if use_jax:
+    from absl import logging as absl_logging
+    absl_logging.set_verbosity('error')
+    from jax.config import config as jax_config
+    jax_config.update("jax_platform_name", "cpu")
+    jax_config.update("jax_enable_x64", True)
+
+    import jax.numpy as ag_np #import autograd.numpy as ag_np
+    SequenceBox = list #from autograd.builtins import SequenceBox
+    from jax import grad #from autograd import grad
+    from jax.nn import relu
+else:
+    import autograd.numpy as ag_np
+    from autograd.builtins import SequenceBox
+    from autograd import grad
+
 from scipy import optimize
 import warnings
 from timeit import default_timer as timer
 from datetime import timedelta
-import autograd.numpy as ag_np
-from autograd.builtins import SequenceBox
-from autograd import grad
+
 from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .constraints import Constraints
@@ -128,7 +143,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         obj_tmp6 = -_masksum(
             ag_np.log1p(counts.data_grouped / k), mask=counts.mask, axis=0)
         obj_tmp_sum = (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
-    obj = ag_np.sum(obj_tmp_sum)
+    obj = ag_np.sum(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars  # FIXME
@@ -160,7 +175,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     # FIXME FIXME FIXME below is temporary
     obj_constant = (_masksum(
         counts.data_grouped, mask=counts.mask, axis=0) * ag_np.log(
-        num_highres_per_lowres_bins)).sum()
+        num_highres_per_lowres_bins)).sum()   # TODO fix on main branch: mean not sum!
     obj = obj + obj_constant
 
     return counts.weight * (- obj)
@@ -209,13 +224,13 @@ def _poisson_obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
 
     # Sum main objective function
     if counts.type == 'zero':
-        obj = lambda_intensity.sum()
+        obj = lambda_intensity.sum()  # TODO fix on main branch: mean not sum!
     elif lambda_intensity.shape == counts.data.shape:
         obj = lambda_intensity.sum() - (counts.data * ag_np.log(
-            lambda_intensity)).sum()
+            lambda_intensity)).sum()  # TODO fix on main branch: mean not sum!
     else:
         obj = lambda_intensity.sum() - _masksum(
-            counts.data_grouped * ag_np.log(lambda_intensity), mask=counts.mask)
+            counts.data_grouped * ag_np.log(lambda_intensity), mask=counts.mask)  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars
@@ -344,16 +359,21 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         obj_constraints = constraints.apply(
             structures, alpha=alpha, inferring_alpha=inferring_alpha,
             mixture_coefs=mixture_coefs)
+
     obj_poisson = {}
-    for counts_maps in counts:
-        obj_poisson['obj_' + counts_maps.name] = _obj_single(
-            structures=structures, counts=counts_maps, alpha=alpha,
-            lengths=lengths, ploidy=ploidy, bias=bias,
-            multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances, epsilon=epsilon,
-            mixture_coefs=mixture_coefs, obj_type=obj_type)
-    obj_poisson_sum = sum(obj_poisson.values())
-    obj = obj_poisson_sum + sum(obj_constraints.values())
+    if len(counts) == 0: # FIXME this is temp
+        obj_poisson_sum = 0.
+        obj = sum(obj_constraints.values())
+    else:
+        for counts_maps in counts:
+            obj_poisson['obj_' + counts_maps.name] = _obj_single(
+                structures=structures, counts=counts_maps, alpha=alpha,
+                lengths=lengths, ploidy=ploidy, bias=bias,
+                multiscale_factor=multiscale_factor,
+                multiscale_variances=multiscale_variances, epsilon=epsilon,
+                mixture_coefs=mixture_coefs, obj_type=obj_type)
+        obj_poisson_sum = sum(obj_poisson.values())
+        obj = obj_poisson_sum + sum(obj_constraints.values())
 
     if return_extras:
         obj_logs = {**obj_poisson, **obj_constraints,
@@ -419,12 +439,61 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
     return X, epsilon, mixture_coefs
 
 
+def test_jax_gradient(X, counts, alpha, lengths, ploidy, bias=None,
+                      constraints=None, reorienter=None, multiscale_factor=1,
+                      multiscale_variances=None, multiscale_reform=False,
+                      mixture_coefs=None, callback=None, running='obj'):
+    if sum(constraints.lambdas.values()) == 0:
+        return None
+
+    from jax.test_util import check_grads
+    from .constraints import obj_hsc_tmp
+
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor).astype(np.float32)
+    structures, _, _ = _format_X(
+        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        reorienter=reorienter, multiscale_reform=multiscale_reform,
+        epsilon=None, mixture_coefs=mixture_coefs)
+    hsc_param = constraints.params["hsc"].copy().astype(np.float32)
+    print('real value of hsc_param', hsc_param)
+    struct = structures[0].astype(np.float32)
+    obj_args = (struct, lengths_lowres, hsc_param,
+        constraints.lambdas["hsc"], constraints.bead_weights.astype(np.float32))
+
+    # hsc = obj_hsc_tmp(*obj_args)
+    # print('\n\nobj:'); print(hsc); print('\nobj type & dtype', type(hsc), hsc.dtype)
+
+    # grad_obj_hsc_tmp = grad(obj_hsc_tmp)
+    # g_hsc = grad_obj_hsc_tmp(*obj_args)[0]
+    # print('\n\ngrad:'); print(g_hsc.mean(), g_hsc[0]); print('\ngrad type & dtype', type(g_hsc), g_hsc.dtype)
+
+    print(f'CHECK {running}')
+    try:
+        check_grads(obj_hsc_tmp, obj_args, order=1)  # check up to 1st order derivatives
+    except Exception as e:
+        print('\n' + ('*-' * 50))
+        print(e)
+        print(('*-' * 50) + '\n')
+        exit(0)
+    print(f'PASS {running}')
+
+
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
                       multiscale_variances=None, multiscale_reform=False,
                       mixture_coefs=None, callback=None, obj_type=None):
     """Objective function wrapper to match scipy.optimize's interface.
     """
+
+    # X = X.astype(np.float32) # FIXME revert
+
+    # test_jax_gradient(
+    #     X=X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+    #     bias=bias, constraints=constraints, reorienter=reorienter,
+    #     multiscale_factor=multiscale_factor,
+    #     multiscale_variances=multiscale_variances,
+    #     multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
+    #     callback=callback, running='obj')
 
     new_obj, obj_logs, structures, alpha = objective(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
@@ -449,6 +518,8 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         else:
             print(f'    obj {new_obj:.3g}{spacer}ε {epsilon:.6g}', flush=True)
 
+    # new_obj = np.float32(new_obj).astype(np.float64) # FIXME revert
+
     return new_obj
 
 
@@ -462,6 +533,16 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
+    # X = X.astype(np.float32) # FIXME revert
+
+    # test_jax_gradient(
+    #     X=X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+    #     bias=bias, constraints=constraints, reorienter=reorienter,
+    #     multiscale_factor=multiscale_factor,
+    #     multiscale_variances=multiscale_variances,
+    #     multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
+    #     callback=callback, running='grad')
+
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore", message="Using a non-tuple sequence for multidimensional"
@@ -473,6 +554,8 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform,
             mixture_coefs=mixture_coefs, obj_type=obj_type)).flatten()
+
+    # new_grad = new_grad.astype(np.float32).astype(np.float64) # FIXME revert
 
     return new_grad
 
@@ -539,6 +622,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         History generated by the callback, containing information about the
         objective function during optimization.
     """
+
+    # from jax import random; x = random.uniform(random.PRNGKey(0), (1000,), dtype=ag_np.float64); print(x.dtype); exit(0)
 
     multiscale_reform = (epsilon is not None)
 
