@@ -610,7 +610,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 if verbose:
                     _print_code_header(
                         [f'RE-INFERRING: MULTISCALE FACTOR {multiscale_factor}',
-                        f'Try {i}, new epsilon_max={epsilon_max:.3g}'],
+                         f'Try {i}, new epsilon_max={epsilon_max:.3g}'],
                         max_length=60, blank_lines=1)
                 pm.epsilon_bounds = [epsilon_min, epsilon_max]
                 pm.fit()
