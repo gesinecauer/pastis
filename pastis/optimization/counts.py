@@ -93,7 +93,7 @@ def _get_chrom_subset_index(ploidy, lengths_full, chrom_full, chrom_subset):
     missing_chrom = [x for x in chrom_subset if x not in chrom_full]
     if len(missing_chrom) > 0:
         raise ValueError("Chromosomes to be subsetted (%s) are not in full"
-                         "list of chromosomes (%s)" %
+                         " list of chromosomes (%s)" %
                          (','.join(missing_chrom), ','.join(chrom_full)))
 
     lengths_subset = lengths_full.copy()
@@ -154,7 +154,7 @@ def subset_chrom(ploidy, lengths_full, chrom_full, chrom_subset=None,
         missing_chrom = [x for x in chrom_subset if x not in chrom_full]
         if len(missing_chrom) > 0:
             raise ValueError("Chromosomes to be subsetted (%s) are not in full"
-                             "list of chromosomes (%s)" %
+                             " list of chromosomes (%s)" %
                              (','.join(missing_chrom), ','.join(chrom_full)))
         # Make sure chrom_subset is sorted properly
         chrom_subset = [chrom for chrom in chrom_full if chrom in chrom_subset]
