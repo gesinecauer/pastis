@@ -23,8 +23,13 @@ def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
             print('\n' * (blank_lines - 1), flush=True)
         print('=' * max_length, flush=True)
         for line in header:
-            print(('=' * int(np.ceil((max_length - len(line) - 2) / 2))) + ' %s ' %
-                  line + ('=' * int(np.floor((max_length - len(line) - 2) / 2))), flush=True)
+            pad_left = ('=' * int(np.ceil((max_length - len(line) - 2) / 2)))
+            if pad_left != '':
+                pad_left = pad_left + ' '
+            pad_right = ('=' * int(np.floor((max_length - len(line) - 2) / 2)))
+            if pad_right != '':
+                pad_right = ' ' + pad_right
+            print(pad_left + line + pad_right, flush=True)
         print('=' * max_length, flush=True)
 
 
