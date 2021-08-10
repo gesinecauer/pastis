@@ -7,6 +7,11 @@ import pandas as pd
 from scipy import sparse
 from distutils.util import strtobool
 
+from typing import Any as Array
+import jax.numpy as jnp
+from jax import custom_jvp
+from jax import lax
+
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
@@ -271,6 +276,173 @@ def _struct_replace_nan(struct, lengths, kind='linear', random_state=None):
             warn('The following chromosomes were all NaN: ' + ' '.join(nan_chroms))
 
         return(interpolated_struct)
+
+
+@custom_jvp
+def jax_max(x1: Array, x2: Array) -> Array:
+    """Element-wise maximum of array elements.
+
+    Compare two arrays and returns a new array containing the element-wise
+    maxima. If one of the elements being compared is a NaN, then that element is
+    returned. If both elements are NaNs then the first is returned. The latter
+    distinction is important for complex NaNs, which are defined as at least one
+    of the real or imaginary parts being a NaN. The net effect is that NaNs are
+    propagated.
+
+    Parameters
+    ----------
+    x1,x2 : array-like
+        The arrays holding the elements to be compared. If `x1.shape !=
+        x2.shape`, they must be broadcastable to a common shape (which becomes
+        the shape of the output).
+
+    Returns
+    -------
+    obj : array or scalar
+        The maximum of x1 and x2, element-wise. This is a scalar if both x1 and
+        x2 are scalars.
+    """
+    return jnp.maximum(x1, x2)
+
+
+# FIXME double check this
+jax_max.defjvps(
+    lambda g1, ans, x1, x2: lax.select(x1 > x2, g1, lax.full_like(g1, 0)),
+    lambda g2, ans, x1, x2: lax.select(x1 < x2, g2, lax.full_like(g2, 0)))
+
+
+def subset_chrom(lengths_full, chrom_full, chrom_subset=None):
+    """Return data and indices for selected chromosomes only.
+
+    If `chrom_subset` is None, return original data. Otherwise, only return
+    data for chromosomes specified by `chrom_subset`.
+
+    Parameters
+    ----------
+    lengths_full : array of int
+        Number of beads per homolog of each chromosome in the full data.
+    chrom_full : array of str
+        Label for each chromosome in the full data, or file with chromosome
+        labels (one label per line).
+    chrom_subset : array of str, optional
+        Label for each chromosome to be excised from the full data. If None,
+        the full data will be returned..
+
+    Returns
+    -------
+    lengths_subset : array of int
+        Number of beads per homolog of each chromosome in the subsetted data
+        for the specified chromosomes.
+    chrom_subset : array of str
+        Label for each chromosome in the subsetted data, in the order indicated
+        by `chrom_full`.
+    subset_index : array or None
+        If `chrom_subset` is None or is equivalent to `chrom_full`, return None.
+        Otherwise, return array with mask of subsetted chrom, of size
+        `lengths_full.sum() * ploidy`.
+    """
+
+    if not isinstance(chrom_full, np.ndarray) or chrom_full.shape == ():
+        chrom_full = np.array([chrom_full]).flatten()
+    if not isinstance(lengths_full, np.ndarray) or lengths_full.shape == ():
+        lengths_full = np.array([lengths_full]).flatten()
+    lengths_full = lengths_full.astype(int)
+
+    if chrom_subset is None:
+        chrom_subset = chrom_full.copy()
+    else:
+        if not isinstance(chrom_subset, np.ndarray) or chrom_subset.shape == ():
+            chrom_subset = np.array([chrom_subset]).flatten()
+        missing_chrom = [x for x in chrom_subset if x not in chrom_full]
+        if len(missing_chrom) > 0:
+            raise ValueError("Chromosomes to be subsetted (%s) are not in full"
+                             " list of chromosomes (%s)" %
+                             (','.join(missing_chrom), ','.join(chrom_full)))
+        # Make sure chrom_subset is sorted properly
+        chrom_subset = np.array(
+            [chrom for chrom in chrom_full if chrom in chrom_subset])
+
+    if np.array_equal(chrom_subset, chrom_full):
+        # Not subsetting chrom
+        lengths_subset = lengths_full.copy()
+        subset_index = None
+    else:
+        # Subsetting chrom
+        lengths_subset = np.array([lengths_full[i] for i in range(
+            len(chrom_full)) if chrom_full[i] in chrom_subset])
+        subset_index = []
+        for i in range(len(lengths_full)):
+            subset_index.append(
+                np.full((lengths_full[i],), chrom_full[i] in chrom_subset))
+        subset_index = np.concatenate(subset_index)
+
+    return lengths_subset, chrom_subset, subset_index
+
+
+def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
+                         counts=None, exclude_zeros=False, structures=None):
+    """Return data for selected chromosomes only.
+
+    If `chrom_subset` is None, return original data. Otherwise, only return
+    data for chromosomes specified by `chrom_subset`.
+
+    Parameters
+    ----------
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
+    lengths_full : array of int
+        Number of beads per homolog of each chromosome in the full data.
+    chrom_full : array of str
+        Label for each chromosome in the full data, or file with chromosome
+        labels (one label per line).
+    chrom_subset : array of str, optional
+        Label for each chromosome to be excised from the full data. If None,
+        the full data will be returned.
+    counts : list of array or coo_matrix, optional
+        Full counts data.
+    structures : array or list of array, optional
+        Structure(s) with all chromosomes.
+
+    Returns
+    -------
+    lengths_subset : array of int
+        Number of beads per homolog of each chromosome in the subsetted data
+        for the specified chromosomes.
+    chrom_subset : array of str
+        Label for each chromosome in the subsetted data, in the order indicated
+        by `chrom_full`.
+    counts : list of array or coo_matrix, or None
+        If `counts` is inputted, subsetted counts data containing only the
+        specified chromosomes. Otherwise, None.
+    structures : array, list of array, or None
+        If `structures` is inputted, subsetted structure(s) containing only
+        the specified chromosomes. Otherwise, None.
+    """
+
+    from .counts import check_counts
+
+    lengths_subset, chrom_subset, subset_index = subset_chrom(
+        ploidy=ploidy, lengths_full=lengths_full, chrom_full=chrom_full,
+        chrom_subset=chrom_subset)
+
+    if subset_index is not None and ploidy == 2:
+        subset_index = np.tile(subset_index, 2)
+
+    if counts is not None:
+        counts = check_counts(
+            counts, lengths=lengths_full, ploidy=ploidy,
+            exclude_zeros=exclude_zeros, chrom_subset_index=subset_index)
+
+    if subset_index is not None and structures is not None:
+        if isinstance(structures, list):
+            for i in range(len(structures)):
+                structures[i] = structures[i].reshape(-1, 3)[
+                subset_index].reshape(*structures[i].shape)
+        else:
+            structures = structures.reshape(-1, 3)[subset_index].reshape(
+                *structures.shape)
+
+    return lengths_subset, chrom_subset, counts, structures
 
 
 def _intra_counts_mask(counts, lengths):
