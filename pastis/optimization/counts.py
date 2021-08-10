@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import sparse
+from warnings import warn
 
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
@@ -110,6 +111,88 @@ def _get_chrom_subset_index(ploidy, lengths_full, chrom_full, chrom_subset):  # 
     return index, lengths_subset
 
 
+def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
+                         chrom_subset_index=None):
+    """Check counts dimensions, reformat, & excise selected chromosomes.
+    """
+
+    if chrom_subset_index is not None and len(chrom_subset_index) / max(counts.shape) not in (1, 2):
+        raise ValueError("chrom_subset_index size (%d) does not fit counts"
+                         " shape (%d, %d)." %
+                         (len(chrom_subset_index), counts.shape[0],
+                             counts.shape[1]))
+    if len(counts.shape) != 2:
+        raise ValueError(
+            "Counts matrix must be two-dimensional, current shape = (%s)"
+            % ', '.join([str(x) for x in counts.shape]))
+    if any([x > lengths.sum() * ploidy for x in counts.shape]):
+        raise ValueError("Counts matrix shape (%d, %d) is greater than number"
+                         " of beads (%d) in %s genome." %
+                         (counts.shape[0], counts.shape[1],
+                             lengths.sum() * ploidy,
+                             {1: "haploid", 2: "diploid"}[ploidy]))
+    if any([x / lengths.sum() not in (1, 2) for x in counts.shape]):
+        raise ValueError("Counts matrix shape (%d, %d) does not match lenghts"
+                         " (%s)"
+                         % (counts.shape[0], counts.shape[1],
+                             ",".join(map(str, lengths))))
+
+    empty_val = 0
+    torm = np.full((max(counts.shape)), False)
+    if not exclude_zeros:
+        empty_val = np.nan
+        torm = find_beads_to_remove(
+            counts, lengths=lengths,
+            ploidy=int(max(counts.shape) / lengths.sum()))
+        counts = counts.astype(float)
+
+    if sparse.issparse(counts) or isinstance(counts, CountsMatrix):
+        counts = counts.toarray()
+    if not isinstance(counts, np.ndarray):
+        counts = np.array(counts)
+
+    if not np.array_equal(counts[~np.isnan(counts)],
+                          counts[~np.isnan(counts)].round()):
+        warn("Counts matrix must only contain integers or NaN")
+
+    if counts.shape[0] == counts.shape[1]:
+        counts[np.tril_indices(counts.shape[0])] = empty_val
+        counts[torm, :] = empty_val
+        counts[:, torm] = empty_val
+        if chrom_subset_index is not None:
+            counts = counts[chrom_subset_index[:counts.shape[0]], :][
+                :, chrom_subset_index[:counts.shape[1]]]
+    elif min(counts.shape) * 2 == max(counts.shape):
+        homo1 = counts[:min(counts.shape), :min(counts.shape)]
+        homo2 = counts[counts.shape[0] -
+                       min(counts.shape):, counts.shape[1] - min(counts.shape):]
+        if counts.shape[0] == min(counts.shape):
+            homo1 = homo1.T
+            homo2 = homo2.T
+        np.fill_diagonal(homo1, empty_val)
+        np.fill_diagonal(homo2, empty_val)
+        homo1[:, torm[:min(counts.shape)] | torm[
+            min(counts.shape):]] = empty_val
+        homo2[:, torm[:min(counts.shape)] | torm[
+            min(counts.shape):]] = empty_val
+        # axis=0 is vertical concat
+        counts = np.concatenate([homo1, homo2], axis=0)
+        counts[torm, :] = empty_val
+        if chrom_subset_index is not None:
+            counts = counts[chrom_subset_index[:counts.shape[0]], :][
+                :, chrom_subset_index[:counts.shape[1]]]
+    else:
+        raise ValueError("Input counts matrix is - %d by %d. Counts must be"
+                         " n-by-n or n-by-2n or 2n-by-2n." %
+                         (counts.shape[0], counts.shape[1]))
+
+    if exclude_zeros:
+        counts[np.isnan(counts)] = 0
+        counts = sparse.coo_matrix(counts)
+
+    return counts
+
+
 def check_counts(counts, lengths, ploidy, exclude_zeros=False,
                  chrom_subset_index=None):
     """Check counts dimensions and reformat data.
@@ -143,7 +226,8 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                       normalize=True, filter_threshold=0.04, beta=None,
                       fullres_torm=None, multiscale_reform=False,
                       excluded_counts=None, mixture_coefs=None,
-                      exclude_zeros=False, input_weight=None, verbose=True):
+                      exclude_zeros=False, input_weight=None, verbose=True,
+                      mods=None):
     """Check counts, reformat, reduce resolution, filter, and compute bias.
 
     Preprocessing options include reducing resolution, computing bias (if
