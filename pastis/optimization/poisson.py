@@ -12,9 +12,9 @@ if use_jax:
     jax_config.update("jax_platform_name", "cpu")
     jax_config.update("jax_enable_x64", True)
 
-    import jax.numpy as ag_np #import autograd.numpy as ag_np
-    SequenceBox = list #from autograd.builtins import SequenceBox
-    from jax import grad #from autograd import grad
+    import jax.numpy as ag_np
+    SequenceBox = list
+    from jax import grad
     from jax.nn import relu
 else:
     import autograd.numpy as ag_np
@@ -30,7 +30,7 @@ from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .constraints import Constraints
 from .callbacks import Callback
-from .utils_poisson import _print_code_header
+from .utils_poisson import _print_code_header, jax_max
 
 
 coefs_mean = [5.549172757571418e-20, -1.6470775119344408e-17, 2.2606861003877433e-15, -1.903579023849604e-13, 1.1000461737635397e-11, -4.6239683202570464e-10, 1.4619806820341588e-08, -3.546250613583712e-07, 6.670958632097694e-06, -9.772260096077662e-05, 0.0011130662843361946, -0.00978764088393751, 0.0655592914191458, -0.3273049894339556, 1.1766273423250435, -2.872565184957617, 4.228635441434826, -2.533538222083517, -1.3991509787571033, 0.5364137375876942, -0.014652303861952376]
@@ -64,15 +64,43 @@ def _masksum(x, mask, axis=None):
     return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
-def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
+def relu_min(x1, x2):
+    # FIXME this is temporary, remove this and switch to jax_min
+    # returns min(x1, x2)
+    return - (relu((-x1) - (-x2)) + (-x2))
+
+
+def loss2(x, mask, num_highres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO remove
+    log1p_theta = np.log1p(theta)
+    obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
+    obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k + 1)
+    obj_tmp3 = _masksum(
+        _stirling(x + k + 1), mask=mask,
+        axis=0)
+    obj_tmp4 = _masksum(x, mask=mask, axis=0) * (
+        np.log(theta) + np.log1p(k) - log1p_theta - 1)
+    obj_tmp5 = _masksum(
+        (x + k + 0.5) * np.log1p(
+            x / (k + 1)), mask=mask, axis=0)
+    obj_tmp6 = -_masksum(np.log1p(
+        x / k), mask=mask, axis=0)
+    obj = np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
+    # Taking negative log likelihood
+    return - obj
+
+
+def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            bias=None, multiscale_factor=1, mixture_coefs=None,
-                           obj_type=None):
+                           mods=None, max_epsilon_over_dis=25):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
-    obj_type = [] if obj_type is None else (obj_type if isinstance(obj_type, list) else [obj_type])
-    use_no0var = 'no0var' in obj_type
-    dis_with_neg_var = np.array([])
+    if mods is None:  # TODO remove
+        mods = []
+    elif isinstance(mods, str):
+        mods = mods.lower().split('.')
+    else:
+        mods = [x.lower() for x in mods]
 
     ####
 
@@ -98,10 +126,10 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                     epsilon[counts.col3d])) / sqrt_2
             epsilon_over_dis = epsilon_per_bin / dis
 
-        # FIXME the below is likely source of abnormal term (grad != obj)
-        max_epsilon_over_dis = 25
-        epsilon_over_dis = ag_np.where(
-            epsilon_over_dis > max_epsilon_over_dis, max_epsilon_over_dis, epsilon_over_dis)
+        # FIXME this relu_min is a temp fix until I verify jax_min!!!!
+        # epsilon_over_dis = ag_np.min(epsilon_over_dis, max_epsilon_over_dis)  # orig, runs into abnorm term
+        epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # temp
+        # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
         ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
         ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
@@ -126,7 +154,7 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         k = k + mix_coef * k_tmp
         mu = mu + mix_coef * counts.beta * gamma_mean
 
-
+    # Calculate objective
     log1p_theta = ag_np.log1p(theta)
     obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
     if counts.type == 'zero':
@@ -143,26 +171,37 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         obj_tmp6 = -_masksum(
             ag_np.log1p(counts.data_grouped / k), mask=counts.mask, axis=0)
         obj_tmp_sum = (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
-    obj = ag_np.sum(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
+
+    # if 'ij_mean' in mods:
+    if 'ij_sum' not in mods:
+        obj_tmp_sum = obj_tmp_sum / num_highres_per_lowres_bins
+
+    if 'sum_not_mean' in mods:
+        obj = ag_np.sum(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
+    else:
+        obj = ag_np.mean(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars  # FIXME
+        if type(obj).__name__ == 'JVPTracer':
+            raise ValueError(
+                f"Poisson component of objective function for {counts.name}"
+                f" is {- obj}.")
         if counts.type == 'zero':
             printvars({
-                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'μ': mu,
+                'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
                 'ln mean(ΓRV)': ln_gamma_mean, 'ln var(ΓRV)': ln_gamma_var,
                 'mean(ΓRV)': ag_np.exp(ln_gamma_mean), 'var(ΓRV)': ag_np.exp(ln_gamma_var),
                 'obj_tmp1': obj_tmp1})
         else:
             printvars({
-                'ε': epsilon, 'dis': dis, 'θ': theta, 'k': k, 'μ': mu,
+                'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
                 'ln mean(ΓRV)': ln_gamma_mean, 'ln var(ΓRV)': ln_gamma_var,
                 'mean(ΓRV)': ag_np.exp(ln_gamma_mean), 'var(ΓRV)': ag_np.exp(ln_gamma_var),
                 'c_ij / k': (counts.data_grouped / k),
                 '1 + c_ij / k': (1 + counts.data_grouped / k),
                 '<0  1 + c_ij / k': (1 + counts.data_grouped / k)[(1 + counts.data_grouped / k) < 0],
                 'ln(1 + c_ij / k)': ag_np.sum(ag_np.log1p(counts.data_grouped / k), axis=0),
-                'dis_with_neg_var': dis_with_neg_var,
                 'ln(μ)': ag_np.log(mu),
                 'ln(1+θ)': ag_np.log1p(theta),
                 'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
@@ -172,20 +211,21 @@ def _multiscale_reform_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             f"Poisson component of objective function for {counts.name}"
             f" is {- obj}.")
 
-    # FIXME FIXME FIXME below is temporary
-    obj_constant = (_masksum(
-        counts.data_grouped, mask=counts.mask, axis=0) * ag_np.log(
-        num_highres_per_lowres_bins)).sum()   # TODO fix on main branch: mean not sum!
-    obj = obj + obj_constant
-
     return counts.weight * (- obj)
 
 
-def _poisson_obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
-                        multiscale_factor=1, multiscale_variances=None,
-                        mixture_coefs=None):
+def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
+                 multiscale_factor=1, multiscale_variances=None,
+                 mixture_coefs=None, mods=None):
     """Computes the Poisson objective function for a given counts matrix.
     """
+
+    if mods is None:  # TODO remove
+        mods = []
+    elif isinstance(mods, str):
+        mods = mods.lower().split('.')
+    else:
+        mods = [x.lower() for x in mods]
 
     if (bias is not None and bias.sum() == 0) or counts.nnz == 0 or counts.null:
         return 0.
@@ -220,22 +260,29 @@ def _poisson_obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
             tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
         tmp = tmp1.reshape(-1, counts.nnz_lowres).sum(axis=0)
         lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
-            bias, ploidy) * counts.beta * num_highres_per_lowres_bins * tmp
+            bias, ploidy) * counts.beta * tmp
 
     # Sum main objective function
-    if counts.type == 'zero':
-        obj = lambda_intensity.sum()  # TODO fix on main branch: mean not sum!
-    elif lambda_intensity.shape == counts.data.shape:
-        obj = lambda_intensity.sum() - (counts.data * ag_np.log(
-            lambda_intensity)).sum()  # TODO fix on main branch: mean not sum!
+    if 'sum_not_mean' in mods:
+        obj = (lambda_intensity * num_highres_per_lowres_bins).sum()  # TODO fix on main branch: mean not sum!
     else:
-        obj = lambda_intensity.sum() - _masksum(
-            counts.data_grouped * ag_np.log(lambda_intensity), mask=counts.mask)  # TODO fix on main branch: mean not sum!
+        obj = (lambda_intensity * num_highres_per_lowres_bins).mean()  # TODO fix on main branch: mean not sum!
+
+    if counts.type != 'zero':
+        if lambda_intensity.shape == counts.data.shape:
+            counts_data = counts.data
+        else:
+            counts_data = _masksum(
+                counts.data_grouped, mask=counts.mask, axis=0)
+
+        if 'sum_not_mean' in mods:
+            obj = obj - (counts_data * ag_np.log(lambda_intensity)).sum()  # TODO fix on main branch: mean not sum!
+        else:
+            obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars
         if type(dis).__name__ != 'ArrayBox':
-            print(counts.name)
             printvars({
                 'struct': structures[0], 'dis': dis,
                 'lambda_intensity': lambda_intensity,
@@ -249,7 +296,7 @@ def _poisson_obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
 
 def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                mixture_coefs=None, obj_type=None):
+                mixture_coefs=None, mods=None):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -266,25 +313,24 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
         mixture_coefs = [1.]
 
     if epsilon is None or multiscale_factor == 1 or np.all(epsilon == 0):
-        obj = _poisson_obj_single(
+        obj = _poisson_obj(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
             ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
-            mixture_coefs=mixture_coefs)
-        return obj
+            mixture_coefs=mixture_coefs, mods=mods)
     else:
-        obj = _multiscale_reform_obj(
+        obj = _multires_negbinom_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
-            obj_type=obj_type)
-        return obj
+            mods=mods)
+    return obj
 
 
 def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False, epsilon=None, obj_type=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+              inferring_alpha=False, epsilon=None, mods=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -371,7 +417,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
                 lengths=lengths, ploidy=ploidy, bias=bias,
                 multiscale_factor=multiscale_factor,
                 multiscale_variances=multiscale_variances, epsilon=epsilon,
-                mixture_coefs=mixture_coefs, obj_type=obj_type)
+                mixture_coefs=mixture_coefs, mods=mods)
         obj_poisson_sum = sum(obj_poisson.values())
         obj = obj_poisson_sum + sum(obj_constraints.values())
 
@@ -439,61 +485,12 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
     return X, epsilon, mixture_coefs
 
 
-def test_jax_gradient(X, counts, alpha, lengths, ploidy, bias=None,
-                      constraints=None, reorienter=None, multiscale_factor=1,
-                      multiscale_variances=None, multiscale_reform=False,
-                      mixture_coefs=None, callback=None, running='obj'):
-    if sum(constraints.lambdas.values()) == 0:
-        return None
-
-    from jax.test_util import check_grads
-    from .constraints import obj_hsc_tmp
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor).astype(np.float32)
-    structures, _, _ = _format_X(
-        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, multiscale_reform=multiscale_reform,
-        epsilon=None, mixture_coefs=mixture_coefs)
-    hsc_param = constraints.params["hsc"].copy().astype(np.float32)
-    print('real value of hsc_param', hsc_param)
-    struct = structures[0].astype(np.float32)
-    obj_args = (struct, lengths_lowres, hsc_param,
-        constraints.lambdas["hsc"], constraints.bead_weights.astype(np.float32))
-
-    # hsc = obj_hsc_tmp(*obj_args)
-    # print('\n\nobj:'); print(hsc); print('\nobj type & dtype', type(hsc), hsc.dtype)
-
-    # grad_obj_hsc_tmp = grad(obj_hsc_tmp)
-    # g_hsc = grad_obj_hsc_tmp(*obj_args)[0]
-    # print('\n\ngrad:'); print(g_hsc.mean(), g_hsc[0]); print('\ngrad type & dtype', type(g_hsc), g_hsc.dtype)
-
-    print(f'CHECK {running}')
-    try:
-        check_grads(obj_hsc_tmp, obj_args, order=1)  # check up to 1st order derivatives
-    except Exception as e:
-        print('\n' + ('*-' * 50))
-        print(e)
-        print(('*-' * 50) + '\n')
-        exit(0)
-    print(f'PASS {running}')
-
-
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
                       multiscale_variances=None, multiscale_reform=False,
-                      mixture_coefs=None, callback=None, obj_type=None):
+                      mixture_coefs=None, callback=None, mods=None):
     """Objective function wrapper to match scipy.optimize's interface.
     """
-
-    # X = X.astype(np.float32) # FIXME revert
-
-    # test_jax_gradient(
-    #     X=X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-    #     bias=bias, constraints=constraints, reorienter=reorienter,
-    #     multiscale_factor=multiscale_factor,
-    #     multiscale_variances=multiscale_variances,
-    #     multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
-    #     callback=callback, running='obj')
 
     new_obj, obj_logs, structures, alpha = objective(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
@@ -501,15 +498,15 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, return_extras=True, obj_type=obj_type)
+        mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
 
     if callback is not None:
         if multiscale_reform:
             epsilon = X[-1]
         else:
             epsilon = None
-        callback.on_epoch_end(obj_logs=obj_logs, structures=structures,
-                              alpha=alpha, Xi=X, epsilon=epsilon)
+        callback.on_iter_end(obj_logs=obj_logs, structures=structures,
+                             alpha=alpha, Xi=X, epsilon=epsilon)
 
     if epsilon is not None and False:  # FIXME remove
         spacer = ' ' * (12 - len(f"{new_obj:.3g}"))
@@ -517,8 +514,6 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             print(f'    obj {new_obj:.3g}{spacer}ε ---', flush=True)
         else:
             print(f'    obj {new_obj:.3g}{spacer}ε {epsilon:.6g}', flush=True)
-
-    # new_obj = np.float32(new_obj).astype(np.float64) # FIXME revert
 
     return new_obj
 
@@ -529,19 +524,9 @@ gradient = grad(objective)
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    constraints=None, reorienter=None, multiscale_factor=1,
                    multiscale_variances=None, multiscale_reform=False,
-                   mixture_coefs=None, callback=None, obj_type=None):
+                   mixture_coefs=None, callback=None, mods=None):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
-
-    # X = X.astype(np.float32) # FIXME revert
-
-    # test_jax_gradient(
-    #     X=X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-    #     bias=bias, constraints=constraints, reorienter=reorienter,
-    #     multiscale_factor=multiscale_factor,
-    #     multiscale_variances=multiscale_variances,
-    #     multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
-    #     callback=callback, running='grad')
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -553,9 +538,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform,
-            mixture_coefs=mixture_coefs, obj_type=obj_type)).flatten()
-
-    # new_grad = new_grad.astype(np.float32).astype(np.float64) # FIXME revert
+            mixture_coefs=mixture_coefs, mods=mods)).flatten()
 
     return new_grad
 
@@ -564,7 +547,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                constraints=None, multiscale_factor=1, multiscale_variances=None,
                epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
                factr=10000000., pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
-               reorienter=None, mixture_coefs=None, verbose=True, obj_type=None):
+               reorienter=None, mixture_coefs=None, verbose=True, mods=None):
     """Estimates a 3D structure, given current alpha.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -662,7 +645,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
-            callback=callback, obj_type=obj_type)
+            callback=callback, mods=mods)
     else:
         obj = np.nan
 
@@ -692,7 +675,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, bias, constraints,
                   reorienter, multiscale_factor, multiscale_variances,
-                  multiscale_reform, mixture_coefs, callback, obj_type))
+                  multiscale_reform, mixture_coefs, callback, mods))
         X, obj, d = results
         converged = d['warnflag'] == 0
         # TODO add conv_desc to main branch
@@ -805,7 +788,7 @@ class PastisPM(object):
                  epsilon_coord_descent=False, alpha_init=-3., max_alpha_loop=20, max_iter=30000,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                  reorienter=None, null=False, mixture_coefs=None, verbose=True,
-                 obj_type=None):
+                 mods=None):
 
         from .piecewise_whole_genome import ChromReorienter
 
@@ -854,7 +837,7 @@ class PastisPM(object):
         self.mixture_coefs = mixture_coefs
         self.verbose = verbose
 
-        self.obj_type = obj_type
+        self.mods = mods
 
         # FIXME this is obviously temporary...
         self.max_epsilon_loop = max_alpha_loop
@@ -923,7 +906,7 @@ class PastisPM(object):
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose,
-            obj_type=self.obj_type)
+            mods=self.mods)
 
         # if len(history_) > 1:
         #     if self.history_ is None:
@@ -958,7 +941,7 @@ class PastisPM(object):
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose,
-            obj_type=self.obj_type)
+            mods=self.mods)
 
         # if len(history_) > 1:
         #     if self.history_ is None:
@@ -1002,7 +985,7 @@ class PastisPM(object):
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose,
-            obj_type=self.obj_type)
+            mods=self.mods)
 
         if inferring_epsilon:
             self.epsilon_ = new_X_
@@ -1055,7 +1038,7 @@ class PastisPM(object):
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose,
-            obj_type=self.obj_type)
+            mods=self.mods)
 
         return True
 
