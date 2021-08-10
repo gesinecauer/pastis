@@ -14,7 +14,8 @@ import numpy as np
 from sklearn.metrics import euclidean_distances
 import os
 from scipy import linalg
-from .counts import subset_chrom, _get_chrom_subset_index, preprocess_counts
+from .utils_poisson import subset_chrom_of_data, subset_chrom
+from .counts import preprocess_counts
 from .pastis_algorithms import infer, _infer_draft
 from .utils_poisson import _print_code_header, _load_infer_var
 from .utils_poisson import _format_structures, _output_subdir
@@ -288,8 +289,7 @@ def _orient_single_fullres_chrom(struct_genome_lowres, struct_chrom_fullres,
     import quaternion
 
     # Extract the chromosome from low-res whole-genome structure
-    index, chrom_lengths_lowres = _get_chrom_subset_index(
-        ploidy=ploidy,
+    chrom_lengths_lowres, _, index = subset_chrom(
         lengths_full=decrease_lengths_res(lengths, piecewise_factor),
         chrom_full=chromosomes, chrom_subset=[chrom])
     struct_lowres_genome2chrom = struct_genome_lowres[index]
@@ -571,13 +571,13 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
             _print_code_header(
                 'CHROMOSOME %s' % chrom, max_length=70, blank_lines=1)
 
-            chrom_lengths, _, chrom_counts, chrom_struct_true = subset_chrom(
+            chrom_lengths, _, chrom_counts, chrom_struct_true = subset_chrom_of_data(
                 counts=counts_raw, ploidy=ploidy, lengths_full=lengths,
                 chrom_full=chromosomes, chrom_subset=chrom,
                 exclude_zeros=exclude_zeros, struct_true=struct_true)
-            index, _ = _get_chrom_subset_index(
-                ploidy=ploidy, lengths_full=lengths, chrom_full=chromosomes,
-                chrom_subset=chrom)
+            index = subset_chrom(
+                lengths_full=lengths, chrom_full=chromosomes,
+                chrom_subset=chrom)[-1]
             if ploidy == 2:
                 draft_index = index[:lengths.sum()]
             else:

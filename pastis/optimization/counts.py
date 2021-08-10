@@ -1,6 +1,5 @@
 import numpy as np
 from scipy import sparse
-from warnings import warn
 
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
@@ -84,7 +83,7 @@ def _create_dummy_counts(counts, lengths, ploidy):
     return dummy_counts
 
 
-def _get_chrom_subset_index(ploidy, lengths_full, chrom_full, chrom_subset):
+def _get_chrom_subset_index(ploidy, lengths_full, chrom_full, chrom_subset):  # FIXME remove
     """Return indices for selected chromosomes only.
     """
 
@@ -109,159 +108,6 @@ def _get_chrom_subset_index(ploidy, lengths_full, chrom_full, chrom_subset):
         if ploidy == 2:
             index = np.tile(index, 2)
     return index, lengths_subset
-
-
-def subset_chrom(ploidy, lengths_full, chrom_full, chrom_subset=None,
-                 counts=None, exclude_zeros=False, struct_true=None):
-    """Return data for selected chromosomes only.
-
-    If `chrom_subset` is None, return original data. Otherwise, only return
-    data for chromosomes specified by `chrom_subset`.
-
-    Parameters
-    ----------
-    ploidy : {1, 2}
-        Ploidy, 1 indicates haploid, 2 indicates diploid.
-    lengths_full : array of int
-        Number of beads per homolog of each chromosome in the full data.
-    chrom_full : array of str
-        Label for each chromosome in the full data, or file with chromosome
-        labels (one label per line).
-    chrom_subset : array of str, optional
-        Label for each chromosome to be excised from the full data. If None,
-        the full data will be returned.
-    counts : list of array or coo_matrix, optional
-        Full counts data.
-
-    Returns
-    -------
-    lengths_subset : array of int
-        Number of beads per homolog of each chromosome in the subsetted data
-        for the specified chromosomes.
-    chrom_subset : array of str
-        Label for each chromosome in the subsetted data.
-    counts : coo_matrix of int or ndarray or int
-        If `counts` is inputted, subsetted counts data containing only the
-        specified chromosomes. Otherwise, return None.
-    struct_true : None or array of float
-        If `struct_true` is inputted, subsetted true structure containing only
-        the specified chromosomes. Otherwise, return None.
-    """
-
-    if chrom_subset is not None:
-        if isinstance(chrom_subset, str):
-            chrom_subset = np.array([chrom_subset])
-        missing_chrom = [x for x in chrom_subset if x not in chrom_full]
-        if len(missing_chrom) > 0:
-            raise ValueError("Chromosomes to be subsetted (%s) are not in full"
-                             " list of chromosomes (%s)" %
-                             (','.join(missing_chrom), ','.join(chrom_full)))
-        # Make sure chrom_subset is sorted properly
-        chrom_subset = [chrom for chrom in chrom_full if chrom in chrom_subset]
-
-    if chrom_subset is None or np.array_equal(chrom_subset, chrom_full):
-        chrom_subset = chrom_full.copy()
-        lengths_subset = lengths_full.copy()
-        if counts is not None:
-            counts = check_counts(
-                counts, lengths=lengths_full, ploidy=ploidy,
-                exclude_zeros=exclude_zeros)
-        return lengths_subset, chrom_subset, counts, struct_true
-    else:
-        index, lengths_subset = _get_chrom_subset_index(
-            ploidy, lengths_full, chrom_full, chrom_subset)
-
-        if struct_true is not None and index is not None:
-            struct_true = struct_true[index]
-
-        if counts is not None:
-            counts = check_counts(
-                counts, lengths=lengths_full, ploidy=ploidy,
-                exclude_zeros=exclude_zeros, chrom_subset_index=index)
-
-        return lengths_subset, chrom_subset, counts, struct_true
-
-
-def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
-                         chrom_subset_index=None):
-    """Check counts dimensions, reformat, & excise selected chromosomes.
-    """
-
-    if chrom_subset_index is not None and len(chrom_subset_index) / max(counts.shape) not in (1, 2):
-        raise ValueError("chrom_subset_index size (%d) does not fit counts"
-                         " shape (%d, %d)." %
-                         (len(chrom_subset_index), counts.shape[0],
-                             counts.shape[1]))
-    if len(counts.shape) != 2:
-        raise ValueError(
-            "Counts matrix must be two-dimensional, current shape = (%s)"
-            % ', '.join([str(x) for x in counts.shape]))
-    if any([x > lengths.sum() * ploidy for x in counts.shape]):
-        raise ValueError("Counts matrix shape (%d, %d) is greater than number"
-                         " of beads (%d) in %s genome." %
-                         (counts.shape[0], counts.shape[1],
-                             lengths.sum() * ploidy,
-                             {1: "haploid", 2: "diploid"}[ploidy]))
-    if any([x / lengths.sum() not in (1, 2) for x in counts.shape]):
-        raise ValueError("Counts matrix shape (%d, %d) does not match lenghts"
-                         " (%s)"
-                         % (counts.shape[0], counts.shape[1],
-                             ",".join(map(str, lengths))))
-
-    empty_val = 0
-    torm = np.full((max(counts.shape)), False)
-    if not exclude_zeros:
-        empty_val = np.nan
-        torm = find_beads_to_remove(
-            counts, lengths=lengths,
-            ploidy=int(max(counts.shape) / lengths.sum()))
-        counts = counts.astype(float)
-
-    if sparse.issparse(counts) or isinstance(counts, CountsMatrix):
-        counts = counts.toarray()
-    if not isinstance(counts, np.ndarray):
-        counts = np.array(counts)
-
-    if not np.array_equal(counts[~np.isnan(counts)],
-                          counts[~np.isnan(counts)].round()):
-        warn("Counts matrix must only contain integers or NaN")
-
-    if counts.shape[0] == counts.shape[1]:
-        counts[np.tril_indices(counts.shape[0])] = empty_val
-        counts[torm, :] = empty_val
-        counts[:, torm] = empty_val
-        if chrom_subset_index is not None:
-            counts = counts[chrom_subset_index[:counts.shape[0]], :][
-                :, chrom_subset_index[:counts.shape[1]]]
-    elif min(counts.shape) * 2 == max(counts.shape):
-        homo1 = counts[:min(counts.shape), :min(counts.shape)]
-        homo2 = counts[counts.shape[0] -
-                       min(counts.shape):, counts.shape[1] - min(counts.shape):]
-        if counts.shape[0] == min(counts.shape):
-            homo1 = homo1.T
-            homo2 = homo2.T
-        np.fill_diagonal(homo1, empty_val)
-        np.fill_diagonal(homo2, empty_val)
-        homo1[:, torm[:min(counts.shape)] | torm[
-            min(counts.shape):]] = empty_val
-        homo2[:, torm[:min(counts.shape)] | torm[
-            min(counts.shape):]] = empty_val
-        # axis=0 is vertical concat
-        counts = np.concatenate([homo1, homo2], axis=0)
-        counts[torm, :] = empty_val
-        if chrom_subset_index is not None:
-            counts = counts[chrom_subset_index[:counts.shape[0]], :][
-                :, chrom_subset_index[:counts.shape[1]]]
-    else:
-        raise ValueError("Input counts matrix is - %d by %d. Counts must be"
-                         " n-by-n or n-by-2n or 2n-by-2n." %
-                         (counts.shape[0], counts.shape[1]))
-
-    if exclude_zeros:
-        counts[np.isnan(counts)] = 0
-        counts = sparse.coo_matrix(counts)
-
-    return counts
 
 
 def check_counts(counts, lengths, ploidy, exclude_zeros=False,

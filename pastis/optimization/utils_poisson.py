@@ -312,10 +312,11 @@ jax_max.defjvps(
 
 
 def subset_chrom(lengths_full, chrom_full, chrom_subset=None):
-    """Return data and indices for selected chromosomes only.
+    """Return lengths, names, and indices for selected chromosomes only.
 
-    If `chrom_subset` is None, return original data. Otherwise, only return
-    data for chromosomes specified by `chrom_subset`.
+    If `chrom_subset` is None, return original lengths and chromosome names.
+    Otherwise, only return lengths, chromosome names, and indices for
+    chromosomes specified by `chrom_subset`.
 
     Parameters
     ----------
@@ -379,8 +380,9 @@ def subset_chrom(lengths_full, chrom_full, chrom_subset=None):
     return lengths_subset, chrom_subset, subset_index
 
 
+# TODO add on main branch - subset_chrom->subset_chrom_of_data & _get_chrom_subset_index->subset_chrom
 def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
-                         counts=None, exclude_zeros=False, structures=None):
+                         counts=None, structures=None, exclude_zeros=False):
     """Return data for selected chromosomes only.
 
     If `chrom_subset` is None, return original data. Otherwise, only return
@@ -437,7 +439,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
         if isinstance(structures, list):
             for i in range(len(structures)):
                 structures[i] = structures[i].reshape(-1, 3)[
-                subset_index].reshape(*structures[i].shape)
+                    subset_index].reshape(*structures[i].shape)
         else:
             structures = structures.reshape(-1, 3)[subset_index].reshape(
                 *structures.shape)

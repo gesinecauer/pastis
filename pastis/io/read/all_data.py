@@ -3,7 +3,7 @@ import os
 from scipy import sparse
 from iced.io import load_lengths
 from .hiclib import load_hiclib_counts
-from ...optimization.counts import subset_chrom
+from ...optimization.utils_poisson import subset_chrom_of_data
 
 
 def _get_lengths(lengths):
@@ -110,9 +110,9 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     if struct_true is not None and isinstance(struct_true, str):
         struct_true = np.loadtxt(struct_true)
 
-    lengths_subset, chrom_subset, counts, struct_true = subset_chrom(
-        counts=counts, ploidy=ploidy, lengths_full=lengths_full,
-        chrom_full=chrom_full, chrom_subset=chrom_subset,
-        exclude_zeros=exclude_zeros, struct_true=struct_true)
+    lengths_subset, chrom_subset, counts, struct_true = subset_chrom_of_data(
+        ploidy=ploidy, lengths_full=lengths_full, chrom_full=chrom_full,
+        chrom_subset=chrom_subset, counts=counts, structures=struct_true,
+        exclude_zeros=exclude_zeros)
 
     return counts, lengths_subset, chrom_subset, lengths_full, chrom_full, struct_true
