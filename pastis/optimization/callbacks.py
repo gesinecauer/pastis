@@ -6,12 +6,15 @@ from .utils_poisson import find_beads_to_remove
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 
 
+# TODO renamed epoch to iter, change on main branch as well
+
+
 class Callback(object):
     """An object that adds functionality during optimization.
 
     A callback is a function or group of functions that can be executed during
-    optimization. A callback can be called at three stages-- the
-    beginning of optimization, at the end of each epoch (or iteration), and at
+    optimization. A callback can be called at three stages -- the
+    beginning of optimization, at the end of each iteration, and at
     the end of optimization. Users can define any functions that they wish in
     the corresponding functions.Compute objective constraints.
 
@@ -42,8 +45,8 @@ class Callback(object):
         Function to be executed at the beginning of optimization.
     on_training_end : function, optional
         Function to be executed at the end of optimization.
-    on_epoch_end : function, optional
-        Function to be executed at the end of each epoch.
+    on_iter_end : function, optional
+        Function to be executed at the end of each iter.
     directory : str, optional
         Directory in which to save structures generated during optimization.
     struct_true : array of float, optional
@@ -78,8 +81,8 @@ class Callback(object):
         Function to be executed at the beginning of optimization.
     on_training_end_ : function or None
         Function to be executed at the end of optimization.
-    on_epoch_end_ : function or None
-        Function to be executed at the end of each epoch.
+    on_iter_end_ : function or None
+        Function to be executed at the end of each iter.
     directory : str
         Directory in which to save structures generated during optimization.
     struct_true : array of float or None
@@ -100,8 +103,8 @@ class Callback(object):
         ("chrom_reorient").
     alpha_loop : int or None
         Current iteration of alpha/structure optimization.
-    epoch : int
-        Current epoch (iteration) of optimization.
+    iter : int
+        Current iter (iteration) of optimization.
     time : str
         Time since optimization began.
     structures : list of array of float or None
@@ -118,25 +121,39 @@ class Callback(object):
     time_start : timeit.default_timer instance
         Time at which optimization began.
 
+    # TODO add counts, lengths vs lengths_lowres, bias, constraints
+
     """
 
-    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
-                 multiscale_reform=False,
+    def __init__(self, lengths, ploidy, counts=None, bias=None,
+                 multiscale_factor=1, multiscale_reform=False,
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
-                 on_epoch_end=None, directory=None, struct_true=None,
-                 alpha_true=None, epsilon_true=None, verbose=False):
+                 on_iter_end=None, directory=None, struct_true=None,
+                 alpha_true=None, epsilon_true=None, constraints=None,
+                 multiscale_variances=None, mixture_coefs=None, verbose=False):
+        # TODO add to main branch -- new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.epsilon = None
-        self.lengths = decrease_lengths_res(lengths, multiscale_factor)
+        self.lengths = lengths  # TODO add to main branch
+        self.lengths_lowres = decrease_lengths_res(  # FIXME TODO lengths_lowres, change to main branch
+            lengths, multiscale_factor=multiscale_factor)
+        self.bias = bias  # TODO add to main branch
+        self.counts = counts  # TODO add to main branch
         if counts is None:
-            self.torm = np.full((self.lengths.sum() * self.ploidy), False)
+            self.torm = np.full(
+                (self.lengths_lowres.sum() * self.ploidy), False)
         else:
             self.torm = find_beads_to_remove(
                 counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor,
                 multiscale_reform=multiscale_reform)
+        self.constraints = constraints  # TODO add to main branch
+        self.multiscale_reform = multiscale_reform  # TODO add to main branch
+        self.multiscale_variances = multiscale_variances  # TODO add to main branch
+        self.mixture_coefs = mixture_coefs  # TODO add to main branch
+
         self.analysis_function = analysis_function
         if frequency is None or isinstance(frequency, int):
             self.frequency = {'print': frequency,
@@ -151,14 +168,19 @@ class Callback(object):
                 self.frequency[k] = v
         self.on_training_begin_ = on_training_begin
         self.on_training_end_ = on_training_end
-        self.on_epoch_end_ = on_epoch_end
+        self.on_iter_end_ = on_iter_end
         if directory is None:
             directory = ''
         self.directory = directory
         if struct_true is not None:
-            self.struct_true = decrease_struct_res(
-                struct_true, multiscale_factor=multiscale_factor,
-                lengths=lengths)
+            # TODO 2 lines add below to main branch
+            struct_true = struct_true.reshape(-1, 3)
+            if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
+                self.struct_true = decrease_struct_res(
+                    struct_true, multiscale_factor=multiscale_factor,
+                    lengths=lengths)
+            else:
+                self.struct_true = struct_true
         else:
             self.struct_true = None
         self.alpha_true = alpha_true
@@ -176,7 +198,7 @@ class Callback(object):
         self.opt_type = None
         self.alpha_loop = None
         self.epsilon_loop = None
-        self.epoch = -1
+        self.iter = -1
         self.time = '0:00:00.0'
         self.structures = None
         self.alpha = None
@@ -190,32 +212,32 @@ class Callback(object):
         for i in range(len(structures)):
             self.structures[i][self.torm] = np.nan
 
-    def _check_frequency(self, frequency, last_epoch=False):
+    def _check_frequency(self, frequency, last_iter=False):
         output = False
         if frequency is not None and frequency:
-            if not last_epoch and self.epoch % frequency == 0:
+            if not last_iter and self.iter % frequency == 0:
                 output = True
-            elif last_epoch and self.epoch % frequency != 0:
+            elif last_iter and self.iter % frequency != 0:
                 output = True
         return output
 
-    def _print(self, last_epoch=False):
-        """Prints loss every given number of epochs."""
+    def _print(self, last_iter=False):
+        """Prints loss every given number of iters."""
 
-        if self._check_frequency(self.frequency['print'], last_epoch):
-            info_dict = {'At iterate': ' ' * (6 - len(str(self.epoch))) + str(
-                self.epoch), 'f= ': '%.6g' % self.obj['obj'],
+        if self._check_frequency(self.frequency['print'], last_iter):
+            info_dict = {'At iterate': ' ' * (6 - len(str(self.iter))) + str(
+                self.iter), 'f= ': '%.6g' % self.obj['obj'],
                 'time= ': self.time}
             if self.epsilon is not None:
                 info_dict['epsilon= '] = f"{self.epsilon:.3g}"
             print('\t\t'.join(['%s%s' % (k, v)
                                for k, v in info_dict.items()]), flush=True)
-            if self.epoch == 10:
+            if self.iter == 10:
                 print('. . .', flush=True)
             print('', flush=True)
 
     def _save_X(self):
-        """This will save the model to disk every given number of epochs."""
+        """This will save the model to disk every given number of iters."""
 
         if self._check_frequency(self.frequency['save']):
             X_list = self.X
@@ -224,26 +246,26 @@ class Callback(object):
             for i in range(len(X_list)):
                 if len(X_list) == 1:
                     filename = os.path.join(
-                        self.directory, 'inferred_%s.epoch_%07d.txt'
-                                        % (self.opt_type, self.epoch))
+                        self.directory, 'inferred_%s.iter_%07d.txt'
+                                        % (self.opt_type, self.iter))
                 else:
                     filename = os.path.join(
-                        self.directory, 'struct%d.inferred_%s.epoch_%07d.txt'
-                                        % (i, self.opt_type, self.epoch))
+                        self.directory, 'struct%d.inferred_%s.iter_%07d.txt'
+                                        % (i, self.opt_type, self.iter))
                 if self.verbose:
                     print("[%d] Saving model checkpoint to %s" %
-                          (self.epoch, filename))
+                          (self.iter, filename))
                 np.savetxt(filename, X_list[i])
 
-    def _log_history(self, last_epoch=False):
-        """Keeps a history of the loss and other values every given number of epochs."""
+    def _log_history(self, last_iter=False):
+        """Keeps a history of the loss and other values every given number of iters."""
 
-        if self._check_frequency(self.frequency['history'], last_epoch):
+        if self._check_frequency(self.frequency['history'], last_iter):
             if not isinstance(self.alpha, np.ndarray) or self.alpha.shape == () or self.alpha.shape[0] == 1:
                 alpha = float(self.alpha)
             else:
                 alpha = ','.join(map(str, self.alpha))
-            to_log = [('iter', self.epoch), ('alpha', alpha),
+            to_log = [('iter', self.iter), ('alpha', alpha),
                       ('alpha_loop', self.alpha_loop),
                       ('epsilon_loop', self.epsilon_loop),
                       ('opt_type', self.opt_type),
@@ -262,7 +284,7 @@ class Callback(object):
                     self.history[k] = [v]
 
     def on_training_begin(self, opt_type=None, alpha_loop=None,
-                          epsilon_loop=None):
+                          epsilon_loop=None, **kwargs):
         """Functionality to add to the beginning of optimization.
 
         This method will be called at the beginning of the optimization
@@ -284,20 +306,24 @@ class Callback(object):
             self.opt_type = opt_type
         self.alpha_loop = alpha_loop
         self.epsilon_loop = epsilon_loop
-        self.epoch = -1
+        self.iter = -1
         self.seconds = 0
         self.time = '0:00:00.0'
         self.structures = None
         self.alpha = None
         self.orientation = None
         if self.on_training_begin_ is not None:
-            self.on_training_begin_(self)
+            res = self.on_training_begin_(self, **kwargs)
+        else:
+            res = None
         self.time_start = timer()
+        return res
 
-    def on_epoch_end(self, obj_logs, structures, alpha, Xi, epsilon=None):
-        """Functionality to add to the end of each epoch.
+    def on_iter_end(self, obj_logs, structures, alpha, Xi, epsilon=None,
+                    **kwargs):
+        """Functionality to add to the end of each iter.
 
-        This method will be called at the end of each epoch during the
+        This method will be called at the end of each iter during the
         iterative optimization procedure.
 
         Parameters
@@ -315,7 +341,7 @@ class Callback(object):
             orientation).
         """
 
-        self.epoch += 1
+        self.iter += 1
         self.seconds = round(timer() - self.time_start, 1)
         current_time = str(timedelta(seconds=self.seconds)).split('.')
         if len(current_time) == 1:
@@ -326,7 +352,7 @@ class Callback(object):
         self.obj = obj_logs
 
         self.X = Xi
-        if self.opt_type != 'alpha' or self.epoch == 0:
+        if self.opt_type != 'alpha' or self.iter == 0:
             self._set_structures(structures)
         self.alpha = alpha
         if self.opt_type == 'chrom_reorient':
@@ -336,16 +362,16 @@ class Callback(object):
         self._print()
         self._log_history()
         self._save_X()
-        if self.on_epoch_end_ is not None:
-            self.on_epoch_end_(self)
+        if self.on_iter_end_ is not None:
+            self.on_iter_end_(self, **kwargs)
 
-    def on_training_end(self):
+    def on_training_end(self, **kwargs):
         """Functionality to add to the end of optimization.
 
         This method will be called at the end of the optimization procedure.
         """
 
-        self._print(last_epoch=True)
-        self._log_history(last_epoch=True)
+        self._print(last_iter=True)
+        self._log_history(last_iter=True)
         if self.on_training_end_ is not None:
-            self.on_training_end_(self)
+            self.on_training_end_(self, **kwargs)

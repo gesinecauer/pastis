@@ -224,7 +224,9 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs, return_extras=True)
 
     if callback is not None:
-        callback.on_epoch_end(obj_logs, structures, alpha, X)
+        callback.on_iter_end(
+            obj_logs=obj_logs, structures=structures, alpha=alpha, Xi=X,
+            epsilon=epsilon)
 
     return new_obj
 

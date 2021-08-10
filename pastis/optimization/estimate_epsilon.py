@@ -95,12 +95,12 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, ploidy,
 
     if callback is not None:
         if epsilon is None:
-            callback.on_epoch_end(obj_logs=obj_logs, structures=structures,
-                                  alpha=alpha, Xi=X,
-                                  epsilon=(X[0] if X.size == 1 else X))
+            callback.on_iter_end(obj_logs=obj_logs, structures=structures,
+                                 alpha=alpha, Xi=X,
+                                 epsilon=(X[0] if X.size == 1 else X))
         else:
-            callback.on_epoch_end(obj_logs=obj_logs, structures=structures,
-                                  alpha=alpha, Xi=X, epsilon=epsilon)
+            callback.on_iter_end(obj_logs=obj_logs, structures=structures,
+                                 alpha=alpha, Xi=X, epsilon=epsilon)
 
     return new_obj
 

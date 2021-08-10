@@ -59,7 +59,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                  hsc_lambda=0., hsc_r=None, hsc_min_beads=5,
                  struct_draft_fullres=None, callback_freq=None,
-                 callback_function=None, reorienter=None,
+                 callback_fxns=None, reorienter=None,
                  multiscale_reform=False, alpha_true=None,
                  struct_true=None, input_weight=None, exclude_zeros=False,
                  null=False, mixture_coefs=None, verbose=True):
@@ -117,7 +117,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             max_alpha_loop=max_alpha_loop, beta=beta, init=init,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, draft=True, simple_diploid=(ploidy == 2),
-            callback_function=callback_function, callback_freq=callback_freq,
+            callback_fxns=callback_fxns, callback_freq=callback_freq,
             reorienter=reorienter, multiscale_reform=multiscale_reform,
             alpha_true=alpha_true, struct_true=struct_true,
             input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
@@ -177,7 +177,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             fullres_torm=fullres_torm,
             struct_draft_fullres=struct_draft_fullres, draft=True,
             simple_diploid=simple_diploid_for_lowres,
-            callback_function=callback_function,
+            callback_fxns=callback_fxns,
             callback_freq=callback_freq,
             reorienter=reorienter, multiscale_reform=multiscale_reform,
             alpha_true=alpha_true, struct_true=struct_true,
@@ -209,13 +209,13 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
                         bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
                         mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
                         struct_draft_fullres=None, draft=False, simple_diploid=False,
-                        callback_freq=None, callback_function=None, reorienter=None,
+                        callback_freq=None, callback_fxns=None, reorienter=None,
                         multiscale_reform=False, init_std_dev=None,
                         alpha_true=None, struct_true=None, input_weight=None,
                         exclude_zeros=False, null=False, mixture_coefs=None, out_file=None, verbose=True):
     """TODO
     """
-    # TODO add _prep_for_inference() to main branch
+    # TODO add _prep_for_inference() to main branch, maybe rename to _prep_inference()
 
     # INFER DRAFT STRUCTURES (for estimation of multiscale_variance & hsc_r)
     alpha_ = alpha
@@ -240,7 +240,7 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
             alpha_factr=alpha_factr, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
             hsc_min_beads=hsc_min_beads,
             struct_draft_fullres=struct_draft_fullres,
-            callback_freq=callback_freq, callback_function=callback_function,
+            callback_freq=callback_freq, callback_fxns=callback_fxns,
             reorienter=reorienter, multiscale_reform=multiscale_reform,
             alpha_true=alpha_true, struct_true=struct_true,
             input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
@@ -276,12 +276,13 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
     # MULTISCALE EPSILON
     epsilon_true = None
     if multiscale_factor != 1 and multiscale_reform:
-        if struct_true is not None and verbose:
+        if struct_true is not None:
             epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
                 struct_true, lengths=lengths,
                 multiscale_factor=multiscale_factor, verbose=False))
-            print(f"True epsilon ({multiscale_factor}x):"
-                  f" {epsilon_true:.3g}", flush=True)
+            if verbose:
+                print(f"True epsilon ({multiscale_factor}x):"
+                      f" {epsilon_true:.3g}", flush=True)
 
     # PREPARE COUNTS OBJECTS
     if simple_diploid:
@@ -364,14 +365,24 @@ def _prep_for_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed
                 'bcc': bcc_power, 'hsc': hsc_r, 'mhs': mhs_k}, verbose=verbose)
 
         # SETUP CALLBACKS
+        # TODO add bug fix (simple_diploid if/else stmt below & struct_true_tmp) to main branch
+        if simple_diploid:
+            struct_true_tmp = np.nanmean(
+                [struct_true[:int(struct_true.shape[0] / 2)],
+                 struct_true[int(struct_true.shape[0] / 2):]], axis=0)
+        else:
+            struct_true_tmp = struct_true
         if callback_freq is None:
             callback_freq = {'print': 100, 'history': 100, 'save': None}
+        # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances
         callback = Callback(
-            lengths, ploidy, counts=counts, multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform,
-            analysis_function=callback_function, frequency=callback_freq,
-            directory=outdir, struct_true=struct_true, alpha_true=alpha_true,
-            epsilon_true=epsilon_true)
+            lengths, ploidy, counts=counts, bias=bias,
+            multiscale_factor=multiscale_factor,
+            multiscale_reform=multiscale_reform, frequency=callback_freq,
+            directory=outdir, struct_true=struct_true_tmp,
+            alpha_true=alpha_true, epsilon_true=epsilon_true,
+            constraints=constraints, mixture_coefs=mixture_coefs,
+            **callback_fxns, multiscale_variances=multiscale_variances)
     else:
         struct_init = None
         epsilon = None
@@ -392,7 +403,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
           mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
-          callback_freq=None, callback_function=None, reorienter=None,
+          callback_freq=None, callback_fxns=None, reorienter=None,
           multiscale_reform=False, epsilon_min=1e-6, epsilon_max=1e6,
           epsilon_coord_descent=False, init_std_dev=None,
           alpha_true=None, struct_true=None, input_weight=None,
@@ -546,7 +557,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         excluded_counts=excluded_counts, fullres_torm=fullres_torm,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
         simple_diploid=simple_diploid, callback_freq=callback_freq,
-        callback_function=callback_function, reorienter=reorienter,
+        callback_fxns=callback_fxns, reorienter=reorienter,
         multiscale_reform=multiscale_reform, init_std_dev=init_std_dev,
         alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
@@ -556,33 +567,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_variances, epsilon) = prepped
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
-        # COMPUTE OBJECTIVE ON TRUE STRUCTURE
-        if outdir is not None and struct_true is not None and not null and (
-                reorienter is None or not reorienter.reorient):
-            struct_true_lowres = decrease_struct_res(
-                struct_true, multiscale_factor=multiscale_factor,
-                lengths=lengths)
-            if simple_diploid:
-                # TODO add bug fix below to main branch
-                struct_true_lowres = np.nanmean(
-                    [struct_true_lowres[:int(struct_true_lowres.shape[0] / 2)],
-                     struct_true_lowres[int(struct_true_lowres.shape[0] / 2):]],
-                    axis=0)
-            if multiscale_reform and multiscale_factor != 1:
-                X_true_lowres = np.append(struct_true_lowres.flatten(), epsilon)
-            else:
-                X_true_lowres = struct_true_lowres
-            _, obj_true, _, _ = objective(
-                X_true_lowres, counts=counts,
-                alpha=alpha_init if alpha_ is None else alpha_,
-                lengths=lengths, ploidy=(1 if simple_diploid else ploidy),
-                bias=bias, constraints=constraints,
-                multiscale_factor=multiscale_factor,
-                multiscale_variances=multiscale_variances,
-                multiscale_reform=multiscale_reform,
-                mixture_coefs=mixture_coefs, return_extras=True)
-            pd.Series(obj_true).to_csv(
-                os.path.join(outdir, 'struct_true_obj'), sep='\t', header=False)
+        # COMPUTE OBJECTIVE ON TRUE STRUCTURE TODO move this to callback fxn on main branch
 
         # INFER STRUCTURE
         pm = PastisPM(
@@ -685,7 +670,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 mhs_lambda=mhs_lambda, mhs_k=mhs_k,
                 fullres_torm=fullres_torm_for_multiscale,
                 struct_draft_fullres=struct_draft_fullres,
-                callback_function=callback_function,
+                callback_fxns=callback_fxns,
                 callback_freq=callback_freq, reorienter=reorienter,
                 multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
                 epsilon_max=epsilon_max,
@@ -724,7 +709,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,
                    bcc_power=1, hsc_r=None, hsc_min_beads=5, mhs_lambda=0., mhs_k=None,
                    struct_draft_fullres=None,
-                   callback_function=None, print_freq=100, history_freq=100,
+                   callback_fxns=None, print_freq=100, history_freq=100,
                    save_freq=None, piecewise=False, piecewise_step=None,
                    piecewise_chrom=None, piecewise_min_beads=5,
                    piecewise_fix_homo=False, piecewise_opt_orient=True,
@@ -856,7 +841,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             hsc_lambda=hsc_lambda, bcc_power=bcc_power, hsc_r=hsc_r,
             hsc_min_beads=hsc_min_beads, mhs_lambda=mhs_lambda, mhs_k=mhs_k,
             struct_draft_fullres=struct_draft_fullres,
-            callback_function=callback_function, callback_freq=callback_freq,
+            callback_fxns=callback_fxns, callback_freq=callback_freq,
             multiscale_reform=multiscale_reform,
             epsilon_coord_descent=epsilon_coord_descent, alpha_true=alpha_true,
             struct_true=struct_true, input_weight=input_weight,
@@ -876,7 +861,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_power=bcc_power,
             hsc_r=hsc_r, mhs_lambda=mhs_lambda, mhs_k=mhs_k,
             struct_draft_fullres=struct_draft_fullres,
-            hsc_min_beads=hsc_min_beads, callback_function=callback_function,
+            hsc_min_beads=hsc_min_beads, callback_fxns=callback_fxns,
             callback_freq=callback_freq,
             piecewise_step=piecewise_step,
             piecewise_chrom=piecewise_chrom,
