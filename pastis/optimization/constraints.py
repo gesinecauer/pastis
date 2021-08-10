@@ -346,7 +346,7 @@ class Constraints(object):
         struct_bw = struct * self.bead_weights
         n = ag_np.int32(self.lengths_lowres.sum())
 
-        homo_sep = ag_np.zeros(self.lengths_lowres.shape)  # dtype=ag_np.float32) # FIXME revert
+        homo_sep = ag_np.zeros(self.lengths_lowres.shape)
         begin = end = 0
         for i in range(self.lengths_lowres.shape[0]):
             end = end + ag_np.int32(self.lengths_lowres[i])
