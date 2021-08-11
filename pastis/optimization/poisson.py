@@ -104,10 +104,9 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     ####
 
-    num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
-        multiscale_factor).reshape(1, -1)
+    num_highres_per_lowres_bins = counts.fullres_per_lowres_dis.reshape(1, -1)
 
-    bias_per_bin = counts.bias_per_bin(bias, ploidy)  # TODO
+    bias_per_bin = counts.bias_per_bin(bias)  # TODO
 
     sqrt_2 = ag_np.sqrt(2)
 
@@ -247,8 +246,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             var_per_dis = multiscale_variances * 2
     else:
         var_per_dis = 0
-    num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
-        multiscale_factor)
+    num_highres_per_lowres_bins = counts.fullres_per_lowres_dis
 
     lambda_intensity = ag_np.zeros(counts.nnz_lowres)
     for struct, mix_coef in zip(structures, mixture_coefs):
@@ -260,7 +258,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
         tmp = tmp1.reshape(-1, counts.nnz_lowres).sum(axis=0)
         lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
-            bias, ploidy) * counts.beta * tmp
+            bias) * counts.beta * tmp
 
     # Sum main objective function
     if 'sum_not_mean' in mods:

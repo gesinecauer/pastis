@@ -673,13 +673,19 @@ class CountsMatrix(object):
         Whether the counts data should be excluded from the poisson component
         of the objective function. The indices of the counts are still used to
         compute the constraint components of the objective function.
-    highres_per_lowres_bead : None or array of int
+    fullres_per_lowres_bead : None or array of int
         For multiscale optimization, this is the number of full-res beads
         corresponding to each low-res bead.
     row3d : array of int
         Distance matrix rows associated with counts matrix rows.
     col3d : array of int
         Distance matrix columns associated with counts matrix columns.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 indicates full resolution.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
+    TODO
     """
 
     def __init__(self):
@@ -692,7 +698,7 @@ class CountsMatrix(object):
         self.beta = None
         self.weight = None
         self.null = None
-        self.highres_per_lowres_bead = None
+        self.fullres_per_lowres_bead = None
         self.row3d = None
         self.col3d = None
 
@@ -755,7 +761,7 @@ class CountsMatrix(object):
 
         pass
 
-    def bias_per_bin(self, bias, ploidy):
+    def bias_per_bin(self, bias):
         """Determines bias corresponding to each bin of the matrix.
 
         Returns bias for each bin of the contact counts matrix by multiplying
@@ -765,8 +771,6 @@ class CountsMatrix(object):
         ----------
         bias : array of float, optional
             Biases computed by ICE normalization.
-        ploidy : {1, 2}
-            Ploidy, 1 indicates haploid, 2 indicates diploid.
 
         Returns
         -------
@@ -776,26 +780,14 @@ class CountsMatrix(object):
 
         pass
 
-    def count_fullres_per_lowres_bins(self, multiscale_factor):
+    @property
+    def fullres_per_lowres_dis(self):
         """
         For multiscale: return number of full-res bins per bin at current res.
 
         Returns the number of full-resolution counts bins corresponding to each
         low-resolution counts bin for each bin of the low-resolution contact
         counts matrix.
-
-        Parameters
-        ----------
-        multiscale_factor : int, optional
-            Factor by which to reduce the resolution. A value of 2 halves the
-            resolution. A value of 1 indicates full resolution.
-
-        Returns
-        -------
-        array of float
-            Number of full-resolution counts bins corresponding to each
-            low-resolution counts bin for each bin of the low-resolution contact
-            counts matrix.
         """
 
         pass
@@ -835,13 +827,14 @@ class SparseCountsMatrix(CountsMatrix):
         # TODO add self.lengths and self.ploidy to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
+        self.multiscale_factor = multiscale_factor
 
         if multiscale_factor != 1:
-            self.highres_per_lowres_bead = _count_fullres_per_lowres_bead(
+            self.fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                 multiscale_factor=multiscale_factor, lengths=lengths,
                 ploidy=ploidy, fullres_torm=fullres_torm)
         else:
-            self.highres_per_lowres_bead = None
+            self.fullres_per_lowres_bead = None
 
         tmp = _group_counts_multiscale(
             self._counts, lengths=lengths, ploidy=ploidy,
@@ -898,22 +891,23 @@ class SparseCountsMatrix(CountsMatrix):
     def sum(self, axis=None, dtype=None, out=None):
         return self._counts.sum(axis=axis, dtype=dtype, out=out)
 
-    def bias_per_bin(self, bias, ploidy):
+    def bias_per_bin(self, bias):
         unique_bias = np.unique(bias)
         if bias is None or len(unique_bias) == 1 and unique_bias[0] == 1:
             #return np.ones((self.nnz,)) # FIXME
             return 1
         else:
             bias = bias.flatten()
-            bias = np.tile(bias, int(min(self.shape) * ploidy / len(bias)))
+            bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
             return bias[self.row] * bias[self.col]
 
-    def count_fullres_per_lowres_bins(self, multiscale_factor):
-        if multiscale_factor == 1:
+    @property
+    def fullres_per_lowres_dis(self):
+        if self.multiscale_factor == 1:
             return 1
         else:
-            per_row = self.highres_per_lowres_bead[self.row_lowres]
-            per_col = self.highres_per_lowres_bead[self.col_lowres]
+            per_row = self.fullres_per_lowres_bead[self.row_lowres]
+            per_col = self.fullres_per_lowres_bead[self.col_lowres]
             return per_row * per_col
 
 
@@ -975,16 +969,17 @@ class AtypicalCountsMatrix(CountsMatrix):
             output = dtype(output)
         return output
 
-    def bias_per_bin(self, bias=None, ploidy=None):
+    def bias_per_bin(self, bias=None):
         #return np.ones((self.nnz,)) # FIXME
         return 1
 
-    def count_fullres_per_lowres_bins(self, multiscale_factor):
-        if multiscale_factor == 1:
+    @property
+    def fullres_per_lowres_dis(self):
+        if self.multiscale_factor == 1:
             return 1
         else:
-            per_row = self.highres_per_lowres_bead[self.row_lowres]
-            per_col = self.highres_per_lowres_bead[self.col_lowres]
+            per_row = self.fullres_per_lowres_bead[self.row_lowres]
+            per_col = self.fullres_per_lowres_bead[self.col_lowres]
             return per_row * per_col
 
 
@@ -1026,13 +1021,14 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         # TODO add self.lengths and self.ploidy to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
+        self.multiscale_factor = multiscale_factor
 
         if multiscale_factor != 1:
-            self.highres_per_lowres_bead = _count_fullres_per_lowres_bead(
+            self.fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                 multiscale_factor=multiscale_factor, lengths=lengths,
                 ploidy=ploidy, fullres_torm=fullres_torm)
         else:
-            self.highres_per_lowres_bead = None
+            self.fullres_per_lowres_bead = None
 
         tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
@@ -1079,6 +1075,7 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         # TODO add self.lengths and self.ploidy to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
+        self.multiscale_factor = multiscale_factor
 
         self.input_sum = 0.
         for counts_maps in counts:
@@ -1088,11 +1085,11 @@ class NullCountsMatrix(AtypicalCountsMatrix):
                 self.input_sum += counts_maps.sum()
 
         if multiscale_factor != 1:
-            self.highres_per_lowres_bead = _count_fullres_per_lowres_bead(
+            self.fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                 multiscale_factor=multiscale_factor, lengths=lengths,
                 ploidy=ploidy, fullres_torm=fullres_torm)
         else:
-            self.highres_per_lowres_bead = None
+            self.fullres_per_lowres_bead = None
 
         tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
