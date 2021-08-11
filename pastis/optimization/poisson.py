@@ -175,10 +175,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     if 'ij_sum' not in mods:
         obj_tmp_sum = obj_tmp_sum / num_highres_per_lowres_bins
 
-    if 'sum_not_mean' in mods:
-        obj = ag_np.sum(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
-    else:
-        obj = ag_np.mean(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
+    obj = ag_np.mean(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars  # FIXME
@@ -261,21 +258,14 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             bias) * counts.beta * tmp
 
     # Sum main objective function
-    if 'sum_not_mean' in mods:
-        obj = (lambda_intensity * num_highres_per_lowres_bins).sum()  # TODO fix on main branch: mean not sum!
-    else:
-        obj = (lambda_intensity * num_highres_per_lowres_bins).mean()  # TODO fix on main branch: mean not sum!
+    obj = (lambda_intensity * num_highres_per_lowres_bins).mean()  # TODO fix on main branch: mean not sum!
 
     if counts.type != 'zero':
         if lambda_intensity.shape == counts.data.shape:
             counts_data = counts.data
         else:
             counts_data = _masksum(counts.data, mask=counts.mask, axis=0)
-
-        if 'sum_not_mean' in mods:
-            obj = obj - (counts_data * ag_np.log(lambda_intensity)).sum()  # TODO fix on main branch: mean not sum!
-        else:
-            obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()  # TODO fix on main branch: mean not sum!
+        obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
         from topsy.utils.misc import printvars
@@ -404,23 +394,29 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             mixture_coefs=mixture_coefs)
 
     obj_poisson = {}
-    if len(counts) == 0: # FIXME this is temp
-        obj_poisson_sum = 0.
-        obj = sum(obj_constraints.values())
+    obj_poisson_sum = 0.
+    for counts_maps in counts:
+        obj_counts = _obj_single(
+            structures=structures, counts=counts_maps, alpha=alpha,
+            lengths=lengths, ploidy=ploidy, bias=bias,
+            multiscale_factor=multiscale_factor,
+            multiscale_variances=multiscale_variances, epsilon=epsilon,
+            mixture_coefs=mixture_coefs, mods=mods)
+        obj_poisson['obj_' + counts_maps.name] = obj_counts
+        if 'sum_not_mean' in mods:
+            obj_poisson['obj_' + counts_maps.name] *= counts_maps.nnz
+        obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
+
+    if 'sum_not_mean' in mods:
+        obj_poisson_mean = obj_poisson_sum
     else:
-        for counts_maps in counts:
-            obj_poisson['obj_' + counts_maps.name] = _obj_single(
-                structures=structures, counts=counts_maps, alpha=alpha,
-                lengths=lengths, ploidy=ploidy, bias=bias,
-                multiscale_factor=multiscale_factor,
-                multiscale_variances=multiscale_variances, epsilon=epsilon,
-                mixture_coefs=mixture_coefs, mods=mods)
-        obj_poisson_sum = sum(obj_poisson.values())
-        obj = obj_poisson_sum + sum(obj_constraints.values())
+        obj_poisson_mean = obj_poisson_sum / sum([c.nnz for c in counts])
+
+    obj = obj_poisson_mean + sum(obj_constraints.values())
 
     if return_extras:
         obj_logs = {**obj_poisson, **obj_constraints,
-                    **{'obj': obj, 'obj_poisson': obj_poisson_sum}}
+                    **{'obj': obj, 'obj_poisson': obj_poisson_mean}}
         return obj, obj_logs, structures, alpha
     else:
         return obj
