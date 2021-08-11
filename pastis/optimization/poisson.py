@@ -110,9 +110,9 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     sqrt_2 = ag_np.sqrt(2)
 
-    mu = ag_np.zeros((1, counts.nnz_lowres))
-    theta = ag_np.zeros((1, counts.nnz_lowres))
-    k = ag_np.zeros((1, counts.nnz_lowres))
+    mu = ag_np.zeros((1, counts.nnz))
+    theta = ag_np.zeros((1, counts.nnz))
+    k = ag_np.zeros((1, counts.nnz))
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
@@ -143,8 +143,8 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             k_tmp = ag_np.exp(2 * ln_gamma_mean - ln_gamma_var)
         else:
             if counts.ambiguity != 'ua':
-                gamma_mean = gamma_mean.reshape(-1, counts.nnz_lowres).sum(axis=0)
-                gamma_var = gamma_var.reshape(-1, counts.nnz_lowres).sum(axis=0)
+                gamma_mean = gamma_mean.reshape(-1, counts.nnz).sum(axis=0)
+                gamma_var = gamma_var.reshape(-1, counts.nnz).sum(axis=0)
 
             theta_tmp = gamma_var / gamma_mean
             k_tmp = ag_np.square(gamma_mean) / gamma_var
@@ -248,7 +248,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
         var_per_dis = 0
     num_highres_per_lowres_bins = counts.fullres_per_lowres_dis
 
-    lambda_intensity = ag_np.zeros(counts.nnz_lowres)
+    lambda_intensity = ag_np.zeros(counts.nnz)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
@@ -256,7 +256,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             tmp1 = ag_np.power(dis, alpha)
         else:
             tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
-        tmp = tmp1.reshape(-1, counts.nnz_lowres).sum(axis=0)
+        tmp = tmp1.reshape(-1, counts.nnz).sum(axis=0)
         lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
             bias) * counts.beta * tmp
 
@@ -504,13 +504,6 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             epsilon = None
         callback.on_iter_end(obj_logs=obj_logs, structures=structures,
                              alpha=alpha, Xi=X, epsilon=epsilon)
-
-    if epsilon is not None and False:  # FIXME remove
-        spacer = ' ' * (12 - len(f"{new_obj:.3g}"))
-        if epsilon == 0:
-            print(f'    obj {new_obj:.3g}{spacer}ε ---', flush=True)
-        else:
-            print(f'    obj {new_obj:.3g}{spacer}ε {epsilon:.6g}', flush=True)
 
     return new_obj
 

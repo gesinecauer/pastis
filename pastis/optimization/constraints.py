@@ -126,9 +126,9 @@ class Constraints(object):
                 multiscale_factor=multiscale_factor,
                 multiscale_reform=multiscale_reform)
             if multiscale_factor != 1:
-                highres_per_lowres_bead = np.max(
-                    [c.highres_per_lowres_bead for c in counts], axis=0)
-                bead_weights = highres_per_lowres_bead / multiscale_factor
+                fullres_per_lowres_bead = np.max(
+                    [c.fullres_per_lowres_bead for c in counts], axis=0)
+                bead_weights = fullres_per_lowres_bead / multiscale_factor
             else:
                 bead_weights = np.ones((self.lengths_lowres.sum() * ploidy,))
             bead_weights[torm] = 0.

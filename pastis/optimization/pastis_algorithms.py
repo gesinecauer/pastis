@@ -95,7 +95,8 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
         normalize=normalize, filter_threshold=filter_threshold,
         multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
-        input_weight=input_weight, verbose=False, mixture_coefs=mixture_coefs)
+        input_weight=input_weight, verbose=False, mixture_coefs=mixture_coefs,
+        mods=mods)
     beta = [c.beta for c in counts if c.sum() != 0]
 
     alpha_ = alpha

@@ -424,7 +424,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     from .counts import check_counts
 
     lengths_subset, chrom_subset, subset_index = subset_chrom(
-        ploidy=ploidy, lengths_full=lengths_full, chrom_full=chrom_full,
+        lengths_full=lengths_full, chrom_full=chrom_full,
         chrom_subset=chrom_subset)
 
     if subset_index is not None and ploidy == 2:

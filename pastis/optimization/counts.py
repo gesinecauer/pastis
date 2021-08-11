@@ -318,6 +318,18 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     else:
         fullres_torm_for_multiscale = None
 
+    if 'highatlow' in mods:
+        if 'intra' in mods:
+            excluded_counts = 'intra'
+        counts_fullres = preprocess_counts(
+            counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
+            normalize=normalize, filter_threshold=filter_threshold,
+            multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
+            input_weight=input_weight, verbose=verbose,
+            excluded_counts=excluded_counts, mixture_coefs=mixture_coefs,
+            mods=mods)[0]
+        counts.extend(counts_fullres)
+
     return counts, bias, torm, fullres_torm_for_multiscale
 
 
@@ -847,8 +859,11 @@ class SparseCountsMatrix(CountsMatrix):
 
     def tocoo(self):
         # TODO decide what this fxn should actually do (esp wrt reform), and make AtypicalCM match
+        data = self.data
+        if len(data.shape) > 1:
+            data = data.sum(axis=0)
         coo = sparse.coo_matrix(
-            (self.data, (self.row, self.col)), shape=self.shape)
+            (data, (self.row, self.col)), shape=self.shape)
         return coo
 
     def copy(self):
@@ -876,8 +891,8 @@ class SparseCountsMatrix(CountsMatrix):
         if self.multiscale_factor == 1:
             return 1
         else:
-            per_row = self.fullres_per_lowres_bead[self.row_lowres]
-            per_col = self.fullres_per_lowres_bead[self.col_lowres]
+            per_row = self.fullres_per_lowres_bead[self.row]
+            per_col = self.fullres_per_lowres_bead[self.col]
             return per_row * per_col
 
 
@@ -921,7 +936,10 @@ class AtypicalCountsMatrix(CountsMatrix):
         if out is not None:
             output = np.array(output).reshape(out.shape)
         if dtype is not None:
-            output = dtype(output)
+            if isinstance(output, np.ndarray):
+                output = output.astype(dtype)
+            else:
+                output = dtype(output)
         return output
 
     def bias_per_bin(self, bias=None):
@@ -939,8 +957,8 @@ class AtypicalCountsMatrix(CountsMatrix):
         if self.multiscale_factor == 1:
             return 1
         else:
-            per_row = self.fullres_per_lowres_bead[self.row_lowres]
-            per_col = self.fullres_per_lowres_bead[self.col_lowres]
+            per_row = self.fullres_per_lowres_bead[self.row]
+            per_col = self.fullres_per_lowres_bead[self.col]
             return per_row * per_col
 
 
@@ -967,8 +985,8 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         dummy_counts = counts.copy() + 1
         dummy_counts[np.isnan(dummy_counts)] = 0
         dummy_counts = sparse.coo_matrix(dummy_counts)
-        self.row = dummy_counts.row
-        self.col = dummy_counts.col
+        # self.row = dummy_counts.row  # TODO remove junk
+        # self.col = dummy_counts.col
         self.shape = dummy_counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (lengths_counts.sum() * ploidy)]
@@ -998,7 +1016,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             exclude_each_highres_empty=True)
         data_grouped, indices, indices3d, _, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
-        self.row_lowres, self.col_lowres = indices
+        self.row, self.col = indices
         self.row3d, self.col3d = indices3d
 
 
@@ -1024,8 +1042,8 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         dummy_counts = _create_dummy_counts(
             counts=counts, lengths=lengths_counts, ploidy=ploidy)
 
-        self.row = dummy_counts.row
-        self.col = dummy_counts.col
+        # self.row = dummy_counts.row  # TODO remove junk
+        # self.col = dummy_counts.col
         self.shape = dummy_counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(dummy_counts.shape) / (lengths_counts.sum() * ploidy)]
@@ -1059,5 +1077,5 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             multiscale_reform=multiscale_reform, dummy=True)
         data_grouped, indices, indices3d, _, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
-        self.row_lowres, self.col_lowres = indices
+        self.row, self.col = indices
         self.row3d, self.col3d = indices3d
