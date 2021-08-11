@@ -162,13 +162,13 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         k_plus_1 = k + 1
         obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k_plus_1)
         obj_tmp3 = _masksum(_stirling(
-            counts.data_grouped + k_plus_1), mask=counts.mask, axis=0)
-        obj_tmp4 = _masksum(counts.data_grouped, mask=counts.mask, axis=0) * (
+            counts.data + k_plus_1), mask=counts.mask, axis=0)
+        obj_tmp4 = _masksum(counts.data, mask=counts.mask, axis=0) * (
             ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1)
-        obj_tmp5 = _masksum((counts.data_grouped + k + 0.5) * ag_np.log1p(
-            counts.data_grouped / k_plus_1), mask=counts.mask, axis=0)
+        obj_tmp5 = _masksum((counts.data + k + 0.5) * ag_np.log1p(
+            counts.data / k_plus_1), mask=counts.mask, axis=0)
         obj_tmp6 = -_masksum(
-            ag_np.log1p(counts.data_grouped / k), mask=counts.mask, axis=0)
+            ag_np.log1p(counts.data / k), mask=counts.mask, axis=0)
         obj_tmp_sum = (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
 
     # if 'ij_mean' in mods:
@@ -197,10 +197,10 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                 'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
                 'ln mean(ΓRV)': ln_gamma_mean, 'ln var(ΓRV)': ln_gamma_var,
                 'mean(ΓRV)': ag_np.exp(ln_gamma_mean), 'var(ΓRV)': ag_np.exp(ln_gamma_var),
-                'c_ij / k': (counts.data_grouped / k),
-                '1 + c_ij / k': (1 + counts.data_grouped / k),
-                '<0  1 + c_ij / k': (1 + counts.data_grouped / k)[(1 + counts.data_grouped / k) < 0],
-                'ln(1 + c_ij / k)': ag_np.sum(ag_np.log1p(counts.data_grouped / k), axis=0),
+                'c_ij / k': (counts.data / k),
+                '1 + c_ij / k': (1 + counts.data / k),
+                '<0  1 + c_ij / k': (1 + counts.data / k)[(1 + counts.data / k) < 0],
+                'ln(1 + c_ij / k)': ag_np.sum(ag_np.log1p(counts.data / k), axis=0),
                 'ln(μ)': ag_np.log(mu),
                 'ln(1+θ)': ag_np.log1p(theta),
                 'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
@@ -270,8 +270,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
         if lambda_intensity.shape == counts.data.shape:
             counts_data = counts.data
         else:
-            counts_data = _masksum(
-                counts.data_grouped, mask=counts.mask, axis=0)
+            counts_data = _masksum(counts.data, mask=counts.mask, axis=0)
 
         if 'sum_not_mean' in mods:
             obj = obj - (counts_data * ag_np.log(lambda_intensity)).sum()  # TODO fix on main branch: mean not sum!

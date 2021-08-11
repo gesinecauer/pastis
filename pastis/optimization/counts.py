@@ -580,7 +580,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
                 multiscale_factor=multiscale_factor, beta=beta_maps,
                 fullres_torm=fullres_torm_maps, weight=input_weight_maps,
                 multiscale_reform=multiscale_reform)
-            if zero_counts_maps.nnz_lowres > 0:
+            if zero_counts_maps.nnz > 0:
                 counts_reformatted.append(zero_counts_maps)
 
     return counts_reformatted
@@ -660,6 +660,12 @@ class CountsMatrix(object):
 
     Attributes
     ----------
+    row : array of int
+        Row index array of the matrix (COO format).
+    col : array of int
+        Column index array of the matrix (COO format).
+    shape : tuple of int
+        Shape of the matrix.
     input_sum : int
         Sum of the nonzero counts in the input.
     ambiguity : {"ambig", "pa", "ua"}
@@ -703,20 +709,6 @@ class CountsMatrix(object):
         self.col3d = None
 
     @property
-    def row(self):
-        """Row index array of the matrix (COO format).
-        """
-
-        pass
-
-    @property
-    def col(self):
-        """Column index array of the matrix (COO format).
-        """
-
-        pass
-
-    @property
     def nnz(self):
         """Number of stored values, including explicit zeros.
         """
@@ -726,13 +718,6 @@ class CountsMatrix(object):
     @property
     def data(self):
         """Data array of the matrix (COO format).
-        """
-
-        pass
-
-    @property
-    def shape(self):
-        """Shape of the matrix.
         """
 
         pass
@@ -814,7 +799,8 @@ class SparseCountsMatrix(CountsMatrix):
                           _counts[~np.isnan(_counts)].round()):
             _counts = _counts.astype(
                 sparse.sputils.get_index_dtype(maxval=_counts.max()))
-        self._counts = sparse.coo_matrix(_counts)
+        _counts = sparse.coo_matrix(_counts)
+        self.shape = _counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(_counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = self.ambiguity
@@ -824,7 +810,7 @@ class SparseCountsMatrix(CountsMatrix):
             raise ValueError(f"Counts weight may not be {self.weight}.")
         self.type = 'sparse'
         self.null = False
-        # TODO add self.lengths and self.ploidy to main branch...
+        # TODO add self.lengths, self.ploidy, self.multiscale_factor to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -837,59 +823,43 @@ class SparseCountsMatrix(CountsMatrix):
             self.fullres_per_lowres_bead = None
 
         tmp = _group_counts_multiscale(
-            self._counts, lengths=lengths, ploidy=ploidy,
+            _counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform)
-        self.data_grouped, indices, indices3d, self.nnz_lowres, self.mask = tmp
-
-        # self.data_lowres = decrease_counts_res(
-        #     self._counts, multiscale_factor=multiscale_factor, lengths=lengths,
-        #     ploidy=ploidy).data
-        # if multiscale_factor != 1:
-        #     print(np.array_equal(self.data_lowres, self.data_grouped.sum(axis=0)))
-        #     exit(0)  # TODO delete me
-
-        self.row_lowres, self.col_lowres = indices
+        self._data, indices, indices3d, _, self.mask = tmp
+        self.row, self.col = indices
         self.row3d, self.col3d = indices3d
 
     @property
-    def row(self):
-        return self._counts.row
-
-    @property
-    def col(self):
-        return self._counts.col
-
-    @property
     def nnz(self):
-        return self._counts.nnz
+        return self.row.shape[0]
 
     @property
     def data(self):
-        return self._counts.data
-
-    @property
-    def shape(self):
-        return self._counts.shape
+        return self._data
 
     def toarray(self):
         # TODO add this to main branch...
-        # TODO decide what this fxn should actually do, and make AtypicalCM match
+        # TODO decide what this fxn should actually do (esp wrt reform), and make AtypicalCM match
         return _check_counts_matrix(
-            self._counts.toarray(), lengths=self.lengths, ploidy=self.ploidy,
+            self.tocoo().toarray(), lengths=self.lengths, ploidy=self.ploidy,
             exclude_zeros=False)
 
     def tocoo(self):
-        return self._counts
+        # TODO decide what this fxn should actually do (esp wrt reform), and make AtypicalCM match
+        coo = sparse.coo_matrix(
+            (self.data, (self.row, self.col)), shape=self.shape)
+        return coo
 
     def copy(self):
-        self._counts = self._counts.copy()
+        # TODO update (also AtypicalCM)
         self.row3d = self.row3d.copy()
         self.col3d = self.col3d.copy()
         return self
 
     def sum(self, axis=None, dtype=None, out=None):
-        return self._counts.sum(axis=axis, dtype=dtype, out=out)
+        # TODO update (also AtypicalCM)
+        return self.tocoo().sum(axis=axis, dtype=dtype, out=out)
 
     def bias_per_bin(self, bias):
         if bias is None or np.all(bias == 1):
@@ -917,29 +887,14 @@ class AtypicalCountsMatrix(CountsMatrix):
 
     def __init__(self):
         CountsMatrix.__init__(self)
-        self._row = None
-        self._col = None
-        self._shape = None
-
-    @property
-    def row(self):
-        return self._row
-
-    @property
-    def col(self):
-        return self._col
 
     @property
     def nnz(self):
-        return len(self.row)
+        return self.row.shape[0]
 
     @property
     def data(self):
-        return np.zeros_like(self.row)
-
-    @property
-    def shape(self):
-        return self._shape
+        return np.zeros(self._data_grouped_shape, dtype=np.uint16)
 
     def toarray(self):
         array = np.full(self.shape, np.nan)
@@ -1012,9 +967,9 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         dummy_counts = counts.copy() + 1
         dummy_counts[np.isnan(dummy_counts)] = 0
         dummy_counts = sparse.coo_matrix(dummy_counts)
-        self._row = dummy_counts.row
-        self._col = dummy_counts.col
-        self._shape = dummy_counts.shape
+        self.row = dummy_counts.row
+        self.col = dummy_counts.col
+        self.shape = dummy_counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = '%s0' % self.ambiguity
@@ -1024,7 +979,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             raise ValueError(f"Counts weight may not be {self.weight}.")
         self.type = 'zero'
         self.null = False
-        # TODO add self.lengths and self.ploidy to main branch...
+        # TODO add self.lengths, self.ploidy, self.multiscale_factor to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -1041,7 +996,8 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, dummy=True,
             exclude_each_highres_empty=True)
-        self.data_grouped, indices, indices3d, self.nnz_lowres, self.mask = tmp
+        data_grouped, indices, indices3d, _, self.mask = tmp
+        self._data_grouped_shape = data_grouped.shape
         self.row_lowres, self.col_lowres = indices
         self.row3d, self.col3d = indices3d
 
@@ -1068,9 +1024,9 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         dummy_counts = _create_dummy_counts(
             counts=counts, lengths=lengths_counts, ploidy=ploidy)
 
-        self._row = dummy_counts.row
-        self._col = dummy_counts.col
-        self._shape = dummy_counts.shape
+        self.row = dummy_counts.row
+        self.col = dummy_counts.col
+        self.shape = dummy_counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(dummy_counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = '%s0' % self.ambiguity
@@ -1078,7 +1034,7 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         self.weight = 0.
         self.type = 'null'
         self.null = True
-        # TODO add self.lengths and self.ploidy to main branch...
+        # TODO add self.lengths, self.ploidy, self.multiscale_factor to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -1101,6 +1057,7 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, dummy=True)
-        self.data_grouped, indices, indices3d, self.nnz_lowres, self.mask = tmp
+        data_grouped, indices, indices3d, _, self.mask = tmp
+        self._data_grouped_shape = data_grouped.shape
         self.row_lowres, self.col_lowres = indices
         self.row3d, self.col3d = indices3d
