@@ -892,11 +892,11 @@ class SparseCountsMatrix(CountsMatrix):
         return self._counts.sum(axis=axis, dtype=dtype, out=out)
 
     def bias_per_bin(self, bias):
-        unique_bias = np.unique(bias)
-        if bias is None or len(unique_bias) == 1 and unique_bias[0] == 1:
-            #return np.ones((self.nnz,)) # FIXME
+        if bias is None or np.all(bias == 1):
             return 1
         else:
+            if self.multiscale_factor != 1:
+                raise NotImplementedError
             bias = bias.flatten()
             bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
             return bias[self.row] * bias[self.col]
@@ -970,8 +970,14 @@ class AtypicalCountsMatrix(CountsMatrix):
         return output
 
     def bias_per_bin(self, bias=None):
-        #return np.ones((self.nnz,)) # FIXME
-        return 1
+        if bias is None or np.all(bias == 1):
+            return 1
+        else:
+            if self.multiscale_factor != 1:
+                raise NotImplementedError
+            bias = bias.flatten()
+            bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
+            return bias[self.row] * bias[self.col]
 
     @property
     def fullres_per_lowres_dis(self):
