@@ -86,7 +86,7 @@ class Constraints(object):
 
         self.lengths = np.array(lengths).astype(np.int32)
         self.lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor).astype(np.int32)
+            lengths, multiscale_factor=multiscale_factor)
         if multiscale_reform:
             self.lengths_counts = self.lengths
         else:

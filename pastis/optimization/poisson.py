@@ -26,7 +26,7 @@ import warnings
 from timeit import default_timer as timer
 from datetime import timedelta
 
-from .multiscale_optimization import decrease_lengths_res
+from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .constraints import Constraints
 from .callbacks import Callback
@@ -94,13 +94,6 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            mods=None, max_epsilon_over_dis=25):
     """Computes the multiscale objective function for a given counts matrix.
     """
-
-    if mods is None:  # TODO remove
-        mods = []
-    elif isinstance(mods, str):
-        mods = mods.lower().split('.')
-    else:
-        mods = [x.lower() for x in mods]
 
     ####
 
@@ -181,8 +174,8 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         from topsy.utils.misc import printvars  # FIXME
         if type(obj).__name__ == 'JVPTracer':
             raise ValueError(
-                f"Poisson component of objective function for {counts.name}"
-                f" is {- obj}.")
+                f"Negative Binomial component of objective function for {counts.name}"
+                f" is {- obj} at {multiscale_factor}x resolution.")
         if counts.type == 'zero':
             printvars({
                 'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
@@ -204,8 +197,8 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                 'tmp3': obj_tmp3, 'tmp4': obj_tmp4,
                 'tmp5': obj_tmp5, 'obj': obj_tmp_sum})
         raise ValueError(
-            f"Poisson component of objective function for {counts.name}"
-            f" is {- obj}.")
+            f"Negative Binomial component of objective function for {counts.name}"
+            f" is {- obj} at {multiscale_factor}x resolution.")
 
     return counts.weight * (- obj)
 
@@ -215,13 +208,6 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
                  mixture_coefs=None, mods=None):
     """Computes the Poisson objective function for a given counts matrix.
     """
-
-    if mods is None:  # TODO remove
-        mods = []
-    elif isinstance(mods, str):
-        mods = mods.lower().split('.')
-    else:
-        mods = [x.lower() for x in mods]
 
     if (bias is not None and bias.sum() == 0) or counts.nnz == 0 or counts.null:
         return 0.
@@ -276,7 +262,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
                 'counts.data': counts.data})
         raise ValueError(
             f"Poisson component of objective function for {counts.name}"
-            f" is {obj}.")
+            f" is {obj} at {multiscale_factor}x resolution.")
 
     return counts.weight * obj
 
@@ -299,10 +285,11 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
     elif mixture_coefs is None:
         mixture_coefs = [1.]
 
-    if epsilon is None or multiscale_factor == 1 or np.all(epsilon == 0):
+    if epsilon is None or counts.multiscale_factor == 1 or np.all(epsilon == 0):
         obj = _poisson_obj(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
-            ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
+            ploidy=ploidy, bias=bias,
+            multiscale_factor=counts.multiscale_factor,
             multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs, mods=mods)
     else:
@@ -367,7 +354,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     X, epsilon, mixture_coefs = _format_X(
         X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
         reorienter=reorienter, multiscale_reform=multiscale_reform,
-        epsilon=epsilon, mixture_coefs=mixture_coefs)
+        epsilon=epsilon, mixture_coefs=mixture_coefs, mods=mods)
 
     # Optionally translate & rotate structures
     if reorienter is not None and reorienter.reorient:
@@ -395,24 +382,56 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
 
     obj_poisson = {}
     obj_poisson_sum = 0.
+
+    if 'highatlow' in mods and multiscale_factor != 1:
+        # Compute low-res objective on low-res structures, using low-res or
+        # grouped counts
+        structures_lowres = [decrease_struct_res(
+            struct, multiscale_factor=multiscale_factor,
+            lengths=lengths) for struct in structures]
+        for counts_maps in counts:
+            if counts_maps.multiscale_factor == 1:
+                continue
+            obj_counts = _obj_single(
+                structures=structures_lowres, counts=counts_maps, alpha=alpha,
+                lengths=lengths, ploidy=ploidy, bias=bias,
+                multiscale_factor=multiscale_factor,
+                multiscale_variances=multiscale_variances, epsilon=epsilon,
+                mixture_coefs=mixture_coefs, mods=mods)
+            if 'sum_not_mean' in mods:
+                obj_poisson[f"obj_{counts_maps.name}_lowres"] = obj_counts * counts_maps.nnz
+            else:
+                obj_poisson[f"obj_{counts_maps.name}_lowres"] = obj_counts
+            obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
+
     for counts_maps in counts:
+        if ('highatlow' in mods and multiscale_factor != 1):
+            if counts_maps.multiscale_factor != 1:
+                continue
         obj_counts = _obj_single(
             structures=structures, counts=counts_maps, alpha=alpha,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
             mixture_coefs=mixture_coefs, mods=mods)
-        obj_poisson['obj_' + counts_maps.name] = obj_counts
         if 'sum_not_mean' in mods:
-            obj_poisson['obj_' + counts_maps.name] *= counts_maps.nnz
+            obj_poisson[f"obj_{counts_maps.name}"] = obj_counts * counts_maps.nnz
+        else:
+            obj_poisson[f"obj_{counts_maps.name}"] = obj_counts
         obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
 
+    # Take mean of poisson/negbinom obj terms
     if 'sum_not_mean' in mods:
         obj_poisson_mean = obj_poisson_sum
     else:
         obj_poisson_mean = obj_poisson_sum / sum([c.nnz for c in counts])
 
     obj = obj_poisson_mean + sum(obj_constraints.values())
+
+    # if type(obj).__name__ == 'DeviceArray':
+    #     print("OBJ\t" + '\t'.join([f"{k.replace('obj_', '')}: {v._value:.3g}" for k, v in list(obj_poisson.items()) + list(obj_constraints.items())]))  # + f"\tepsilon: {epsilon:.3g}"
+    # elif type(obj).__name__ == 'JVPTracer':
+    #     print("GRAD\t" + '\t'.join([f"{k.replace('obj_', '')}: {v.primal._value:.3g}" for k, v in obj_poisson.items()]))
 
     if return_extras:
         obj_logs = {**obj_poisson, **obj_constraints,
@@ -424,7 +443,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
 
 def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
               reorienter=None, multiscale_reform=False, epsilon=None,
-              mixture_coefs=None):
+              mixture_coefs=None, mods=None):
     """Reformat and check X.
     """
     # FIXME epsilon shouldn't be inputted to here unless inferring struct/eps separately
@@ -436,7 +455,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
         nbeads = None
     else:
         lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor=multiscale_factor)
+            lengths, multiscale_factor=(1 if (mods is None or 'highatlow' in mods) else multiscale_factor))
         nbeads = lengths_lowres.sum() * ploidy
 
     if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # FIXME epsilon
@@ -450,7 +469,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
             X = X[:-nbeads]
         else:
             raise ValueError(f"Epsilon must be of length 1 or {nbeads}."
-                             f"X.shape = ({', '.join(map(str, X.shape))})")
+                             f" X.shape = ({', '.join(map(str, X.shape))})")
     else:
         #epsilon = None  # FIXME epsilon
         pass
@@ -678,7 +697,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                 X, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor, reorienter=reorienter,
                 multiscale_reform=multiscale_reform,
-                mixture_coefs=mixture_coefs)
+                mixture_coefs=mixture_coefs, mods=mods)
             print(f'INIT EPSILON: {np.asarray(epsilon).mean():.3g},'
                   f'  FINAL EPSILON: {np.asarray(final_epsilon).mean():.3g}',
                   flush=True)

@@ -60,7 +60,7 @@ class Callback(object):
     ----------
     lengths : array of int
         Number of beads per homolog of each chromosome at full the current
-        resolution (indicated by `multiscale_factor`).
+        resolution (indicated by `multiscale_factor`). TODO update
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     multiscale_factor : int
@@ -131,14 +131,15 @@ class Callback(object):
                  on_training_begin=None, on_training_end=None,
                  on_iter_end=None, directory=None, struct_true=None,
                  alpha_true=None, epsilon_true=None, constraints=None,
-                 multiscale_variances=None, mixture_coefs=None, verbose=False):
-        # TODO add to main branch -- new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances
+                 multiscale_variances=None, mixture_coefs=None, verbose=False,
+                 mods=None):
+        # TODO add to main branch -- new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.epsilon = None
         self.lengths = lengths  # TODO add to main branch
         self.lengths_lowres = decrease_lengths_res(  # FIXME TODO lengths_lowres, change to main branch
-            lengths, multiscale_factor=multiscale_factor)
+            lengths, multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor))
         self.bias = bias  # TODO add to main branch
         self.counts = counts  # TODO add to main branch
         if counts is None:
@@ -147,12 +148,13 @@ class Callback(object):
         else:
             self.torm = find_beads_to_remove(
                 counts, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor,
+                multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
                 multiscale_reform=multiscale_reform)
         self.constraints = constraints  # TODO add to main branch
         self.multiscale_reform = multiscale_reform  # TODO add to main branch
         self.multiscale_variances = multiscale_variances  # TODO add to main branch
         self.mixture_coefs = mixture_coefs  # TODO add to main branch
+        self.mods = mods  # TODO add to main branch
 
         self.analysis_function = analysis_function
         if frequency is None or isinstance(frequency, int):
@@ -177,7 +179,7 @@ class Callback(object):
             struct_true = struct_true.reshape(-1, 3)
             if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
                 self.struct_true = decrease_struct_res(
-                    struct_true, multiscale_factor=multiscale_factor,
+                    struct_true, multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
                     lengths=lengths)
             else:
                 self.struct_true = struct_true

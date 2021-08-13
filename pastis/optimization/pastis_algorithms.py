@@ -277,7 +277,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     # MULTISCALE EPSILON
     epsilon_true = None
     if multiscale_factor != 1 and multiscale_reform:
-        if struct_true is not None:
+        if struct_true is not None:  # TODO if we end up using highatlow, move this to callback on_training_begin()
             epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
                 struct_true, lengths=lengths,
                 multiscale_factor=multiscale_factor, verbose=False))
@@ -359,7 +359,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         # SETUP CONSTRAINTS
         constraints = Constraints(
             counts=counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor,
+            multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
             multiscale_reform=multiscale_reform,
             constraint_lambdas={
                 'bcc': bcc_lambda, 'hsc': hsc_lambda, 'mhs': mhs_lambda},
@@ -377,7 +377,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             struct_true_tmp = struct_true
         if callback_freq is None:
             callback_freq = {'print': 100, 'history': 100, 'save': None}
-        # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances
+        # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
         callback = Callback(
             lengths, ploidy, counts=counts, bias=bias,
             multiscale_factor=multiscale_factor,
@@ -385,7 +385,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             directory=outdir, struct_true=struct_true_tmp,
             alpha_true=alpha_true, epsilon_true=epsilon_true,
             constraints=constraints, mixture_coefs=mixture_coefs,
-            **callback_fxns, multiscale_variances=multiscale_variances)
+            **callback_fxns, multiscale_variances=multiscale_variances,
+            mods=mods)
     else:
         struct_init = None
         epsilon = None

@@ -5,6 +5,12 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
 
+use_jax = True
+if use_jax:
+    import jax.numpy as ag_np
+else:
+    import autograd.numpy as ag_np
+
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
@@ -551,8 +557,9 @@ def _get_struct_indices(ploidy, multiscale_factor, lengths):
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
 
     indices = np.arange(lengths_lowres.sum() * ploidy).astype(float)
-    indices = np.repeat(np.indices([multiscale_factor]), indices.shape[
-                        0]) + np.tile(indices * multiscale_factor, multiscale_factor)
+    indices = np.repeat(
+        np.indices([multiscale_factor]), indices.shape[0]) + np.tile(
+        indices * multiscale_factor, multiscale_factor)
     indices = indices.reshape(multiscale_factor, -1)
 
     # Figure out which rows / cols are out of bounds
@@ -578,7 +585,8 @@ def _get_struct_indices(ploidy, multiscale_factor, lengths):
     return indices
 
 
-def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask=None):
+def _group_highres_struct(struct, multiscale_factor, lengths, ploidy=None,
+                          indices=None, mask=None):
     """Group beads of full-res struct by the low-res bead they correspond to.
 
     Axes of final array:
@@ -587,13 +595,14 @@ def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask
         2: coordinates, size = struct[1] = 3
     """
 
-    lengths = np.array(lengths).astype(int)
+    lengths = ag_np.array(lengths).astype(int)
 
-    ploidy = struct.reshape(-1, 3).shape[0] / lengths.sum()
-    if ploidy != 1 and ploidy != 2:
-        raise ValueError("Not consistent with haploid or diploid... struct is"
-                         " %d beads (and 3 cols), sum of lengths is %d" % (
-                             struct.reshape(-1, 3).shape[0], lengths.sum()))
+    if ploidy is None:
+        ploidy = struct.reshape(-1, 3).shape[0] / lengths.sum()
+        if ploidy != 1 and ploidy != 2:
+            raise ValueError("Not consistent with haploid or diploid... struct"
+                             f" is {struct.reshape(-1, 3).shape[0]} beads (and"
+                             f" 3 cols), sum of lengths is {lengths.sum()}")
     ploidy = int(ploidy)
 
     if indices is None:
@@ -601,7 +610,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask
             ploidy=ploidy, multiscale_factor=multiscale_factor, lengths=lengths)
     else:
         indices = indices.copy()
-    incorrect_indices = np.isnan(indices)
+    incorrect_indices = ag_np.isnan(indices)
 
     # If a bin spills over chromosome / homolog boundaries, set it to whatever
     # - it will get ignored later
@@ -611,18 +620,19 @@ def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask
     # Apply mask
     if mask is not None and mask != [None]:
         indices[~mask] = 0
-        incorrect_indices = (incorrect_indices + np.invert(
+        incorrect_indices = (incorrect_indices + ag_np.invert(
             mask)).astype(bool).astype(int)
 
     # Apply to struct, and set incorrect indices to np.nan
-    grouped_struct = np.where(
-        np.repeat(incorrect_indices.reshape(-1, 1), 3, axis=1), np.nan,
+    grouped_struct = ag_np.where(
+        ag_np.repeat(incorrect_indices.reshape(-1, 1), 3, axis=1), ag_np.nan,
         struct.reshape(-1, 3)[indices, :]).reshape(multiscale_factor, -1, 3)
 
     return grouped_struct
 
 
-def decrease_struct_res(struct, multiscale_factor, lengths, indices=None, mask=None):
+def decrease_struct_res(struct, multiscale_factor, lengths, ploidy=None,
+                        indices=None, mask=None):
     """Decrease resolution of structure by averaging adjacent beads.
 
     Decrease the resolution of the 3D chromatin structure. Each bead in the
@@ -653,9 +663,10 @@ def decrease_struct_res(struct, multiscale_factor, lengths, indices=None, mask=N
         return struct
 
     grouped_struct = _group_highres_struct(
-        struct, multiscale_factor, lengths, indices=indices, mask=mask)
+        struct, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy, indices=indices, mask=mask)
 
-    return np.nanmean(grouped_struct, axis=0)
+    return ag_np.nanmean(grouped_struct, axis=0)
 
 
 def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,

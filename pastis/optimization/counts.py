@@ -318,16 +318,16 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     else:
         fullres_torm_for_multiscale = None
 
-    if 'highatlow' in mods:
+    if 'highatlow' in mods and multiscale_factor != 1:
         if 'intra' in mods:
             excluded_counts = 'intra'
-        counts_fullres = preprocess_counts(
+        counts_fullres, _, torm, _ = preprocess_counts(
             counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
             normalize=normalize, filter_threshold=filter_threshold,
             multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
             input_weight=input_weight, verbose=verbose,
             excluded_counts=excluded_counts, mixture_coefs=mixture_coefs,
-            mods=mods)[0]
+            mods=mods)
         counts.extend(counts_fullres)
 
     return counts, bias, torm, fullres_torm_for_multiscale
