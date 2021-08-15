@@ -58,8 +58,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
             var_per_dis = multiscale_variances * 2
     else:
         var_per_dis = 0
-    num_highres_per_lowres_bins = counts.count_fullres_per_lowres_bins(
-        multiscale_factor)
+    num_highres_per_lowres_bins = counts.fullres_per_lowres_dis
 
     lambda_intensity_sum = 0.
     for struct, gamma in zip(structures, mixture_coefs):
@@ -71,7 +70,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
             tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
         tmp = tmp1.reshape(-1, counts.nnz).sum(axis=0)
         lambda_intensity_sum += ag_np.sum(gamma * counts.bias_per_bin(
-            bias, ploidy) * num_highres_per_lowres_bins * tmp)
+            bias) * num_highres_per_lowres_bins * tmp)
 
     return lambda_intensity_sum
 

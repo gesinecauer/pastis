@@ -303,22 +303,20 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         multiscale_factor=multiscale_factor, fullres_torm=fullres_torm,
         multiscale_reform=multiscale_reform)
 
-    torm = find_beads_to_remove(
-        counts_prepped, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform)
+    torm = find_beads_to_remove(  # TODO recently changed from using counts_prepped to counts (8/13/21)
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor)
     if mixture_coefs is not None:
         torm = np.tile(torm, len(mixture_coefs))
 
     if multiscale_factor == 1:
         fullres_torm_for_multiscale = [find_beads_to_remove(
             c, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform) for c in counts if c.sum() > 0]
+            multiscale_factor=multiscale_factor) for c in counts if c.sum() > 0]
     else:
         fullres_torm_for_multiscale = None
 
-    if 'highatlow' in mods and multiscale_factor != 1:
+    if mods is not None and 'highatlow' in mods and multiscale_factor != 1:
         if 'intra' in mods:
             excluded_counts = 'intra'
         counts_fullres, _, torm, _ = preprocess_counts(
@@ -399,16 +397,14 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             exclude_zeros=True)
         initial_zero_beads = find_beads_to_remove(
             all_counts_ambiguated, lengths=lengths, ploidy=1,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform).sum()
+            multiscale_factor=multiscale_factor).sum()
         all_counts_filtered = filter_low_counts(
             sparse.coo_matrix(all_counts_ambiguated), sparsity=False,
             percentage=filter_threshold + _percent_nan_beads(
                 all_counts_ambiguated)).tocoo()
         torm = find_beads_to_remove(
             all_counts_filtered, lengths=lengths, ploidy=1,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform)
+            multiscale_factor=multiscale_factor)
         if verbose:
             print('                      removing %d beads' %
                   (torm.sum() - initial_zero_beads), flush=True)
@@ -431,8 +427,8 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                       % (counts_type.upper(), filter_threshold), flush=True)
             initial_zero_beads = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
-                lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor,
-                multiscale_reform=multiscale_reform).sum()
+                lengths=lengths, ploidy=1,
+                multiscale_factor=multiscale_factor).sum()
             if counts_type == 'pa':
                 if sparse.issparse(counts):
                     counts = counts.toarray()
@@ -466,8 +462,7 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             torm = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
                 lengths=lengths, ploidy=1,
-                multiscale_factor=multiscale_factor,
-                multiscale_reform=multiscale_reform)
+                multiscale_factor=multiscale_factor)
             if verbose:
                 print('                      removing %d beads' %
                       (torm.sum() - initial_zero_beads), flush=True)
@@ -489,8 +484,8 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
         for counts_type, counts in counts_dict.items():
             initial_zero_beads = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
-                lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor,
-                multiscale_reform=multiscale_reform).sum()
+                lengths=lengths, ploidy=1,
+                multiscale_factor=multiscale_factor).sum()
             if sparse.issparse(counts):
                 counts = counts.toarray()
             counts[np.tile(np.isnan(bias), int(counts.shape[0] /
@@ -501,8 +496,7 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             counts_dict[counts_type] = counts
             torm = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
-                lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor,
-                multiscale_reform=multiscale_reform)
+                lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor)
             if verbose and torm.sum() - initial_zero_beads > 0:
                 print('                removing %d additional beads from %s' %
                       (torm.sum() - initial_zero_beads, counts_type),
@@ -812,7 +806,7 @@ class SparseCountsMatrix(CountsMatrix):
             _counts = _counts.astype(
                 sparse.sputils.get_index_dtype(maxval=_counts.max()))
         _counts = sparse.coo_matrix(_counts)
-        self.shape = _counts.shape
+        # self.shape = _counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(_counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = self.ambiguity
@@ -838,7 +832,7 @@ class SparseCountsMatrix(CountsMatrix):
             _counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform)
-        self._data, indices, indices3d, _, self.mask = tmp
+        self._data, indices, indices3d, self.shape, self.mask = tmp
         self.row, self.col = indices
         self.row3d, self.col3d = indices3d
 
@@ -987,7 +981,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         dummy_counts = sparse.coo_matrix(dummy_counts)
         # self.row = dummy_counts.row  # TODO remove junk
         # self.col = dummy_counts.col
-        self.shape = dummy_counts.shape
+        # self.shape = dummy_counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = '%s0' % self.ambiguity
@@ -1014,7 +1008,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, dummy=True,
             exclude_each_highres_empty=True)
-        data_grouped, indices, indices3d, _, self.mask = tmp
+        data_grouped, indices, indices3d, self.shape, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
         self.row, self.col = indices
         self.row3d, self.col3d = indices3d
@@ -1044,7 +1038,7 @@ class NullCountsMatrix(AtypicalCountsMatrix):
 
         # self.row = dummy_counts.row  # TODO remove junk
         # self.col = dummy_counts.col
-        self.shape = dummy_counts.shape
+        # self.shape = dummy_counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(dummy_counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = '%s0' % self.ambiguity
@@ -1075,7 +1069,7 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, dummy=True)
-        data_grouped, indices, indices3d, _, self.mask = tmp
+        data_grouped, indices, indices3d, self.shape, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
         self.row, self.col = indices
         self.row3d, self.col3d = indices3d
