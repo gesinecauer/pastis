@@ -36,7 +36,8 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     if ua_beta is not None:
         ua_beta *= multiscale_factor ** 2
 
-    ua_counts_arr = ua_counts._counts.astype(float)
+    raise ValueError("We need UA counts to be full-res here and ua_counts.tocoo() is low-res when multiscale_factor > 1")
+    ua_counts_arr = ua_counts.tocoo()
     if multiscale_reform:
         counts_lowres, bias = _prep_counts(
             [ua_counts_arr], lengths, ploidy=ploidy,
@@ -54,7 +55,7 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     struct = struct.reshape(-1, 3)
     torm = find_beads_to_remove(
         counts, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform)
+        multiscale_factor=multiscale_factor)
     struct[torm] = np.nan
 
     return struct
