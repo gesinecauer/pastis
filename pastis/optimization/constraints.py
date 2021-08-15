@@ -120,18 +120,17 @@ class Constraints(object):
 
         self.bead_weights = None
         if self.lambdas["hsc"] or self.lambdas["mhs"]:
-            n = self.lengths_lowres.sum()
-            torm = find_beads_to_remove(
-                counts, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor,
-                multiscale_reform=multiscale_reform)
             if multiscale_factor != 1:
                 fullres_per_lowres_bead = np.max(
                     [c.fullres_per_lowres_bead for c in counts], axis=0)
                 bead_weights = fullres_per_lowres_bead / multiscale_factor
             else:
                 bead_weights = np.ones((self.lengths_lowres.sum() * ploidy,))
+            torm = find_beads_to_remove(
+                counts, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor)
             bead_weights[torm] = 0.
+            n = self.lengths_lowres.sum()
             begin = end = 0
             for i in range(len(self.lengths_lowres)):
                 end = end + self.lengths_lowres[i]
@@ -140,9 +139,7 @@ class Constraints(object):
                 bead_weights[n:][begin:end] /= np.sum(
                     bead_weights[n:][begin:end])
                 begin = end
-            self.bead_weights = np.repeat(
-                bead_weights.reshape(-1, 1), 3, axis=1)
-            self.bead_weights = self.bead_weights # .astype(np.float32) # FIXME revert
+            self.bead_weights = bead_weights.reshape(-1, 1)
 
         self.subtracted = None
         if self.lambdas["mhs"]:
@@ -309,7 +306,6 @@ class Constraints(object):
                 homo_sep = self._homolog_separation_new(struct) # FIXME revert
                 homo_sep_diff = self.params["hsc"] - homo_sep
                 # homo_sep_diff = 1 - homo_sep / self.params["hsc"]  # with scaleR
-
                 homo_sep_diff = relu(homo_sep_diff)
                 homo_sep_diff_sq = ag_np.square(homo_sep_diff)
                 if 'sum_not_mean' in self.mods:
@@ -332,18 +328,15 @@ class Constraints(object):
 
         # Check constraints objective
         for k, v in obj.items():
-            if ag_np.isnan(v):
-                raise ValueError("Constraint %s is nan" % k)
-            elif ag_np.isinf(v):
-                raise ValueError("Constraint %s is infinite" % k)
+            if ag_np.isnan(v) or ag_np.isinf(v):
+                raise ValueError(f"Constraint {k.upper()} is {v}")
 
         return {'obj_' + k: v for k, v in obj.items()}
 
     def _homolog_separation_new(self, struct):
         """Compute distance between homolog centers of mass per chromosome.
         """
-
-        struct_bw = struct * self.bead_weights
+        struct_bw = struct * np.repeat(self.bead_weights, 3, axis=1)
         n = ag_np.int32(self.lengths_lowres.sum())
 
         homo_sep = ag_np.zeros(self.lengths_lowres.shape)
@@ -363,7 +356,7 @@ class Constraints(object):
         """Compute distance between homolog centers of mass per chromosome.
         """
 
-        struct_bw = struct * self.bead_weights
+        struct_bw = struct * np.repeat(self.bead_weights, 3, axis=1)
         n = self.lengths_lowres.sum()
 
         homo_sep = []
@@ -387,8 +380,7 @@ def _mean_interhomolog_counts(counts, lengths, bias=None):
 
     n = lengths.sum()
     torm = find_beads_to_remove(
-        counts, lengths=lengths, ploidy=2, multiscale_factor=1,
-        multiscale_reform=False)
+        counts, lengths=lengths, ploidy=2, multiscale_factor=1)
     beads_per_homolog = _count_fullres_per_lowres_bead(
         multiscale_factor=lengths.max(), lengths=lengths, ploidy=2,
         fullres_torm=torm)
