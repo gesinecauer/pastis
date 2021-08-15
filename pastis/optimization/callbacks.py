@@ -148,8 +148,7 @@ class Callback(object):
         else:
             self.torm = find_beads_to_remove(
                 counts, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
-                multiscale_reform=multiscale_reform)
+                multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor))
         self.constraints = constraints  # TODO add to main branch
         self.multiscale_reform = multiscale_reform  # TODO add to main branch
         self.multiscale_variances = multiscale_variances  # TODO add to main branch
