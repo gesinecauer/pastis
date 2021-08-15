@@ -144,7 +144,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
 
 
 def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
-                         multiscale_reform=False, threshold=0):
+                         threshold=0):
     """Determine beads for which no corresponding counts data exists.
 
     Identifies beads that should be removed (set to NaN) in the structure.
@@ -154,10 +154,14 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
     Parameters
     ----------
     counts : list of np.ndarray or scipy.sparse.coo_matrix
-        Counts data.
-    nbeads : int
-        Total number of beads in the structure.
-    FIXME
+        Counts data, at the resolution specified by `multiscale_factor`.
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 indicates full resolution.
 
     Returns
     -------
@@ -166,20 +170,31 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
     """
 
     from .multiscale_optimization import decrease_lengths_res
-    from .multiscale_optimization import decrease_counts_res
-
-    if not isinstance(counts, list):
-        counts = [counts]
+    from .counts import CountsMatrix
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     nbeads = lengths_lowres.sum() * ploidy
 
+    if not isinstance(counts, list):
+        counts = [counts]
+    if len(counts) == 0:
+        raise ValueError("Counts is an empty list.")
+    if all([isinstance(c, CountsMatrix) for c in counts]):
+        # If counts are already formatted, they may contain multiple resolutions
+        counts = [c for c in counts if c.multiscale_factor == multiscale_factor]
+    if len(counts) == 0:
+        raise ValueError(
+            "Resolution of counts is not consistent with lengths at"
+            f" multiscale_factor={multiscale_factor}.")
+
     inverse_torm = np.zeros(int(nbeads))
     for c in counts:
-        if multiscale_reform:
-            c = decrease_counts_res(
-                c, multiscale_factor=multiscale_factor, lengths=lengths,
-                ploidy=ploidy)
+        if max(c.shape) not in (nbeads, nbeads / ploidy):
+            raise ValueError(
+                "Resolution of counts is not consistent with lengths at"
+                f" multiscale_factor={multiscale_factor}. Counts shape is ("
+                f"{', '.join(map(str, c.shape))})")
+
         if isinstance(c, np.ndarray):
             axis0sum = np.tile(
                 np.array(np.nansum(c, axis=0).flatten()).flatten(),
@@ -195,6 +210,7 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
                 np.array(c.sum(axis=1).flatten()).flatten(),
                 int(nbeads / c.shape[0]))
         inverse_torm += (axis0sum + axis1sum > threshold).astype(int)
+
     torm = ~ inverse_torm.astype(bool)
     return torm
 
