@@ -468,8 +468,9 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
             epsilon = X[-nbeads]
             X = X[:-nbeads]
         else:
-            raise ValueError(f"Epsilon must be of length 1 or {nbeads}."
-                             f" X.shape = ({', '.join(map(str, X.shape))})")
+            raise ValueError(
+                f"Epsilon must be of length 1 or equal to the number of beads"
+                f" ({nbeads}). X.shape = ({', '.join(map(str, X.shape))}).")
     else:
         #epsilon = None  # FIXME epsilon
         pass
