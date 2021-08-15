@@ -394,8 +394,9 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         exclude_each_highres_empty = False
     if unmask_zeros_in_sparse and exclude_each_highres_empty:
         data_grouped = indices = indices3d = mask = np.array([])
-        nnz_lowres = 0
-        return data_grouped, indices, indices3d, nnz_lowres, mask
+        shape_lowres = (0,)
+        raise NotImplementedError("what should shape_lowres be here?")  # nnz_lowres = 0
+        return data_grouped, indices, indices3d, shape_lowres, mask
 
     from .counts import _counts_indices_to_3d_indices, _check_counts_matrix
     from .counts import _row_and_col
@@ -416,14 +417,15 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
             lengths=lengths, ploidy=ploidy)
         row_lowres = counts_lowres.row
         col_lowres = counts_lowres.col
-        nnz_lowres = counts_lowres.nnz
+        shape_lowres = counts_lowres.shape
 
         if unmask_zeros_in_sparse:
             counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
                 counts_arr, multiscale_factor=multiscale_factor,
                 lengths=lengths, ploidy=ploidy)
             row_lowres, col_lowres = _row_and_col(counts_lowres)
-            nnz_lowres = len(row_lowres)
+            shape_lowres = counts_lowres.shape
+            raise NotImplementedError("what should shape_lowres be here?")  # FIXME nnz_lowres = len(row_lowres)
 
         data_grouped = counts_arr[rows_grp, cols_grp].reshape(
             multiscale_factor ** 2, -1)
@@ -454,7 +456,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                 shape=counts_lowres.shape)
             row_lowres = counts_lowres.row
             col_lowres = counts_lowres.col
-            nnz_lowres = counts_lowres.nnz
+            shape_lowres = counts_lowres.shape
 
         mask = ~np.isnan(data_grouped)
         data_grouped[~mask] = 0
@@ -465,16 +467,16 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
 
         if dummy:
             data_grouped = np.zeros_like(data_grouped)
-        # nnz_lowres = counts_lowres.nnz
+        # shape_lowres = counts_lowres.shape
     else:
         indices = counts_coo.row, counts_coo.col
         indices3d = _counts_indices_to_3d_indices(
             counts_coo, n=lengths_lowres.sum(), ploidy=ploidy)
         data_grouped = counts_coo.data
         mask = None
-        nnz_lowres = counts_coo.nnz
+        shape_lowres = counts_coo.shape
 
-    return data_grouped, indices, indices3d, nnz_lowres, mask
+    return data_grouped, indices, indices3d, shape_lowres, mask
 
 
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
