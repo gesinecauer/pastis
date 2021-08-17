@@ -478,6 +478,13 @@ def _intra_counts_mask(counts, lengths):
     row_binned = np.digitize(counts.row, bins_for_row)
     col_binned = np.digitize(counts.col, bins_for_col)
 
+    if counts.shape[0] != counts.shape[1]:
+        nchrom = lengths.shape[0]
+        row_binned[row_binned >= nchrom] = row_binned[
+            row_binned >= nchrom] - nchrom
+        col_binned[col_binned >= nchrom] = col_binned[
+            col_binned >= nchrom] - nchrom
+
     return np.equal(row_binned, col_binned)
 
 
@@ -511,7 +518,7 @@ def _intra_counts(counts, lengths, ploidy, exclude_zeros=False):
 
 
 def _inter_counts(counts, lengths, ploidy, exclude_zeros=False):
-    """Return intra-chromosomal counts.
+    """Return inter-chromosomal counts.
     """
 
     from .counts import _check_counts_matrix
@@ -527,6 +534,38 @@ def _inter_counts(counts, lengths, ploidy, exclude_zeros=False):
         counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
 
     mask = ~_intra_counts_mask(counts=counts, lengths=lengths)
+    counts_new = sparse.coo_matrix(
+        (counts.data[mask], (counts.row[mask], counts.col[mask])),
+        shape=counts.shape)
+
+    if exclude_zeros:
+        return counts_new
+    else:
+        counts_array = np.full(counts_new.shape, np.nan)
+        counts_array[counts_new.row, counts_new.col] = counts_new.data
+        return counts_array
+
+
+def _counts_near_diag(counts, lengths, ploidy, nbins, exclude_zeros=False):
+    """Return intra-chromosomal counts.
+    """
+
+    from .counts import _check_counts_matrix
+
+    if isinstance(counts, np.ndarray):
+        counts = counts.copy()
+        counts[np.isnan(counts)] = 0
+        counts = sparse.coo_matrix(counts)
+    elif not sparse.issparse(counts):
+        counts = counts.tocoo()
+
+    counts = _check_counts_matrix(
+        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
+
+    mask_intra = _intra_counts_mask(counts=counts, lengths=lengths)
+    mask_near_diag = np.abs(counts.row - counts.col) <= nbins
+    mask = mask_intra & mask_near_diag
+
     counts_new = sparse.coo_matrix(
         (counts.data[mask], (counts.row[mask], counts.col[mask])),
         shape=counts.shape)
