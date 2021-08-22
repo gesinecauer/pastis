@@ -212,6 +212,7 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
         inverse_torm += (axis0sum + axis1sum > threshold).astype(int)
 
     torm = ~ inverse_torm.astype(bool)
+    # TODO it would save memory to return np.where(torm)[0]
     return torm
 
 
@@ -480,10 +481,8 @@ def _intra_counts_mask(counts, lengths):
 
     if counts.shape[0] != counts.shape[1]:
         nchrom = lengths.shape[0]
-        row_binned[row_binned >= nchrom] = row_binned[
-            row_binned >= nchrom] - nchrom
-        col_binned[col_binned >= nchrom] = col_binned[
-            col_binned >= nchrom] - nchrom
+        row_binned[row_binned >= nchrom] -= nchrom
+        col_binned[col_binned >= nchrom] -= nchrom
 
     return np.equal(row_binned, col_binned)
 
@@ -547,7 +546,7 @@ def _inter_counts(counts, lengths, ploidy, exclude_zeros=False):
 
 
 def _counts_near_diag(counts, lengths, ploidy, nbins, exclude_zeros=False):
-    """Return intra-chromosomal counts.
+    """Return intra-chromosomal counts within `nbins` of diagonal.
     """
 
     from .counts import _check_counts_matrix
@@ -563,7 +562,15 @@ def _counts_near_diag(counts, lengths, ploidy, nbins, exclude_zeros=False):
         counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
 
     mask_intra = _intra_counts_mask(counts=counts, lengths=lengths)
-    mask_near_diag = np.abs(counts.row - counts.col) <= nbins
+
+    row = counts.row.copy()
+    col = counts.col.copy()
+    if counts.shape[0] != counts.shape[1]:
+        n = lengths.sum()
+        row[row >= n] -= n
+        col[col >= n] -= n
+    mask_near_diag = np.abs(row - col) <= nbins
+
     mask = mask_intra & mask_near_diag
 
     counts_new = sparse.coo_matrix(
