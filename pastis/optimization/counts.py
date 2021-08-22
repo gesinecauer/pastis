@@ -1,13 +1,14 @@
 import numpy as np
 from scipy import sparse
 from warnings import warn
+import re
 
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
 
 from .constraints import _constraint_dis_indices
 from .utils_poisson import find_beads_to_remove
-from .utils_poisson import _intra_counts, _inter_counts
+from .utils_poisson import _intra_counts, _inter_counts, _counts_near_diag
 
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_counts_res
@@ -260,7 +261,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         resolution structure do not correspond to any counts data, and should
         therefore be removed. There should be one array per counts matrix.
     excluded_counts : {"inter", "intra"}, optional
-        Whether to exclude inter- or intra-chromosomal counts from optimization.
+        Whether to exclude inter- or intra-chromosomal counts from optimization. # TODO update
 
     Returns
     -------
@@ -285,7 +286,14 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         lengths_counts = lengths_lowres
 
     if excluded_counts is not None:
-        if excluded_counts.lower() == 'intra':
+        if isinstance(excluded_counts, float) or (isinstance(
+                excluded_counts, str) and re.match(r'[0-9]+', excluded_counts)):
+            excluded_counts = int(excluded_counts)
+        if isinstance(excluded_counts, int):
+            counts_prepped = [_counts_near_diag(
+                c, lengths=lengths_counts, ploidy=ploidy, nbins=excluded_counts,
+                exclude_zeros=exclude_zeros) for c in counts_prepped]
+        elif excluded_counts.lower() == 'intra':
             counts_prepped = [_inter_counts(
                 c, lengths=lengths_counts, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
@@ -295,7 +303,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         else:
             raise ValueError(
-                "`excluded_counts` must be 'inter', 'intra' or None.")
+                "`excluded_counts` must be 'inter', 'intra' or None.")  # TODO update
 
     counts = _format_counts(
         counts_prepped, beta=beta, input_weight=input_weight,
@@ -317,8 +325,21 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         fullres_torm_for_multiscale = None
 
     if mods is not None and 'highatlow' in mods and multiscale_factor != 1:
-        if 'intra' in mods:
+        diag_mod = [int(x.replace('diag', '')) for x in mods if re.match(
+            r'^diag[0-9]+$', x)]
+        if len(diag_mod) == 1:
+            excluded_counts = diag_mod[0]
+            print("Including full-res obj at low-res, with intra-chromosomal"
+                  f" counts that are within {excluded_counts} bins of diagonal",
+                  flush=True)
+        elif len(diag_mod) > 1:
+            raise ValueError("Impossible!")
+        elif 'intra' in mods:
             excluded_counts = 'intra'
+            print("Including full-res obj at low-res, with intra-chromosomal"
+                  " counts", flush=True)
+        else:
+            print("Including full-res obj at low-res", flush=True)
         counts_fullres, _, torm, _ = preprocess_counts(
             counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
             normalize=normalize, filter_threshold=filter_threshold,
