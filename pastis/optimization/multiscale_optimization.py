@@ -105,16 +105,21 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
         random_state = np.random.RandomState(0)
 
     # Estimate full-resolution structure
-    grouped_indices = _get_struct_indices(
-        ploidy=ploidy, multiscale_factor=current_multiscale_factor,
-        lengths=lengths).reshape(current_multiscale_factor, -1)
+    grouped_idx, bad_idx = _get_struct_index(
+        multiscale_factor=current_multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    # grouped_idx = grouped_idx.reshape(current_multiscale_factor, -1).astype(  # TODO remove
+    #     float)
+    # grouped_idx[bad_idx.reshape(current_multiscale_factor, -1)] = np.nan
+    grouped_idx = grouped_idx.astype(float)
+    grouped_idx[bad_idx] = np.nan
 
     struct_fullres = []
     for i in range(struct.shape[0]):
         lowres_bead = struct[i]
         if np.isnan(lowres_bead[0]):  # Linearly interpolate lowres bead if NaN
             lowres_bead = np.nanmean(struct[(i - 1):(i + 2)], axis=0)
-        num_highres_beads = np.invert(np.isnan(grouped_indices[:, i])).sum()
+        num_highres_beads = np.invert(np.isnan(grouped_idx[:, i])).sum()
         highres_beads = random_state.normal(
             lowres_bead, std_dev, (num_highres_beads, 3))
         struct_fullres.append(highres_beads)
@@ -183,11 +188,16 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
                          (struct.reshape(-1, 3).shape[0], lengths_lowres.sum()))
     ploidy = int(ploidy)
 
-    indices = _get_struct_indices(
-        ploidy=ploidy, multiscale_factor=multiscale_factor,
-        lengths=lengths).reshape(multiscale_factor, -1)
+    idx, bad_idx = _get_struct_index(
+        multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    # idx = idx.reshape(multiscale_factor, -1).astype(float)  # TODO remove
+    # idx[bad_idx.reshape(multiscale_factor, -1)] = np.nan
+    idx = idx.astype(float)
+    idx[bad_idx] = np.nan
+
     if mask is not None:
-        indices[~mask.reshape(multiscale_factor, -1)] = np.nan
+        idx[~mask.reshape(multiscale_factor, -1)] = np.nan
 
     struct_highres = np.full((lengths.sum() * ploidy, 3), np.nan)
     begin_lowres = end_lowres = 0
@@ -197,8 +207,8 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
         # Beads of struct that are NaN
         struct_nan = np.isnan(struct[begin_lowres:end_lowres, 0])
 
-        # Get indices for this chrom at low & high res
-        chrom_indices = indices[:, begin_lowres:end_lowres]
+        # Get index for this chrom at low & high res
+        chrom_indices = idx[:, begin_lowres:end_lowres]
         chrom_indices[:, struct_nan] = np.nan
         chrom_indices_lowres = np.nanmean(chrom_indices, axis=0)
         chrom_indices_highres = chrom_indices.T.flatten()
@@ -322,13 +332,13 @@ def _convert_indices_to_full_res(rows_lowres, cols_lowres, rows_max, cols_max,
                 cols[cols > max_col] -= multiscale_factor - \
                     (bins_for_cols[i] - max_col - 1)
 
-    incorrect_indices = incorrect_rows + incorrect_cols + \
+    bad_idx = incorrect_rows + incorrect_cols + \
         (rows >= rows_max) + (cols >= cols_max)
-    rows[incorrect_indices] = 0
-    cols[incorrect_indices] = 0
+    rows[bad_idx] = 0
+    cols[bad_idx] = 0
     rows = rows.flatten()
     cols = cols.flatten()
-    incorrect_indices = incorrect_indices.flatten()
+    bad_idx = bad_idx.flatten()
     return rows, cols
 
 
@@ -552,43 +562,68 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
     return counts_lowres
 
 
-def _get_struct_indices(ploidy, multiscale_factor, lengths):
-    """Return full-res struct indices grouped by the corresponding low-res bead.
+def _get_struct_index_old(ploidy, multiscale_factor, lengths):  # TODO remove or move to unit test
+    """Return full-res struct index grouped by the corresponding low-res bead.
     """
 
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
 
-    indices = np.arange(lengths_lowres.sum() * ploidy).astype(float)
-    indices = np.repeat(
-        np.indices([multiscale_factor]), indices.shape[0]) + np.tile(
-        indices * multiscale_factor, multiscale_factor)
-    indices = indices.reshape(multiscale_factor, -1)
+    idx = np.arange(lengths_lowres.sum() * ploidy)
+    idx = np.repeat(
+        np.indices([multiscale_factor]), idx.shape[0]) + np.tile(
+        idx * multiscale_factor, multiscale_factor)
+    idx = idx.reshape(multiscale_factor, -1)
 
     # Figure out which rows / cols are out of bounds
     bins = np.tile(lengths, ploidy).cumsum()
     for i in range(lengths.shape[0] * ploidy):
-        indices_binned = np.digitize(indices, bins)
-        incorrect_indices = np.invert(
-            np.equal(indices_binned, indices_binned.min(axis=0)))
-        index_mask = indices_binned.min(axis=0) == i
+        idx_binned = np.digitize(idx, bins)
+        bad_idx = np.invert(np.equal(idx_binned, idx_binned.min(axis=0)))
+        idx_mask = idx_binned.min(axis=0) == i
         vals = np.unique(
-            indices[:, index_mask][incorrect_indices[:, index_mask]])
+            idx[:, idx_mask][bad_idx[:, idx_mask]])
         for val in np.flip(vals, axis=0):
-            indices[indices > val] -= 1
-    incorrect_indices += indices >= lengths.sum() * ploidy
+            idx[idx > val] -= 1
+    bad_idx += idx >= lengths.sum() * ploidy
 
-    incorrect_indices = incorrect_indices.flatten()
-    indices = indices.flatten()
+    # bad_idx = bad_idx.flatten()
+    # idx = idx.flatten()
 
-    # If a bin spills over chromosome / homolog boundaries, set it to NaN - it
-    # will get ignored later
-    indices[incorrect_indices] = np.nan
+    # If a bin spills over chromosome / homolog boundaries, set it to whatever
+    # It will get ignored later
+    idx[bad_idx] = 0
 
-    return indices
+    return idx, bad_idx
 
 
-def _group_highres_struct(struct, multiscale_factor, lengths, ploidy=None,
-                          indices=None, mask=None):
+def _get_struct_index(multiscale_factor, lengths, ploidy):
+    """Return full-res struct index grouped by the corresponding low-res bead.
+    """
+
+    lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
+
+    remainders = np.mod(lengths, multiscale_factor)
+    num_false = multiscale_factor - remainders[remainders != 0]
+    row_idx = lengths_lowres.cumsum()[remainders != 0] - 1
+
+    mask = np.full((lengths_lowres.sum(), multiscale_factor), True)
+    for i in range(num_false.shape[0]):
+        mask[row_idx[i], -num_false[i]:] = False
+    mask = np.tile(mask, (ploidy, 1))
+
+    idx = np.zeros(
+        (lengths_lowres.sum() * ploidy, multiscale_factor), dtype=int)
+    idx[mask] = np.arange(lengths.sum() * ploidy)
+    idx = idx.T
+    bad_idx = ~mask.T
+
+    return idx, bad_idx
+
+
+def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
+                          idx=None, fullres_torm=None):
     """Group beads of full-res struct by the low-res bead they correspond to.
 
     Axes of final array:
@@ -597,7 +632,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy=None,
         2: coordinates, size = struct[1] = 3
     """
 
-    lengths = ag_np.array(lengths).astype(int)
+    lengths = np.array(lengths).astype(int)
 
     if ploidy is None:
         ploidy = struct.reshape(-1, 3).shape[0] / lengths.sum()
@@ -607,34 +642,28 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy=None,
                              f" 3 cols), sum of lengths is {lengths.sum()}")
     ploidy = int(ploidy)
 
-    if indices is None:
-        indices = _get_struct_indices(
-            ploidy=ploidy, multiscale_factor=multiscale_factor, lengths=lengths)
+    if idx is None:
+        idx, bad_idx = _get_struct_index(
+            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
     else:
-        indices = indices.copy()
-    incorrect_indices = ag_np.isnan(indices)
+        raise NotImplementedError
 
-    # If a bin spills over chromosome / homolog boundaries, set it to whatever
-    # - it will get ignored later
-    indices[incorrect_indices] = 0
-    indices = indices.astype(int)
+    if fullres_torm is not None and fullres_torm.sum() != 0:
+        torm_mask = idx == np.where(fullres_torm)[0]
+        bad_idx[torm_mask] = True
+        idx[torm_mask] = 0
 
-    # Apply mask
-    if mask is not None and mask != [None]:
-        indices[~mask] = 0
-        incorrect_indices = (incorrect_indices + ag_np.invert(
-            mask)).astype(bool).astype(int)
-
-    # Apply to struct, and set incorrect indices to np.nan
+    # Apply to struct, and set incorrect idx to np.nan
     grouped_struct = ag_np.where(
-        ag_np.repeat(incorrect_indices.reshape(-1, 1), 3, axis=1), ag_np.nan,
-        struct.reshape(-1, 3)[indices, :]).reshape(multiscale_factor, -1, 3)
+        np.repeat(bad_idx.reshape(-1, 1), 3, axis=1), np.nan,
+        struct.reshape(-1, 3)[idx.flatten(), :]).reshape(
+        multiscale_factor, -1, 3)
 
     return grouped_struct
 
 
 def decrease_struct_res(struct, multiscale_factor, lengths, ploidy=None,
-                        indices=None, mask=None):
+                        idx=None, fullres_torm=None):
     """Decrease resolution of structure by averaging adjacent beads.
 
     Decrease the resolution of the 3D chromatin structure. Each bead in the
@@ -666,7 +695,7 @@ def decrease_struct_res(struct, multiscale_factor, lengths, ploidy=None,
 
     grouped_struct = _group_highres_struct(
         struct, multiscale_factor=multiscale_factor, lengths=lengths,
-        ploidy=ploidy, indices=indices, mask=mask)
+        ploidy=ploidy, idx=idx, fullres_torm=fullres_torm)
 
     return ag_np.nanmean(grouped_struct, axis=0)
 
@@ -679,14 +708,16 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
     if multiscale_factor == 1:
         return None
 
-    fullres_indices = _get_struct_indices(
-        ploidy=ploidy, multiscale_factor=multiscale_factor,
-        lengths=lengths).reshape(multiscale_factor, -1)
+    fullres_idx, bad_idx = _get_struct_index(
+        multiscale_factor=multiscale_factor,
+        lengths=lengths, ploidy=ploidy)
+    # idx = idx.reshape(multiscale_factor, -1)  # TODO remove
+    # bad_idx = bad_idx.reshape(multiscale_factor, -1)
 
     if fullres_torm is not None and fullres_torm.sum() != 0:
-        fullres_indices[fullres_indices == np.where(fullres_torm)[0]] = np.nan
+        bad_idx[fullres_idx == np.where(fullres_torm)[0]] = True
 
-    return (~ np.isnan(fullres_indices)).sum(axis=0)
+    return (~bad_idx).sum(axis=0)
 
 
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
@@ -738,7 +769,8 @@ def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
     multiscale_variances = []
     for struct in structures:
         struct_grouped = _group_highres_struct(
-            struct, multiscale_factor=multiscale_factor, lengths=lengths)
+            struct, multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=ploidy)
         multiscale_variances.append(
             _var3d(struct_grouped, replace_nan=replace_nan))
     multiscale_variances = np.mean(multiscale_variances, axis=0)
@@ -930,7 +962,8 @@ def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
     multiscale_variances = []
     for struct in structures:
         struct_grouped = _group_highres_struct(
-            struct, multiscale_factor=multiscale_factor, lengths=lengths)
+            struct, multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=ploidy)
         multiscale_variances.append(
             _var3d(struct_grouped, replace_nan=replace_nan))
     multiscale_variances = np.mean(multiscale_variances, axis=0)
@@ -972,7 +1005,8 @@ def get_multiscale_epsilon_from_struct_old(structures, lengths, multiscale_facto
     std_all = []
     for struct in structures:
         struct_grouped = _group_highres_struct(
-            struct, multiscale_factor=multiscale_factor, lengths=lengths)
+            struct, multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=ploidy)
         std_per_bead_tmp, std_all_tmp = _get_epsilon(
             struct_grouped, replace_nan=replace_nan)
         std_per_bead.append(std_per_bead_tmp)
