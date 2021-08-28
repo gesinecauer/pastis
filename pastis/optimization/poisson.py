@@ -171,7 +171,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     obj = ag_np.mean(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
-        from topsy.utils.misc import printvars  # FIXME
+        from topsy.utils.debug import printvars  # FIXME
         if type(obj).__name__ == 'JVPTracer':
             raise ValueError(
                 f"Negative Binomial component of objective function for {counts.name}"
@@ -254,7 +254,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
         obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()  # TODO fix on main branch: mean not sum!
 
     if ag_np.isnan(obj) or ag_np.isinf(obj):
-        from topsy.utils.misc import printvars
+        from topsy.utils.debug import printvars
         if type(dis).__name__ != 'ArrayBox':
             printvars({
                 'struct': structures[0], 'dis': dis,
