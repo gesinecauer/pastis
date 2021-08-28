@@ -83,7 +83,7 @@ class Constraints(object):
 
     def __init__(self, counts, lengths, ploidy, multiscale_factor=1,
                  multiscale_reform=False, constraint_lambdas=None,
-                 constraint_params=None, verbose=True, mods=None):
+                 constraint_params=None, verbose=True, mods=[]):
 
         self.lengths = np.asarray(lengths).astype(np.int32)
         self.lengths_lowres = decrease_lengths_res(
@@ -429,9 +429,6 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
     # or homologs
     bins = np.tile(lengths_lowres, ploidy).cumsum()
     same_bin = np.digitize(row_nghbr, bins) == np.digitize(col_nghbr, bins)
-
-    print(multiscale_factor, same_bin.sum(), (~same_bin).sum(), lengths_lowres.sum())
-    print(row_nghbr[~same_bin], col_nghbr[~same_bin])
 
     row_nghbr = row_nghbr[same_bin]
     col_nghbr = col_nghbr[same_bin]
