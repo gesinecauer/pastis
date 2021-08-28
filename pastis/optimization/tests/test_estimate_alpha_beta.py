@@ -12,7 +12,6 @@ if sys.version_info[0] >= 3:
     from pastis.optimization import estimate_alpha_beta
     from pastis.optimization.counts import _format_counts, NullCountsMatrix
     from pastis.optimization.constraints import Constraints
-    from pastis.optimization.constraints import _mean_interhomolog_counts
 
 
 def test_estimate_alpha_beta_haploid():
@@ -348,64 +347,3 @@ def test_estimate_alpha_beta_diploid_combo():
     assert obj < (-1e4 / sum([c.nnz for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)
-
-
-def test_estimate_alpha_beta_diploid_mhs_constraint():
-    lengths = np.array([30])
-    ploidy = 2
-    seed = 42
-    true_interhomo_dis = np.array([5.])
-    alpha_true, beta_true = -3., 4.
-    mhs_lambda = 1
-
-    random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-
-    '''X_true = np.zeros((n * ploidy, 3), dtype=float)
-    for i in range(X_true.shape[0]):
-        X_true[i:, random_state.choice([0, 1, 2])] += 1'''
-
-    X_true = random_state.rand(n * ploidy, 3)
-
-    X_true[n:] -= X_true[n:].mean(axis=0)
-    X_true[:n] -= X_true[:n].mean(axis=0)
-    begin = end = 0
-    for i in range(len(lengths)):
-        end += lengths[i]
-        X_true[begin:end, 0] += true_interhomo_dis[i]
-        begin = end
-
-    dis = euclidean_distances(X_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = np.triu(counts, 1)
-    counts = sparse.coo_matrix(counts)
-
-    counts = _format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
-    null_counts = [NullCountsMatrix(
-        counts=counts, lengths=lengths, ploidy=ploidy, multiscale_factor=1)]
-
-    mhs_k = _mean_interhomolog_counts(counts, lengths=lengths)
-
-    constraint = Constraints(
-        counts, lengths=lengths, ploidy=ploidy, multiscale_factor=1,
-        constraint_lambdas={'mhs': mhs_lambda},
-        constraint_params={'mhs': mhs_k})
-    constraint.check()
-
-    alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=null_counts, alpha_init=alpha_true, lengths=lengths,
-        ploidy=ploidy, constraints=constraint)
-
-    beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        verbose=False).values())[0]
-
-    print(alpha, obj, converged, beta)
-
-    assert converged
-    assert obj < (1e-6 / sum([c.nnz for c in counts]))
-    assert_allclose(alpha_true, alpha, rtol=1e-2)
-    assert_allclose(beta_true, beta, rtol=1e-2)

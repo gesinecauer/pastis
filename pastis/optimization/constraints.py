@@ -23,7 +23,6 @@ else:
     from autograd.builtins import SequenceBox
 
 from .multiscale_optimization import decrease_lengths_res
-from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .utils_poisson import find_beads_to_remove, _inter_counts
 
 
@@ -342,68 +341,6 @@ class Constraints(object):
             begin = end
 
         return homo_sep
-
-
-def _mean_interhomolog_counts(counts, lengths, bias=None):
-    """Determine or estimate the mean interhomolog counts, divided by beta.
-    """
-
-    from .counts import ambiguate_counts
-
-    n = lengths.sum()
-    torm = find_beads_to_remove(
-        counts, lengths=lengths, ploidy=2, multiscale_factor=1)
-    beads_per_homolog = _count_fullres_per_lowres_bead(
-        multiscale_factor=lengths.max(), lengths=lengths, ploidy=2,
-        fullres_torm=torm)
-    bins_per_interhomolog = beads_per_homolog[:lengths.shape[0]] * \
-        beads_per_homolog[lengths.shape[0]:]
-
-    counts_non0 = [c for c in counts if c.sum() != 0]
-    ua_index = [i for i in range(len(
-        counts_non0)) if counts_non0[i].name == "ua"]
-    if len(ua_index) != 0:
-        if len(ua_index) > 1:
-            raise ValueError(
-                "Only input one matrix of unambiguous counts. Please pool "
-                "unambiguos counts before inputting.")
-        ua_counts = counts_non0[ua_index[0]]
-        mhs_beta = ua_counts.beta
-        mhs_counts = ua_counts.toarray().astype(float)
-        if bias is not None:
-            ua_bias = np.tile(bias, 2).reshape(-1, 1)
-            mhs_counts /= (ua_bias * ua_bias.T)
-        mhs_counts_interhomo = mhs_counts[:n, n:]
-        mhs_counts_interhomo[torm[:n], :] = np.nan
-        mhs_counts_interhomo[:, torm[n:]] = np.nan
-        mean_interhomo_counts = []
-        begin = end = 0
-        #print(bins_per_interhomolog)
-        for l in lengths:
-            end += l
-            mean_interhomo_counts.append(np.nanmean(
-                mhs_counts_interhomo[begin:end, begin:end]))
-            #print((~np.isnan(mhs_counts_inter[begin:end, begin:end])).sum())
-            begin = end
-    else:
-        if lengths.shape[0] == 1:
-            raise ValueError(
-                "Estimating mean inter-homolog counts from ambiguous"
-                " inter-chromosomal counts requires data for  more than one"
-                " chromosome.")
-        mhs_beta = sum([c.beta for c in counts_non0])
-        mhs_counts = ambiguate_counts(
-            counts=counts_non0, lengths=lengths, ploidy=2,
-            exclude_zeros=True).toarray().astype(float)
-        if bias is not None:
-            ambig_bias = bias.reshape(-1, 1)
-            mhs_counts /= (ambig_bias * ambig_bias.T)
-        mhs_counts_inter = _inter_counts(
-            mhs_counts, lengths=lengths, ploidy=2, exclude_zeros=False)
-        mean_interhomo_counts = [np.nanmean(mhs_counts_inter) / 4]
-
-    mean_interhomo_counts = np.array(mean_interhomo_counts)
-    return mean_interhomo_counts / mhs_beta
 
 
 def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):

@@ -19,7 +19,6 @@ from .counts import check_counts
 from .initialization import initialize
 from .callbacks import Callback
 from .constraints import Constraints, distance_between_homologs
-from .constraints import _mean_interhomolog_counts
 from .poisson import PastisPM
 from .multiscale_optimization import get_multiscale_variances_from_struct
 from .multiscale_optimization import get_multiscale_epsilon_from_struct
@@ -325,10 +324,6 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             hsc_r = distance_between_homologs(
                 structures=reorienter.struct_init, lengths=lengths,
                 mixture_coefs=mixture_coefs)
-    if mhs_lambda > 0:
-        if mhs_k is None:
-            mhs_k = _mean_interhomolog_counts(
-                counts, lengths=lengths, bias=bias)
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
         # INITIALIZATION
