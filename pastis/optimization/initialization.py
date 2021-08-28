@@ -157,7 +157,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
                bias=None, multiscale_factor=1, multiscale_reform=False,
                reorienter=None, std_dev=None, mixture_coefs=None,
-               verbose=False, mods=None):
+               verbose=False, mods=[]):
     """Initialize optimization.
 
     Create initialization for optimization. Structures can be initialized
