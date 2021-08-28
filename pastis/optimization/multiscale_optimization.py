@@ -342,54 +342,6 @@ def _convert_indices_to_full_res(rows_lowres, cols_lowres, rows_max, cols_max,
     return rows, cols
 
 
-def _process_multiscale_counts(counts, multiscale_factor, lengths, ploidy):
-    """TODO
-    """
-
-    from .counts import _row_and_col, _check_counts_matrix
-
-    if multiscale_factor == 1:
-        rows, cols = _row_and_col(counts)
-        return counts, rows, cols
-
-    input_is_sparse = sparse.issparse(counts)
-
-    counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True).toarray()
-
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-
-    dummy_counts_lowres = np.ones(
-        np.array(counts.shape / lengths.sum() * lengths_lowres.sum()).astype(int))
-    dummy_counts_lowres = _check_counts_matrix(
-        dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-        exclude_zeros=True).toarray().astype(int)
-    dummy_counts_lowres = sparse.coo_matrix(dummy_counts_lowres)
-
-    rows_lowres, cols_lowres = _row_and_col(dummy_counts_lowres)
-
-    rows_fullres, cols_fullres = _convert_indices_to_full_res(
-        rows_lowres, cols_lowres, rows_max=counts.shape[0],
-        cols_max=counts.shape[1], multiscale_factor=multiscale_factor,
-        lengths=lengths, n=lengths_lowres.sum(),
-        counts_shape=dummy_counts_lowres.shape, ploidy=ploidy)
-
-    data_lowres = counts[rows_fullres, cols_fullres].reshape(
-        multiscale_factor ** 2, -1).sum(axis=0)
-    counts_lowres = sparse.coo_matrix(
-        (data_lowres[data_lowres != 0],
-            (rows_lowres[data_lowres != 0], cols_lowres[data_lowres != 0])),
-        shape=dummy_counts_lowres.shape)
-
-    if not input_is_sparse:
-        counts_lowres = _check_counts_matrix(
-            counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-            exclude_zeros=False)
-
-    return counts_lowres, rows_fullres, cols_fullres
-
-
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                              multiscale_reform=False, dummy=False,
                              exclude_each_highres_empty=False):
@@ -422,17 +374,17 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         counts_arr = _check_counts_matrix(
             counts_coo, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
 
-        counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
+        counts_lowres, rows_grp, cols_grp = decrease_counts_res(
             counts_coo, multiscale_factor=multiscale_factor,
-            lengths=lengths, ploidy=ploidy)
+            lengths=lengths, ploidy=ploidy, return_indices=True)
         row_lowres = counts_lowres.row
         col_lowres = counts_lowres.col
         shape_lowres = counts_lowres.shape
 
         if unmask_zeros_in_sparse:
-            counts_lowres, rows_grp, cols_grp = _process_multiscale_counts(
+            counts_lowres, rows_grp, cols_grp = decrease_counts_res(
                 counts_arr, multiscale_factor=multiscale_factor,
-                lengths=lengths, ploidy=ploidy)
+                lengths=lengths, ploidy=ploidy, return_indices=True)
             row_lowres, col_lowres = _row_and_col(counts_lowres)
             shape_lowres = counts_lowres.shape
             raise NotImplementedError("what should shape_lowres be here?")  # FIXME nnz_lowres = len(row_lowres)
@@ -473,7 +425,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
 
         indices = row_lowres, col_lowres
         indices3d = _counts_indices_to_3d_indices(
-            counts_lowres, n=lengths_lowres.sum(), ploidy=ploidy)
+            counts_lowres, nbeads=lengths_lowres.sum() * ploidy)
 
         if dummy:
             data_grouped = np.zeros_like(data_grouped)
@@ -481,7 +433,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     else:
         indices = counts_coo.row, counts_coo.col
         indices3d = _counts_indices_to_3d_indices(
-            counts_coo, n=lengths_lowres.sum(), ploidy=ploidy)
+            counts_coo, nbeads=lengths_lowres.sum() * ploidy)
         data_grouped = counts_coo.data
         mask = None
         shape_lowres = counts_coo.shape
@@ -489,7 +441,8 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     return data_grouped, indices, indices3d, shape_lowres, mask
 
 
-def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
+def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
+                        return_indices=False, remove_diag=True):
     """Decrease resolution of counts matrices by summing adjacent bins.
 
     Decrease the resolution of the contact counts matrices. Each bin in a
@@ -519,10 +472,16 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
         `multiscale_factor`.
     """
 
+    # TODO refactor this fxn & _convert_indices_to_full_res to be similar to new _get_struct_index
+
     from .counts import _row_and_col, _check_counts_matrix
 
     if multiscale_factor == 1:
-        return counts
+        if return_indices:
+            rows, cols = _row_and_col(counts)
+            return counts, rows, cols
+        else:
+            return counts
 
     input_is_sparse = sparse.issparse(counts)
 
@@ -536,7 +495,7 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
         np.array(counts.shape / lengths.sum() * lengths_lowres.sum()).astype(int))
     dummy_counts_lowres = _check_counts_matrix(
         dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-        exclude_zeros=True).toarray().astype(int)
+        exclude_zeros=True, remove_diag=remove_diag).toarray().astype(int)
     dummy_counts_lowres = sparse.coo_matrix(dummy_counts_lowres)
 
     rows_lowres, cols_lowres = _row_and_col(dummy_counts_lowres)
@@ -557,44 +516,12 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy):
     if not input_is_sparse:
         counts_lowres = _check_counts_matrix(
             counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-            exclude_zeros=False)
+            exclude_zeros=False, remove_diag=remove_diag)
 
-    return counts_lowres
-
-
-def _get_struct_index_old(ploidy, multiscale_factor, lengths):  # TODO remove or move to unit test
-    """Return full-res struct index grouped by the corresponding low-res bead.
-    """
-
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-
-    idx = np.arange(lengths_lowres.sum() * ploidy)
-    idx = np.repeat(
-        np.indices([multiscale_factor]), idx.shape[0]) + np.tile(
-        idx * multiscale_factor, multiscale_factor)
-    idx = idx.reshape(multiscale_factor, -1)
-
-    # Figure out which rows / cols are out of bounds
-    bins = np.tile(lengths, ploidy).cumsum()
-    for i in range(lengths.shape[0] * ploidy):
-        idx_binned = np.digitize(idx, bins)
-        bad_idx = np.invert(np.equal(idx_binned, idx_binned.min(axis=0)))
-        idx_mask = idx_binned.min(axis=0) == i
-        vals = np.unique(
-            idx[:, idx_mask][bad_idx[:, idx_mask]])
-        for val in np.flip(vals, axis=0):
-            idx[idx > val] -= 1
-    bad_idx += idx >= lengths.sum() * ploidy
-
-    # bad_idx = bad_idx.flatten()
-    # idx = idx.flatten()
-
-    # If a bin spills over chromosome / homolog boundaries, set it to whatever
-    # It will get ignored later
-    idx[bad_idx] = 0
-
-    return idx, bad_idx
+    if return_indices:
+        return counts_lowres, rows_fullres, cols_fullres
+    else:
+        return counts_lowres
 
 
 def _get_struct_index(multiscale_factor, lengths, ploidy):
@@ -606,11 +533,11 @@ def _get_struct_index(multiscale_factor, lengths, ploidy):
 
     remainders = np.mod(lengths, multiscale_factor)
     num_false = multiscale_factor - remainders[remainders != 0]
-    row_idx = lengths_lowres.cumsum()[remainders != 0] - 1
+    where_false = lengths_lowres.cumsum()[remainders != 0] - 1
 
     mask = np.full((lengths_lowres.sum(), multiscale_factor), True)
     for i in range(num_false.shape[0]):
-        mask[row_idx[i], -num_false[i]:] = False
+        mask[where_false[i], -num_false[i]:] = False
     mask = np.tile(mask, (ploidy, 1))
 
     idx = np.zeros(
