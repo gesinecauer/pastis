@@ -193,7 +193,7 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
             raise ValueError(
                 "Resolution of counts is not consistent with lengths at"
                 f" multiscale_factor={multiscale_factor}. Counts shape is ("
-                f"{', '.join(map(str, c.shape))})")
+                f"{', '.join(map(str, c.shape))}).")
 
         if isinstance(c, np.ndarray):
             axis0sum = np.tile(
