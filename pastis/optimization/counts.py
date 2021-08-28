@@ -6,7 +6,6 @@ import re
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
 
-from .constraints import _constraint_dis_indices
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _intra_counts, _inter_counts, _counts_near_diag
 
@@ -72,48 +71,81 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
         output, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
 
-def _create_dummy_counts(counts, lengths, ploidy):
-    """Create sparse matrix of 1's with same row and col as input counts.
+def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
+    """Return row & col of distance matrix bins associated with counts data.
     """
 
-    rows, cols = _constraint_dis_indices(
-        counts, n=lengths.sum(), lengths=lengths, ploidy=ploidy)
-    dummy_counts = sparse.coo_matrix((np.ones_like(rows), (rows, cols)), shape=(
-        lengths.sum() * ploidy, lengths.sum() * ploidy)).toarray()
-    dummy_counts = sparse.coo_matrix(np.triu(dummy_counts + dummy_counts.T, 1))
+    if not isinstance(counts, list):
+        counts = [counts]
+    if len(counts) == 0:
+        raise ValueError("Counts is an empty list.")
+    if all([isinstance(c, CountsMatrix) for c in counts]):
+        # If counts are already formatted, they may contain multiple resolutions
+        counts = [c for c in counts if c.multiscale_factor == multiscale_factor]
+    if len(counts) == 0:
+        raise ValueError(
+            "Resolution of counts is not consistent with lengths at"
+            f" multiscale_factor={multiscale_factor}.")
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    nbeads = lengths_lowres.sum() * ploidy
+
+    row = []
+    col = []
+    for i in range(len(counts)):
+        if max(counts[i].shape) not in (nbeads, nbeads / ploidy):
+            raise ValueError(
+                "Resolution of counts is not consistent with lengths at"
+                f" multiscale_factor={multiscale_factor}. Counts shape is ("
+                f"{', '.join(map(str, counts[i].shape))}).")
+        if isinstance(counts[i], CountsMatrix):
+            row_i = counts[i].row3d
+            col_i = counts[i].col3d
+        else:
+            row_i, col_i = _counts_indices_to_3d_indices(
+                counts[i], nbeads=nbeads)
+        row.append(row_i)
+        col.append(col_i)
+
+    if len(counts) == 1:
+        return row[0], col[0]
+
+    row = np.atleast_2d(np.concatenate(row))
+    col = np.atleast_2d(np.concatenate(col))
+    indices = np.unique(np.concatenate([row, col], axis=0), axis=1)
+    row = indices[0]
+    col = indices[1]
+
+    return row, col
+
+
+def _create_unambig_dummy_counts(counts, lengths, ploidy, multiscale_factor,
+                                 multiscale_reform):
+    """Create sparse matrix of 1's with same row and col as distance matrix.
+    """
+
+    if multiscale_reform:
+        multiscale_factor = 1
+
+    rows, cols = _included_dis_indices(
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor)
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    nbeads = lengths_lowres.sum() * ploidy
+
+    dummy_counts = sparse.coo_matrix((np.ones_like(rows), (rows, cols)),
+        shape=(nbeads, nbeads)).toarray()
+    dummy_counts = sparse.coo_matrix(np.triu(
+        np.maximum(dummy_counts + dummy_counts.T, 1), 1))
 
     return dummy_counts
 
 
-def _get_chrom_subset_index(ploidy, lengths_full, chrom_full, chrom_subset):  # FIXME remove
-    """Return indices for selected chromosomes only.
-    """
-
-    if isinstance(chrom_subset, str):
-        chrom_subset = np.array([chrom_subset])
-    missing_chrom = [x for x in chrom_subset if x not in chrom_full]
-    if len(missing_chrom) > 0:
-        raise ValueError("Chromosomes to be subsetted (%s) are not in full"
-                         " list of chromosomes (%s)" %
-                         (','.join(missing_chrom), ','.join(chrom_full)))
-
-    lengths_subset = lengths_full.copy()
-    index = None
-    if not np.array_equal(chrom_subset, chrom_full):
-        lengths_subset = np.array([lengths_full[i] for i in range(
-            len(chrom_full)) if chrom_full[i] in chrom_subset])
-        index = []
-        for i in range(len(lengths_full)):
-            index.append(
-                np.full((lengths_full[i],), chrom_full[i] in chrom_subset))
-        index = np.concatenate(index)
-        if ploidy == 2:
-            index = np.tile(index, 2)
-    return index, lengths_subset
-
-
 def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
-                         chrom_subset_index=None):
+                         chrom_subset_index=None, remove_diag=True):
     """Check counts dimensions, reformat, & excise selected chromosomes.
     """
 
@@ -157,7 +189,10 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
         warn("Counts matrix must only contain integers or NaN")
 
     if counts.shape[0] == counts.shape[1]:
-        counts[np.tril_indices(counts.shape[0])] = empty_val
+        if remove_diag:
+            counts[np.tril_indices(counts.shape[0])] = empty_val
+        else:
+            counts[np.tril_indices(counts.shape[0], -1)] = empty_val
         counts[torm, :] = empty_val
         counts[:, torm] = empty_val
         if chrom_subset_index is not None:
@@ -170,8 +205,9 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
         if counts.shape[0] == min(counts.shape):
             homo1 = homo1.T
             homo2 = homo2.T
-        np.fill_diagonal(homo1, empty_val)
-        np.fill_diagonal(homo2, empty_val)
+        if remove_diag:
+            np.fill_diagonal(homo1, empty_val)
+            np.fill_diagonal(homo2, empty_val)
         homo1[:, torm[:min(counts.shape)] | torm[
             min(counts.shape):]] = empty_val
         homo2[:, torm[:min(counts.shape)] | torm[
@@ -623,31 +659,35 @@ def _row_and_col(data):
         return data.row, data.col
 
 
-def _counts_indices_to_3d_indices(counts, n, ploidy):
+def _counts_indices_to_3d_indices(counts, nbeads):
     """Return distance matrix indices associated with counts matrix data.
     """
 
-    n = int(n)
+    nbeads = int(nbeads)
 
     row3d, col3d = _row_and_col(counts)
 
-    if counts.shape[0] != n * ploidy or counts.shape[1] != n * ploidy:
+    if counts.shape[0] != nbeads or counts.shape[1] != nbeads:
         nnz = len(row3d)
 
-        map_factor_rows = int(n * ploidy / counts.shape[0])
-        map_factor_cols = int(n * ploidy / counts.shape[1])
+        map_factor_rows = int(nbeads / counts.shape[0])
+        map_factor_cols = int(nbeads / counts.shape[1])
         map_factor = map_factor_rows * map_factor_cols
 
         x, y = np.indices((map_factor_rows, map_factor_cols))
         x = x.flatten()
         y = y.flatten()
 
-        row3d = np.repeat(
+        row3d_tmp = np.repeat(
             x, int(nnz * map_factor / x.shape[0])) * min(
                 counts.shape) + np.tile(row3d, map_factor)
-        col3d = np.repeat(
+        col3d_tmp = np.repeat(
             y, int(nnz * map_factor / y.shape[0])) * min(
                 counts.shape) + np.tile(col3d, map_factor)
+
+        col3d = np.maximum(row3d_tmp, col3d_tmp)
+        row3d = np.minimum(row3d_tmp, col3d_tmp)
+
 
     return row3d, col3d
 
@@ -827,7 +867,7 @@ class SparseCountsMatrix(CountsMatrix):
             _counts = _counts.astype(
                 sparse.sputils.get_index_dtype(maxval=_counts.max()))
         _counts = sparse.coo_matrix(_counts)
-        # self.shape = _counts.shape
+
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(_counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = self.ambiguity
@@ -1000,9 +1040,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         dummy_counts = counts.copy() + 1
         dummy_counts[np.isnan(dummy_counts)] = 0
         dummy_counts = sparse.coo_matrix(dummy_counts)
-        # self.row = dummy_counts.row  # TODO remove junk
-        # self.col = dummy_counts.col
-        # self.shape = dummy_counts.shape
+
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = '%s0' % self.ambiguity
@@ -1042,24 +1080,21 @@ class NullCountsMatrix(AtypicalCountsMatrix):
     def __init__(self, counts, lengths, ploidy, multiscale_factor=1,
                  beta=1., fullres_torm=None, weight=1.,
                  multiscale_reform=False):
+
+        # TODO make sure all of this is still valid, given multiscale
+
         if not isinstance(counts, list):
             counts = [counts]
 
         # Dummy counts need to be inputted because if a row/col is all 0 it is
-        # excluded from calculations.
-        # To create dummy counts, ambiguate counts & sum together, then set all
-        # non-0 values to 1
-        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        if multiscale_reform:
-            lengths_counts = lengths
-        else:
-            lengths_counts = lengths_lowres
-        dummy_counts = _create_dummy_counts(
-            counts=counts, lengths=lengths_counts, ploidy=ploidy)
+        # excluded from calculations of constraints.
+        # Dummy counts should be "unambiguous" for diploid organisms.
+        # All non-zero data in dummy counts is set to 1.
+        dummy_counts = _create_unambig_dummy_counts(
+            counts=counts, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor,
+            multiscale_reform=multiscale_reform)
 
-        # self.row = dummy_counts.row  # TODO remove junk
-        # self.col = dummy_counts.col
-        # self.shape = dummy_counts.shape
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(dummy_counts.shape) / (lengths_counts.sum() * ploidy)]
         self.name = '%s0' % self.ambiguity
