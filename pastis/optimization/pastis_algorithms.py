@@ -61,7 +61,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  callback_fxns=None, reorienter=None,
                  multiscale_reform=False, alpha_true=None,
                  struct_true=None, input_weight=None, exclude_zeros=False,
-                 null=False, mixture_coefs=None, verbose=True, mods=None):
+                 null=False, mixture_coefs=None, verbose=True, mods=[]):
     """Infer draft 3D structures with PASTIS via Poisson model.
     """
 
@@ -213,10 +213,10 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     multiscale_reform=False, init_std_dev=None,
                     alpha_true=None, struct_true=None, input_weight=None,
                     exclude_zeros=False, null=False, mixture_coefs=None,
-                    out_file=None, verbose=True, mods=None):
+                    out_file=None, verbose=True, mods=[]):
     """TODO
     """
-    # TODO add _prep_inference() to main branch
+    # TODO add _prep_inference to main branch; use fxn in unit tests (easier)
 
     # INFER DRAFT STRUCTURES (for estimation of multiscale_variance & hsc_r)
     alpha_ = alpha
@@ -377,6 +377,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             struct_true_tmp = struct_true
         if callback_freq is None:
             callback_freq = {'print': 100, 'history': 100, 'save': None}
+        if callback_fxns is None:
+            callback_fxns = {}
         # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
         callback = Callback(
             lengths, ploidy, counts=counts, bias=bias,
@@ -412,7 +414,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           epsilon_coord_descent=False, init_std_dev=None,
           alpha_true=None, struct_true=None, input_weight=None,
           exclude_zeros=False, null=False, mixture_coefs=None, verbose=True,
-          mods=None):
+          mods=[]):
     """Infer 3D structures with PASTIS via Poisson model.
 
     Optimize 3D structure from Hi-C contact counts data for diploid
@@ -726,7 +728,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    multiscale_reform=False, epsilon_coord_descent=False, alpha_true=None,
                    struct_true=None, init='mds', input_weight=None,
                    exclude_zeros=False, null=False, mixture_coefs=None,
-                   verbose=True, mods=None):
+                   verbose=True, mods=[]):
     """Infer 3D structures with PASTIS via Poisson model.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
