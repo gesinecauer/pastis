@@ -132,7 +132,7 @@ class Callback(object):
                  on_iter_end=None, directory=None, struct_true=None,
                  alpha_true=None, epsilon_true=None, constraints=None,
                  multiscale_variances=None, mixture_coefs=None, verbose=False,
-                 mods=None):
+                 mods=[]):
         # TODO add to main branch -- new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
