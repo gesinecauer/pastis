@@ -1,4 +1,4 @@
-from sklearn.utils.testing import assert_raises
+from nose.tools import assert_raises
 
 
 import numpy as np
