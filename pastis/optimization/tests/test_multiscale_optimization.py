@@ -43,6 +43,38 @@ def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
     return np.concatenate(struct_lowres)
 
 
+def get_struct_index_correct(multiscale_factor, lengths, ploidy):
+    """Return full-res struct index grouped by the corresponding low-res bead.
+    """
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+
+    idx = np.arange(lengths_lowres.sum() * ploidy)
+    idx = np.repeat(
+        np.indices([multiscale_factor]), idx.shape[0]) + np.tile(
+        idx * multiscale_factor, multiscale_factor)
+    idx = idx.reshape(multiscale_factor, -1)
+
+    # Figure out which rows / cols are out of bounds
+    bins = np.tile(lengths, ploidy).cumsum()
+    for i in range(lengths.shape[0] * ploidy):
+        idx_binned = np.digitize(idx, bins)
+        bad_idx = np.invert(np.equal(idx_binned, idx_binned.min(axis=0)))
+        idx_mask = idx_binned.min(axis=0) == i
+        vals = np.unique(
+            idx[:, idx_mask][bad_idx[:, idx_mask]])
+        for val in np.flip(vals, axis=0):
+            idx[idx > val] -= 1
+    bad_idx += idx >= lengths.sum() * ploidy
+
+    # If a bin spills over chromosome / homolog boundaries, set it to whatever
+    # It will get ignored later
+    idx[bad_idx] = 0
+
+    return idx, bad_idx
+
+
 def decrease_counts_res_correct(counts, multiscale_factor, lengths):
     if multiscale_factor == 1:
         return counts
@@ -223,6 +255,23 @@ def test_decrease_counts_res(multiscale_factor):
         ploidy=ploidy)
     ua_counts_lowres[np.isnan(ua_counts_lowres)] = 0
     assert_array_equal(ua_counts_lowres_true, ua_counts_lowres)
+
+
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 3, 4])
+def test_get_struct_index(multiscale_factor):
+    lengths = np.array([10, 21])
+    ploidy = 2
+
+    idx_true, bad_idx_true = get_struct_index_correct(
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
+    idx, bad_idx = multiscale_optimization._get_struct_index(
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
+
+    assert_array_equal(
+        idx_true, idx)
+
+    assert_array_equal(
+        bad_idx_true, bad_idx)
 
 
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 3, 4])
