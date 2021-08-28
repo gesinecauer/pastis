@@ -47,7 +47,7 @@ def get_struct_index_correct(multiscale_factor, lengths, ploidy):
     """Return full-res struct index grouped by the corresponding low-res bead.
     """
 
-    lengths_lowres = decrease_lengths_res(
+    lengths_lowres = multiscale_optimization.decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
 
     idx = np.arange(lengths_lowres.sum() * ploidy)
@@ -415,8 +415,8 @@ def test_poisson_objective_multiscale_ambig():
         X_true, lengths=lengths, multiscale_factor=multiscale_factor)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, bias=None,
-        multiscale_factor=multiscale_factor,
+        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=None, multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances_true)
 
-    assert obj < -1e4
+    assert obj < (-1e4 / sum([c.nnz for c in counts]))
