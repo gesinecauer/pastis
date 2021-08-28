@@ -210,16 +210,11 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs)
     counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
-    X, epsilon, mixture_coefs = _format_X(
-        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs)
-
     new_obj, obj_logs, structures, alpha = objective_alpha(
         alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy, bias=bias,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
-        multiscale_variances=multiscale_variances, epsilon=epsilon,
+        multiscale_variances=multiscale_variances,
         mixture_coefs=mixture_coefs, return_extras=True)
 
     if callback is not None:
@@ -245,11 +240,6 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs)
     counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
-    X, epsilon, mixture_coefs = _format_X(
-        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs)
-
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore", message='Using a non-tuple sequence for multidimensional'
@@ -258,7 +248,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
             alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances, epsilon=epsilon,
+            multiscale_variances=multiscale_variances,
             mixture_coefs=mixture_coefs)).flatten()
 
     return np.asarray(new_grad, dtype=np.float64)
@@ -389,7 +379,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     conv_desc = d['task'].decode('utf8')
 
     if verbose:
-        print(f'INIT ALPHA: {alpha_init:.3g},  FINAL ALPHA: {alpha:.3g}',
+        print(f'INIT ALPHA: {alpha_init:.3g},  FINAL ALPHA: {float(alpha):.3g}',
               flush=True)
         if converged:
             print('CONVERGED\n', flush=True)
