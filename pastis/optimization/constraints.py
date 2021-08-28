@@ -4,6 +4,7 @@ if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
 import numpy as np
+from scipy import sparse
 
 use_jax = True
 if use_jax:
@@ -84,7 +85,7 @@ class Constraints(object):
                  multiscale_reform=False, constraint_lambdas=None,
                  constraint_params=None, verbose=True, mods=None):
 
-        self.lengths = np.array(lengths).astype(np.int32)
+        self.lengths = np.asarray(lengths).astype(np.int32)
         self.lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
         if multiscale_reform:
@@ -147,22 +148,12 @@ class Constraints(object):
             self.subtracted = (lambda_intensity.sum() - (
                 1 * np.log(lambda_intensity)).sum())
 
-        self.row = self.col = None
-        self.row_adj = self.col_adj = None
+        self.row_nghbr = self.col_nghbr = None
         if self.lambdas["bcc"]:
-            self.row, self.col = _constraint_dis_indices(
-                counts=counts, n=self.lengths_lowres.sum(),
-                lengths=self.lengths_lowres, ploidy=ploidy)
-            # Calculating distances for neighbors, which are on the off diagonal
-            # line - i & j where j = i + 1
-            row_adj = np.unique(self.row).astype(int)
-            row_adj = row_adj[np.isin(row_adj + 1, self.col)]
-            # Remove if "neighbor" beads are actually on different chromosomes or
-            # homologs
-            self.row_adj = row_adj[np.digitize(row_adj, np.tile(
-                lengths, ploidy).cumsum()) == np.digitize(
-                row_adj + 1, np.tile(lengths, ploidy).cumsum())]
-            self.col_adj = self.row_adj + 1
+            self.row_nghbr, self.col_nghbr = _neighboring_bead_indices(
+                counts=counts, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor)
+
 
     def check(self, verbose=True):
         """Check constraints object.
@@ -294,7 +285,7 @@ class Constraints(object):
         if self.lambdas["bcc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
                 neighbor_dis = ag_np.sqrt((ag_np.square(
-                    struct[self.row_adj] - struct[self.col_adj])).sum(axis=1))
+                    struct[self.row_nghbr] - struct[self.col_nghbr])).sum(axis=1))
                 n_edges = neighbor_dis.shape[0]
                 obj_bcc = (
                     n_edges * ag_np.square(neighbor_dis).sum() / ag_np.square(
@@ -303,7 +294,7 @@ class Constraints(object):
                 obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
-                homo_sep = self._homolog_separation_new(struct) # FIXME revert
+                homo_sep = self._homolog_separation(struct) # FIXME revert
                 homo_sep_diff = self.params["hsc"] - homo_sep
                 # homo_sep_diff = 1 - homo_sep / self.params["hsc"]  # with scaleR
                 homo_sep_diff = relu(homo_sep_diff)
@@ -333,11 +324,11 @@ class Constraints(object):
 
         return {'obj_' + k: v for k, v in obj.items()}
 
-    def _homolog_separation_new(self, struct):
+    def _homolog_separation(self, struct):
         """Compute distance between homolog centers of mass per chromosome.
         """
         struct_bw = struct * np.repeat(self.bead_weights, 3, axis=1)
-        n = ag_np.int32(self.lengths_lowres.sum())
+        n = self.lengths_lowres.sum()
 
         homo_sep = ag_np.zeros(self.lengths_lowres.shape)
         begin = end = 0
@@ -351,25 +342,6 @@ class Constraints(object):
             begin = end
 
         return homo_sep
-
-    def _homolog_separation_old(self, struct):
-        """Compute distance between homolog centers of mass per chromosome.
-        """
-
-        struct_bw = struct * np.repeat(self.bead_weights, 3, axis=1)
-        n = self.lengths_lowres.sum()
-
-        homo_sep = []
-        begin = end = 0
-        for l in self.lengths_lowres:
-            end = end + l
-            chrom1_mean = ag_np.sum(struct_bw[begin:end], axis=0)
-            chrom2_mean = ag_np.sum(struct_bw[(n + begin):(n + end)], axis=0)
-            homo_sep.append(ag_np.sqrt(ag_np.sum(ag_np.square(
-                chrom1_mean - chrom2_mean))))
-            begin = end
-
-        return ag_np.array(homo_sep)
 
 
 def _mean_interhomolog_counts(counts, lengths, bias=None):
@@ -434,63 +406,37 @@ def _mean_interhomolog_counts(counts, lengths, bias=None):
     return mean_interhomo_counts / mhs_beta
 
 
-def _constraint_dis_indices(counts, n, lengths, ploidy, mask=None,
-                            adjacent_beads_only=False):
-    """Return distance matrix indices associated with any counts matrix data.
+def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
+    """Return row & col of neighboring beads, along a homolog of a chromosome.
     """
 
-    n = int(n)
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    nbeads = lengths_lowres.sum() * ploidy
 
-    if isinstance(counts, list) and len(counts) == 1:
-        counts = counts[0]
-    if not isinstance(counts, list):
-        rows = counts.row3d
-        cols = counts.col3d
-    else:
-        rows = []
-        cols = []
-        for counts_maps in counts:
-            rows.append(counts_maps.row3d)
-            cols.append(counts_maps.col3d)
-        rows, cols = np.split(np.unique(np.concatenate([np.atleast_2d(
-            np.concatenate(rows)), np.atleast_2d(np.concatenate(cols))],
-            axis=0), axis=1), 2, axis=0)
-        rows = rows.flatten()
-        cols = cols.flatten()
+    row_nghbr = np.arange(nbeads - 1, dtype=int)
+    col_nghbr = np.arange(1, nbeads, dtype=int)
 
-    if adjacent_beads_only:
-        if mask is None:
-            # Calculating distances for adjacent beads, which are on the off
-            # diagonal line - i & j where j = i + 1
-            rows = np.unique(rows)
-            rows = rows[np.isin(rows + 1, cols)]
-            # Remove if "adjacent" beads are actually on different chromosomes
-            # or homologs
-            rows = rows[np.digitize(rows, np.tile(
-                lengths, ploidy).cumsum()) == np.digitize(
-                rows + 1, np.tile(lengths, ploidy).cumsum())]
-            cols = rows + 1
-        else:
-            # Calculating distances for adjacent beads, which are on the off
-            # diagonal line - i & j where j = i + 1
-            row_adj = np.unique(rows)
-            row_adj = row_adj[np.isin(row_adj + 1, cols)]
-            # Remove if "adjacent" beads are actually on different chromosomes
-            # or homologs
-            row_adj = row_adj[np.digitize(row_adj, np.tile(
-                lengths, ploidy).cumsum()) == np.digitize(
-                row_adj + 1, np.tile(lengths, ploidy).cumsum())]
-            col_adj = row_adj + 1
+    # Remove beads for which there is no counts data
+    torm = find_beads_to_remove(
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor)
+    where_torm = np.where(torm)[0]
+    nghbr_dis_mask = (row_nghbr != where_torm) & (col_nghbr != where_torm)
+    row_nghbr = row_nghbr[nghbr_dis_mask]
+    col_nghbr = col_nghbr[nghbr_dis_mask]
 
-    if mask is not None:
-        rows[~mask] = 0
-        cols[~mask] = 0
-        if adjacent_beads_only:
-            include = (np.isin(rows, row_adj) & np.isin(cols, col_adj))
-            rows = rows[include]
-            cols = cols[include]
+    # Remove if "neighbor" beads are actually on different chromosomes
+    # or homologs
+    bins = np.tile(lengths_lowres, ploidy).cumsum()
+    same_bin = np.digitize(row_nghbr, bins) == np.digitize(col_nghbr, bins)
 
-    return rows, cols
+    print(multiscale_factor, same_bin.sum(), (~same_bin).sum(), lengths_lowres.sum())
+    print(row_nghbr[~same_bin], col_nghbr[~same_bin])
+
+    row_nghbr = row_nghbr[same_bin]
+    col_nghbr = col_nghbr[same_bin]
+
+    return row_nghbr, col_nghbr
 
 
 def _inter_homolog_dis(struct, lengths):
