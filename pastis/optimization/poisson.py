@@ -91,7 +91,7 @@ def loss2(x, mask, num_highres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO re
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            bias=None, multiscale_factor=1, mixture_coefs=None,
-                           mods=None, max_epsilon_over_dis=25):
+                           mods=[], max_epsilon_over_dis=25):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
@@ -205,7 +205,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
 def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
                  multiscale_factor=1, multiscale_variances=None,
-                 mixture_coefs=None, mods=None):
+                 mixture_coefs=None, mods=[]):
     """Computes the Poisson objective function for a given counts matrix.
     """
 
@@ -269,7 +269,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
 
 def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                mixture_coefs=None, mods=None):
+                mixture_coefs=None, mods=[]):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -304,7 +304,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
 def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False, epsilon=None, mods=None):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+              inferring_alpha=False, epsilon=None, mods=[]):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -405,7 +405,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
 
     for counts_maps in counts:
-        if ('highatlow' in mods and multiscale_factor != 1):
+        if 'highatlow' in mods and multiscale_factor != 1:
             if counts_maps.multiscale_factor != 1:
                 continue
         obj_counts = _obj_single(
@@ -443,7 +443,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
 
 def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
               reorienter=None, multiscale_reform=False, epsilon=None,
-              mixture_coefs=None, mods=None):
+              mixture_coefs=None, mods=[]):
     """Reformat and check X.
     """
     # FIXME epsilon shouldn't be inputted to here unless inferring struct/eps separately
@@ -454,8 +454,10 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
     if lengths is None or ploidy is None:
         nbeads = None
     else:
+        # lengths_lowres = decrease_lengths_res(  # FIXME THIS SEEMS WRONG - highatlow below
+        #     lengths, multiscale_factor=(1 if (mods is None or 'highatlow' in mods) else multiscale_factor))
         lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor=(1 if (mods is None or 'highatlow' in mods) else multiscale_factor))
+            lengths, multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor))
         nbeads = lengths_lowres.sum() * ploidy
 
     if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # FIXME epsilon
@@ -501,7 +503,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
                       multiscale_variances=None, multiscale_reform=False,
-                      mixture_coefs=None, callback=None, mods=None):
+                      mixture_coefs=None, callback=None, mods=[]):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
@@ -530,7 +532,7 @@ gradient = grad(objective)
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    constraints=None, reorienter=None, multiscale_factor=1,
                    multiscale_variances=None, multiscale_reform=False,
-                   mixture_coefs=None, callback=None, mods=None):
+                   mixture_coefs=None, callback=None, mods=[]):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
@@ -553,7 +555,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                constraints=None, multiscale_factor=1, multiscale_variances=None,
                epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
                factr=10000000., pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
-               reorienter=None, mixture_coefs=None, verbose=True, mods=None):
+               reorienter=None, mixture_coefs=None, verbose=True, mods=[]):
     """Estimates a 3D structure, given current alpha.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -794,7 +796,7 @@ class PastisPM(object):
                  epsilon_coord_descent=False, alpha_init=-3., max_alpha_loop=20, max_iter=30000,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                  reorienter=None, null=False, mixture_coefs=None, verbose=True,
-                 mods=None):
+                 mods=[]):
 
         from .piecewise_whole_genome import ChromReorienter
 
