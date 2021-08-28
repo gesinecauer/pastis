@@ -105,8 +105,8 @@ def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
         else:
             row_i, col_i = _counts_indices_to_3d_indices(
                 counts[i], nbeads=nbeads)
-        row.append(row_i)
-        col.append(col_i)
+        row.append(np.minimum(row_i, col_i))
+        col.append(np.maximum(row_i, col_i))
 
     if len(counts) == 1:
         return row[0], col[0]
@@ -264,7 +264,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                       fullres_torm=None, multiscale_reform=False,
                       excluded_counts=None, mixture_coefs=None,
                       exclude_zeros=False, input_weight=None, verbose=True,
-                      mods=None):
+                      mods=[]):
     """Check counts, reformat, reduce resolution, filter, and compute bias.
 
     Preprocessing options include reducing resolution, computing bias (if
@@ -678,16 +678,12 @@ def _counts_indices_to_3d_indices(counts, nbeads):
         x = x.flatten()
         y = y.flatten()
 
-        row3d_tmp = np.repeat(
+        row3d = np.repeat(
             x, int(nnz * map_factor / x.shape[0])) * min(
                 counts.shape) + np.tile(row3d, map_factor)
-        col3d_tmp = np.repeat(
+        col3d = np.repeat(
             y, int(nnz * map_factor / y.shape[0])) * min(
                 counts.shape) + np.tile(col3d, map_factor)
-
-        col3d = np.maximum(row3d_tmp, col3d_tmp)
-        row3d = np.minimum(row3d_tmp, col3d_tmp)
-
 
     return row3d, col3d
 
@@ -1095,8 +1091,7 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform)
 
-        self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(dummy_counts.shape) / (lengths_counts.sum() * ploidy)]
+        self.ambiguity = 'ua'
         self.name = '%s0' % self.ambiguity
         self.beta = 0.
         self.weight = 0.
