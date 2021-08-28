@@ -702,7 +702,10 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
             if 'epsilon' in infer_var:
                 epsilon_max = infer_var['epsilon']  # FIXME??
-            # exit(0)  # FIXME
+
+            if 'lowres_exit' in mods:
+                exit(0)
+
         return struct_, infer_var
 
 
