@@ -108,9 +108,6 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     grouped_idx, bad_idx = _get_struct_index(
         multiscale_factor=current_multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    # grouped_idx = grouped_idx.reshape(current_multiscale_factor, -1).astype(  # TODO remove
-    #     float)
-    # grouped_idx[bad_idx.reshape(current_multiscale_factor, -1)] = np.nan
     grouped_idx = grouped_idx.astype(float)
     grouped_idx[bad_idx] = np.nan
 
@@ -130,17 +127,7 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     else:
         struct_highres = decrease_struct_res(
             struct_fullres, multiscale_factor=final_multiscale_factor,
-            lengths=lengths)
-
-    # TODO add the below to future unit test...
-    # from numpy.testing import assert_array_almost_equal
-    # rescale_by = int(current_multiscale_factor / final_multiscale_factor)
-    # lengths_final = decrease_lengths_res(
-    #     lengths=lengths, multiscale_factor=final_multiscale_factor)
-    # struct_lowres_redo = decrease_struct_res(
-    #     struct_highres, multiscale_factor=rescale_by, lengths=lengths_final)
-    # mask = np.invert(np.isnan(struct[:, 0]))
-    # assert_array_almost_equal(struct[mask], struct_lowres_redo[mask])
+            lengths=lengths, ploidy=ploidy)
 
     return struct_highres
 
@@ -343,8 +330,7 @@ def _convert_indices_to_full_res(rows_lowres, cols_lowres, rows_max, cols_max,
 
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
-                             multiscale_reform=False, dummy=False,
-                             exclude_each_highres_empty=False):
+                             dummy=False, exclude_each_highres_empty=False):
     """TODO
     """
 
@@ -370,7 +356,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     else:
         counts_coo = counts.tocoo()
 
-    if multiscale_reform and multiscale_factor != 1:
+    if multiscale_factor != 1:
         counts_arr = _check_counts_matrix(
             counts_coo, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
 
@@ -549,6 +535,29 @@ def _get_struct_index(multiscale_factor, lengths, ploidy):
     return idx, bad_idx
 
 
+def decrease_bias_res(bias, multiscale_factor, lengths, ploidy):
+    """TODO"""
+
+    if bias is None or multiscale_factor == 1:
+        return bias
+
+    idx, bad_idx = _get_struct_index(
+            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
+
+    fullres_torm = (bias == 0)
+    if fullres_torm.sum() != 0:
+        torm_mask = (idx == np.where(fullres_torm)[0])
+        bad_idx[torm_mask] = True
+        idx[torm_mask] = 0
+
+    # Apply to bias, and set incorrect idx to np.nan
+    grouped_bias = ag_np.where(
+        bad_idx.flatten(), np.nan, bias[idx.flatten(), :]).reshape(
+        multiscale_factor, -1, 3)
+
+    return np.nanmean(grouped_bias, axis=0)
+
+
 def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
                           idx=None, fullres_torm=None):
     """Group beads of full-res struct by the low-res bead they correspond to.
@@ -559,24 +568,17 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
         2: coordinates, size = struct[1] = 3
     """
 
-    lengths = np.array(lengths).astype(int)
-
-    if ploidy is None:
-        ploidy = struct.reshape(-1, 3).shape[0] / lengths.sum()
-        if ploidy != 1 and ploidy != 2:
-            raise ValueError("Not consistent with haploid or diploid... struct"
-                             f" is {struct.reshape(-1, 3).shape[0]} beads (and"
-                             f" 3 cols), sum of lengths is {lengths.sum()}")
-    ploidy = int(ploidy)
+    if multiscale_factor == 1:
+        return struct.reshape(1, -1, 3)
 
     if idx is None:
         idx, bad_idx = _get_struct_index(
             multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
     else:
-        raise NotImplementedError
+        raise NotImplementedError  # FIXME
 
     if fullres_torm is not None and fullres_torm.sum() != 0:
-        torm_mask = idx == np.where(fullres_torm)[0]
+        torm_mask = (idx == np.where(fullres_torm)[0])
         bad_idx[torm_mask] = True
         idx[torm_mask] = 0
 
@@ -589,7 +591,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
     return grouped_struct
 
 
-def decrease_struct_res(struct, multiscale_factor, lengths, ploidy=None,
+def decrease_struct_res(struct, multiscale_factor, lengths, ploidy,
                         idx=None, fullres_torm=None):
     """Decrease resolution of structure by averaging adjacent beads.
 
@@ -614,9 +616,6 @@ def decrease_struct_res(struct, multiscale_factor, lengths, ploidy=None,
         `multiscale_factor`.
     """
 
-    if int(multiscale_factor) != multiscale_factor:
-        raise ValueError(
-            "The multiscale_factor to reduce size by must be an integer.")
     if multiscale_factor == 1:
         return struct
 
@@ -638,8 +637,6 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
     fullres_idx, bad_idx = _get_struct_index(
         multiscale_factor=multiscale_factor,
         lengths=lengths, ploidy=ploidy)
-    # idx = idx.reshape(multiscale_factor, -1)  # TODO remove
-    # bad_idx = bad_idx.reshape(multiscale_factor, -1)
 
     if fullres_torm is not None and fullres_torm.sum() != 0:
         bad_idx[fullres_idx == np.where(fullres_torm)[0]] = True
@@ -718,7 +715,7 @@ def _var3d(struct_grouped, replace_nan=True):
     for i in range(struct_grouped.shape[1]):
         struct_group = struct_grouped[:, i, :]
         beads_in_group = np.invert(np.isnan(struct_group[:, 0])).sum()
-        if beads_in_group <= 1:
+        if beads_in_group < 1:  # FIXME bugfix 8/28/20... previously was <= 1
             var = np.nan
         else:
             mean_coords = np.nanmean(struct_group, axis=0)
@@ -759,13 +756,6 @@ def get_multiscale_epsilon_from_dis(structures, lengths, multiscale_factor,
     structures = _format_structures(structures, lengths=lengths,
                                     ploidy=ploidy, mixture_coefs=mixture_coefs)
 
-    # # Reduce structure resolution
-    # lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    # structures_lowres = [
-    #     decrease_struct_res(
-    #         x, multiscale_factor=multiscale_factor,
-    #         lengths=lengths) for x in structures]
-
     std_all = []
     for struct in structures:
         mask = np.invert(np.isnan(structures[0][:, 0]))
@@ -781,7 +771,7 @@ def get_multiscale_epsilon_from_dis(structures, lengths, multiscale_factor,
                 message="Counts matrix must only contain integers or NaN")
             dis_grouped = _group_counts_multiscale(
                 dis_coo, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor, multiscale_reform=True)[0]
+                multiscale_factor=multiscale_factor)[0]
         std_all.append(_get_epsilon_from_dis(dis_grouped))
     std_all = np.mean(std_all)
 
@@ -993,20 +983,22 @@ def _get_epsilon(struct_grouped, replace_nan=True):
     return std_per_bead, std_all
 
 
-def _choose_max_multiscale_rounds(lengths, min_beads):
-    """Choose the maximum number of multiscale rounds, given `min_beads`.
-    """
-
-    multiscale_rounds = 0
-    while decrease_lengths_res(
-            lengths, 2 ** (multiscale_rounds + 1)).min() >= min_beads:
-        multiscale_rounds += 1
-    return multiscale_rounds
-
-
 def _choose_max_multiscale_factor(lengths, min_beads):
     """Choose the maximum multiscale factor, given `min_beads`.
     """
 
-    return 2 ** _choose_max_multiscale_rounds(
-        lengths=lengths, min_beads=min_beads)
+    multiscale_factor = 1
+    while decrease_lengths_res(
+            lengths, multiscale_factor * 2).min() >= min_beads:
+        multiscale_factor *= 2
+    return multiscale_factor
+
+
+def _choose_max_multiscale_rounds(lengths, min_beads):
+    """Choose the maximum number of multiscale rounds, given `min_beads`.
+    """
+
+    multiscale_factor = _choose_max_multiscale_factor(
+        lengths, min_beads=min_beads)
+    multiscale_rounds = np.log2(multiscale_factor) + 1
+    return multiscale_rounds

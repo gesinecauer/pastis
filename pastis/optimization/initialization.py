@@ -11,8 +11,7 @@ from .counts import _prep_counts
 
 
 def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
-                           multiscale_factor=1, multiscale_reform=False,
-                           verbose=True):
+                           multiscale_factor=1, verbose=True):
     """Initialize structure via multi-dimensional scaling of unambig counts.
     """
 
@@ -34,17 +33,12 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     ua_counts = counts[ua_index]
     ua_beta = ua_counts.beta
     if ua_beta is not None:
-        ua_beta *= multiscale_factor ** 2
-
-    raise ValueError("We need UA counts to be full-res here and ua_counts.tocoo() is low-res when multiscale_factor > 1")
+        ua_beta = ua_beta * multiscale_factor ** 2
     ua_counts_arr = ua_counts.tocoo()
-    if multiscale_reform:
-        counts_lowres, bias = _prep_counts(
-            [ua_counts_arr], lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, normalize=(bias is not None),
-            filter_threshold=0, exclude_zeros=True, verbose=False)
-        ua_counts_arr = counts_lowres[0]
-    bias_per_bin = (np.tile(bias, ploidy) if bias is not None else bias)
+    if bias is not None:
+        bias_per_bin = np.tile(bias, ploidy)
+    else:
+        bias_per_bin = None
 
     struct = estimate_X(
         ua_counts_arr, alpha=-3. if alpha is None else alpha, beta=ua_beta,
@@ -62,8 +56,8 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
 
 
 def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
-                       init='mds', multiscale_factor=1, multiscale_reform=False,
-                       std_dev=None, mixture_coefs=None, verbose=True):
+                       init='mds', multiscale_factor=1, std_dev=None,
+                       mixture_coefs=None, verbose=True):
     """Initialize structure, randomly or via MDS of unambig counts.
     """
 
@@ -87,8 +81,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         struct = _initialize_struct_mds(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform, verbose=verbose)
+            multiscale_factor=multiscale_factor, verbose=verbose)
         structures = [struct] * len(mixture_coefs)
     elif isinstance(init, str) and (init.lower() in ("random", "rand", "mds", "mds2")):
         if verbose:
@@ -145,7 +138,8 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                 print('INITIALIZATION: decreasing resolution of structure by'
                       ' %d' % resize_factor, flush=True)
             structures[i] = decrease_struct_res( # TODO change lengths=lengths (not lengths_lowres) on main branch too
-                structures[i], multiscale_factor=resize_factor, lengths=lengths)
+                structures[i], multiscale_factor=resize_factor, lengths=lengths,
+                ploidy=ploidy)
 
     structures = _format_structures(
         structures, lengths=lengths_lowres, ploidy=ploidy,
@@ -155,9 +149,8 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 
 
 def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
-               bias=None, multiscale_factor=1, multiscale_reform=False,
-               reorienter=None, std_dev=None, mixture_coefs=None,
-               verbose=False, mods=[]):
+               bias=None, multiscale_factor=1, reorienter=None, std_dev=None,
+               mixture_coefs=None, verbose=False, mods=[]):
     """Initialize optimization.
 
     Create initialization for optimization. Structures can be initialized
@@ -230,6 +223,5 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state, init=init,
             multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
-            multiscale_reform=multiscale_reform, std_dev=std_dev,
-            mixture_coefs=mixture_coefs, verbose=verbose)
+            std_dev=std_dev, mixture_coefs=mixture_coefs, verbose=verbose)
         return struct_init

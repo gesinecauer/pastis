@@ -90,7 +90,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
     if not infer_draft_fullres or infer_draft_lowres:
         None, alpha, beta, None, True
 
-    counts, _, _, fullres_torm = preprocess_counts(
+    counts, _, _, _ = preprocess_counts(
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
         normalize=normalize, filter_threshold=filter_threshold,
         multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
@@ -152,7 +152,6 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
         if len(ua_index) == 1:
             counts_for_lowres = [counts_raw[ua_index[0]]]
             simple_diploid_for_lowres = False
-            fullres_torm = [fullres_torm[ua_index[0]]]
             beta_for_lowres = [beta[ua_index[0]]]
         elif len(ua_index) > 1:
             raise ValueError("Only input one matrix of unambiguous counts."
@@ -173,7 +172,6 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             multiscale_factor=multiscale_factor_for_lowres,
             use_multiscale_variance=use_multiscale_variance,
             init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
-            fullres_torm=fullres_torm,
             struct_draft_fullres=struct_draft_fullres, draft=True,
             simple_diploid=simple_diploid_for_lowres,
             callback_fxns=callback_fxns,
@@ -206,7 +204,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     final_multiscale_round=False, init='mds', max_iter=30000,
                     factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                     bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
-                    mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
+                    mhs_lambda=0., mhs_k=None, excluded_counts=None,
                     struct_draft_fullres=None, draft=False, simple_diploid=False,
                     callback_freq=None, callback_fxns=None, reorienter=None,
                     multiscale_reform=False, init_std_dev=None,
@@ -296,11 +294,11 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             counts=counts_raw, lengths=lengths, ploidy=ploidy,
             exclude_zeros=exclude_zeros)]
         ploidy = 1
-    counts, bias, torm, fullres_torm_for_multiscale = preprocess_counts(
-        counts_raw=counts_raw, lengths=lengths, ploidy=ploidy, normalize=normalize,
-        filter_threshold=filter_threshold, multiscale_factor=multiscale_factor,
-        exclude_zeros=exclude_zeros, beta=beta_, input_weight=input_weight,
-        verbose=verbose, fullres_torm=fullres_torm, multiscale_reform=multiscale_reform,
+    counts, bias, torm, fullres_torm = preprocess_counts(
+        counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
+        normalize=normalize, filter_threshold=filter_threshold,
+        multiscale_factor=multiscale_factor, exclude_zeros=exclude_zeros,
+        beta=beta_, input_weight=input_weight, verbose=verbose,
         excluded_counts=excluded_counts, mixture_coefs=mixture_coefs, mods=mods)
     if verbose:
         print('BETA: %s' % ', '.join(
@@ -342,12 +340,10 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             random_state=random_state,
             alpha=alpha_init if alpha_ is None else alpha_,
             bias=bias, multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform, reorienter=reorienter,
-            std_dev=init_std_dev, mixture_coefs=mixture_coefs, verbose=verbose,
-            mods=mods)
+            reorienter=reorienter, std_dev=init_std_dev,
+            mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
         if multiscale_reform and multiscale_factor != 1:
             epsilon = random_state.rand()
-            #epsilon = epsilon_true   # FIXME
         else:
             epsilon = None
 
@@ -355,16 +351,15 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         constraints = Constraints(
             counts=counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
-            multiscale_reform=multiscale_reform,
             constraint_lambdas={
                 'bcc': bcc_lambda, 'hsc': hsc_lambda, 'mhs': mhs_lambda},
             constraint_params={
-                'bcc': bcc_power, 'hsc': hsc_r, 'mhs': mhs_k}, verbose=verbose,
-            mods=mods)
+                'bcc': bcc_power, 'hsc': hsc_r, 'mhs': mhs_k},
+            fullres_torm=fullres_torm, verbose=verbose, mods=mods)
 
         # SETUP CALLBACKS
         # TODO add bug fix (simple_diploid if/else stmt below & struct_true_tmp) to main branch
-        if simple_diploid:
+        if simple_diploid and struct_true is not None:
             struct_true_tmp = np.nanmean(
                 [struct_true[:int(struct_true.shape[0] / 2)],
                  struct_true[int(struct_true.shape[0] / 2):]], axis=0)
@@ -390,9 +385,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         constraints = None
         callback = None
 
-    return (counts, alpha_, beta_, bias, torm, fullres_torm_for_multiscale,
-            struct_init, constraints, hsc_r, callback, struct_draft_fullres,
-            multiscale_variances, epsilon)
+    return (counts, alpha_, beta_, bias, torm, struct_init, constraints, hsc_r,
+            callback, struct_draft_fullres, multiscale_variances, epsilon)
 
 
 def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -402,7 +396,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           final_multiscale_round=False, init='mds', max_iter=30000,
           factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
           bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
-          mhs_lambda=0., mhs_k=None, excluded_counts=None, fullres_torm=None,
+          mhs_lambda=0., mhs_k=None, excluded_counts=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_fxns=None, reorienter=None,
           multiscale_reform=False, epsilon_min=1e-6, epsilon_max=1e6,
@@ -491,10 +485,6 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         not supplied, `mhs_k` will be estimated from the counts data.
     excluded_counts : {"inter", "intra"}, optional
         Whether to exclude inter- or intra-chromosomal counts from optimization.
-    fullres_torm : list of array of bool, optional
-        For multiscale optimization, this indicates which beads of the full-
-        resolution structure do not correspond to any counts data, and should
-        therefore be removed. There should be one array per counts matrix.
     struct_draft_fullres : np.ndarray, optional
         The full-resolution draft structure from whihc to derive multiscale
         variances.
@@ -556,7 +546,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         max_iter=max_iter, factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_power=bcc_power, hsc_r=hsc_r,
         hsc_min_beads=hsc_min_beads, mhs_lambda=mhs_lambda, mhs_k=mhs_k,
-        excluded_counts=excluded_counts, fullres_torm=fullres_torm,
+        excluded_counts=excluded_counts,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
         simple_diploid=simple_diploid, callback_freq=callback_freq,
         callback_fxns=callback_fxns, reorienter=reorienter,
@@ -564,9 +554,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
         out_file=out_file, verbose=verbose, mods=mods)
-    (counts, alpha_, beta_, bias, torm, fullres_torm_for_multiscale,
-        struct_init, constraints, hsc_r, callback, struct_draft_fullres,
-        multiscale_variances, epsilon) = prepped
+    (counts, alpha_, beta_, bias, torm, struct_init, constraints, hsc_r,
+        callback, struct_draft_fullres, multiscale_variances, epsilon) = prepped
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
         # COMPUTE OBJECTIVE ON TRUE STRUCTURE TODO move this to callback fxn on main branch
@@ -652,7 +641,6 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             if i == 1:
                 multiscale_outdir = outdir
                 final_multiscale_round = True
-                fullres_torm_for_multiscale = None
             else:
                 multiscale_outdir = os.path.join(outdir, 'multiscale_x%d' % i)
                 final_multiscale_round = False
@@ -670,7 +658,6 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 hsc_lambda=hsc_lambda, bcc_power=bcc_power,
                 hsc_r=hsc_r, hsc_min_beads=hsc_min_beads,
                 mhs_lambda=mhs_lambda, mhs_k=mhs_k,
-                fullres_torm=fullres_torm_for_multiscale,
                 struct_draft_fullres=struct_draft_fullres,
                 callback_fxns=callback_fxns,
                 callback_freq=callback_freq, reorienter=reorienter,

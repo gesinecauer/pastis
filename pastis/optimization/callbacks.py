@@ -179,7 +179,7 @@ class Callback(object):
             if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
                 self.struct_true = decrease_struct_res(
                     struct_true, multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
-                    lengths=lengths)
+                    lengths=lengths, ploidy=ploidy)
             else:
                 self.struct_true = struct_true
         else:

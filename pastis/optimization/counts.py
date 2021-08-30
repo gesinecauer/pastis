@@ -9,9 +9,8 @@ from iced.normalization import ICE_normalization
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _intra_counts, _inter_counts, _counts_near_diag
 
-from .multiscale_optimization import decrease_lengths_res
+from .multiscale_optimization import decrease_lengths_res, decrease_bias_res
 from .multiscale_optimization import decrease_counts_res
-from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .multiscale_optimization import _group_counts_multiscale
 
 
@@ -120,13 +119,9 @@ def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
     return row, col
 
 
-def _create_unambig_dummy_counts(counts, lengths, ploidy, multiscale_factor,
-                                 multiscale_reform):
+def _create_unambig_dummy_counts(counts, lengths, ploidy, multiscale_factor=1):
     """Create sparse matrix of 1's with same row and col as distance matrix.
     """
-
-    if multiscale_reform:
-        multiscale_factor = 1
 
     rows, cols = _included_dis_indices(
         counts, lengths=lengths, ploidy=ploidy,
@@ -261,7 +256,6 @@ def check_counts(counts, lengths, ploidy, exclude_zeros=False,
 
 def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                       normalize=True, filter_threshold=0.04, beta=None,
-                      fullres_torm=None, multiscale_reform=False,
                       excluded_counts=None, mixture_coefs=None,
                       exclude_zeros=False, input_weight=None, verbose=True,
                       mods=[]):
@@ -292,10 +286,6 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         Scaling parameter that determines the size of the structure, relative to
         each counts matrix. There should be one beta per counts matrix. If None,
         the optimal beta will be estimated.
-    fullres_torm : list of array of bool, optional
-        For multiscale optimization, this indicates which beads of the full-
-        resolution structure do not correspond to any counts data, and should
-        therefore be removed. There should be one array per counts matrix.
     excluded_counts : {"inter", "intra"}, optional
         Whether to exclude inter- or intra-chromosomal counts from optimization. # TODO update
 
@@ -309,17 +299,25 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         Beads that should be removed (set to NaN) in the structure.
     """
 
+    # Prep counts at full-res
     counts_prepped, bias = _prep_counts(
-        counts_raw, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, normalize=normalize,
-        filter_threshold=filter_threshold, multiscale_reform=multiscale_reform,
+        counts_raw, lengths=lengths, ploidy=ploidy, multiscale_factor=1,
+        normalize=normalize, filter_threshold=filter_threshold,
         exclude_zeros=exclude_zeros, verbose=verbose)
 
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    if multiscale_reform:
-        lengths_counts = lengths
+    # Reduce resolution of bias (when multiscale_factor > 1)
+    bias = decrease_bias_res(
+        bias=bias, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+
+    # Beads to remove from full-res structure
+    if multiscale_factor == 1:
+        fullres_torm = None
     else:
-        lengths_counts = lengths_lowres
+        fullres_torm = find_beads_to_remove(
+            counts_prepped, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
+
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
 
     if excluded_counts is not None:
         if isinstance(excluded_counts, float) or (isinstance(
@@ -327,15 +325,15 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             excluded_counts = int(excluded_counts)
         if isinstance(excluded_counts, int):
             counts_prepped = [_counts_near_diag(
-                c, lengths=lengths_counts, ploidy=ploidy, nbins=excluded_counts,
+                c, lengths_counts=lengths, ploidy=ploidy, nbins=excluded_counts,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         elif excluded_counts.lower() == 'intra':
             counts_prepped = [_inter_counts(
-                c, lengths=lengths_counts, ploidy=ploidy,
+                c, lengths_counts=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         elif excluded_counts.lower() == 'inter':
             counts_prepped = [_intra_counts(
-                c, lengths=lengths_counts, ploidy=ploidy,
+                c, lengths_counts=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         else:
             raise ValueError(
@@ -344,21 +342,13 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     counts = _format_counts(
         counts_prepped, beta=beta, input_weight=input_weight,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
-        multiscale_factor=multiscale_factor, fullres_torm=fullres_torm,
-        multiscale_reform=multiscale_reform)
+        multiscale_factor=multiscale_factor)
 
     torm = find_beads_to_remove(  # TODO recently changed from using counts_prepped to counts (8/13/21)
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
     if mixture_coefs is not None:
         torm = np.tile(torm, len(mixture_coefs))
-
-    if multiscale_factor == 1:
-        fullres_torm_for_multiscale = [find_beads_to_remove(
-            c, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor) for c in counts if c.sum() > 0]
-    else:
-        fullres_torm_for_multiscale = None
 
     if mods is not None and 'highatlow' in mods and multiscale_factor != 1:
         diag_mod = [int(x.replace('diag', '')) for x in mods if re.match(
@@ -385,7 +375,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             mods=mods)
         counts.extend(counts_fullres)
 
-    return counts, bias, torm, fullres_torm_for_multiscale
+    return counts, bias, torm, fullres_torm
 
 
 def _percent_nan_beads(counts):
@@ -398,8 +388,8 @@ def _percent_nan_beads(counts):
 
 
 def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
-                 normalize=True, filter_threshold=0.04, multiscale_reform=False,
-                 exclude_zeros=True, verbose=True):
+                 normalize=True, filter_threshold=0.04, exclude_zeros=True,
+                 verbose=True):
     """Copy counts, check matrix, reduce resolution, filter, and compute bias.
     """
 
@@ -427,16 +417,11 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
     # Reduce resolution
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
-    if multiscale_reform:
-        lengths_counts = lengths
-    else:
-        lengths_counts = lengths_lowres
     for counts_type, counts in counts_dict.items():
-        if multiscale_factor != 1 and not multiscale_reform:
-            counts = decrease_counts_res(
+        if multiscale_factor != 1:
+            counts_dict[counts_type] = decrease_counts_res(
                 counts, multiscale_factor=multiscale_factor, lengths=lengths,
                 ploidy=ploidy)
-            counts_dict[counts_type] = counts
 
     # Optionally filter counts
     if filter_threshold is None:
@@ -450,7 +435,7 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             print("FILTERING LOW COUNTS: manually filtering all counts together"
                   " by %g" % filter_threshold, flush=True)
         all_counts_ambiguated = ambiguate_counts(
-            list(counts_dict.values()), lengths=lengths_counts, ploidy=ploidy,
+            list(counts_dict.values()), lengths=lengths_lowres, ploidy=ploidy,
             exclude_zeros=True)
         initial_zero_beads = find_beads_to_remove(
             all_counts_ambiguated, lengths=lengths, ploidy=1,
@@ -477,13 +462,13 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
         # counts matrix.
         # For diploid unambiguous or partially ambigous counts, it is possible
         # that a bead will be filtered out on one homolog but not another.
-        individual_counts_torms = np.full((lengths_counts.sum(),), False)
+        individual_counts_torms = np.full((lengths_lowres.sum(),), False)
         for counts_type, counts in counts_dict.items():
             if verbose:
                 print('FILTERING LOW COUNTS: manually filtering %s counts by %g'
                       % (counts_type.upper(), filter_threshold), flush=True)
             initial_zero_beads = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
+                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
                 lengths=lengths, ploidy=1,
                 multiscale_factor=multiscale_factor).sum()
             if counts_type == 'pa':
@@ -517,7 +502,7 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                     percentage=filter_threshold + _percent_nan_beads(
                         counts)).tocoo()
             torm = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
+                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
                 lengths=lengths, ploidy=1,
                 multiscale_factor=multiscale_factor)
             if verbose:
@@ -534,13 +519,13 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             print('COMPUTING BIAS: all counts together', flush=True)
         bias = ICE_normalization(
             ambiguate_counts(
-                list(counts_dict.values()), lengths=lengths_counts,
+                list(counts_dict.values()), lengths=lengths_lowres,
                 ploidy=ploidy, exclude_zeros=True),
             max_iter=300, output_bias=True)[1].flatten()
         # In each counts matrix, zero out counts for which bias is NaN
         for counts_type, counts in counts_dict.items():
             initial_zero_beads = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
+                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
                 lengths=lengths, ploidy=1,
                 multiscale_factor=multiscale_factor).sum()
             if sparse.issparse(counts):
@@ -552,7 +537,7 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             counts = sparse.coo_matrix(counts)
             counts_dict[counts_type] = counts
             torm = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_counts, ploidy=ploidy),
+                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
                 lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor)
             if verbose and torm.sum() - initial_zero_beads > 0:
                 print('                removing %d additional beads from %s' %
@@ -560,27 +545,22 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                       flush=True)
 
     output_counts = check_counts(
-        list(counts_dict.values()), lengths=lengths_counts, ploidy=ploidy,
+        list(counts_dict.values()), lengths=lengths_lowres, ploidy=ploidy,
         exclude_zeros=exclude_zeros)
     return output_counts, bias
 
 
 def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
-                   exclude_zeros=False, multiscale_factor=1, fullres_torm=None,
-                   multiscale_reform=False):
+                   exclude_zeros=False, multiscale_factor=1):
     """Format each counts matrix as a CountsMatrix subclass instance.
     """
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    if multiscale_reform:
-        lengths_counts = lengths
-    else:
-        lengths_counts = lengths_lowres
-    n = lengths_counts.sum()
+    n = lengths.sum()
 
     # Check input
     counts = check_counts(
-        counts, lengths=lengths_counts, ploidy=ploidy, exclude_zeros=exclude_zeros)
+        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
     if beta is not None:
         if not (isinstance(beta, list) or isinstance(beta, np.ndarray)):
@@ -619,30 +599,18 @@ def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
     else:
         input_weight = [1.] * len(counts)
 
-    if fullres_torm is not None:
-        fullres_torm = (fullres_torm if isinstance(
-            fullres_torm, list) else [fullres_torm])
-        if len(fullres_torm) != len(counts):
-            raise ValueError("fullres_torm needs to contain as many scaling"
-                             " factors as there are datasets (%d). It is of"
-                             " length (%d)" % (len(counts), len(fullres_torm)))
-    else:
-        fullres_torm = [None] * len(counts)
-
     # Reformat counts as SparseCountsMatrix or ZeroCountsMatrix instance
     counts_reformatted = []
-    for counts_maps, beta_maps, input_weight_maps, fullres_torm_maps in zip(counts, beta, input_weight, fullres_torm):
+    for i in range(len(counts)):
         counts_reformatted.append(SparseCountsMatrix(
-            counts_maps, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, beta=beta_maps,
-            fullres_torm=fullres_torm_maps, weight=input_weight_maps,
-            multiscale_reform=multiscale_reform))
-        if not exclude_zeros and (counts_maps == 0).sum() > 0:
+            counts[i], lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, beta=beta[i],
+            weight=input_weight[i]))
+        if not exclude_zeros and (counts[i] == 0).sum() > 0:
             zero_counts_maps = ZeroCountsMatrix(
-                counts_maps, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor, beta=beta_maps,
-                fullres_torm=fullres_torm_maps, weight=input_weight_maps,
-                multiscale_reform=multiscale_reform)
+                counts[i], lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, beta=beta[i],
+                weight=input_weight[i])
             if zero_counts_maps.nnz > 0:
                 counts_reformatted.append(zero_counts_maps)
 
@@ -716,10 +684,6 @@ class CountsMatrix(object):
     beta : float, optional
         Scaling parameter that determines the size of the structure, relative to
         each counts matrix.
-    fullres_torm : array of bool, optional
-        For multiscale optimization, this indicates which beads of the full-
-        resolution structure do not correspond to any counts data, and should
-        therefore be removed.
 
     Attributes
     ----------
@@ -767,7 +731,6 @@ class CountsMatrix(object):
         self.beta = None
         self.weight = None
         self.null = None
-        self.fullres_per_lowres_bead = None
         self.row3d = None
         self.col3d = None
 
@@ -834,8 +797,7 @@ class CountsMatrix(object):
         For multiscale: return number of full-res bins per bin at current res.
 
         Returns the number of full-resolution counts bins corresponding to each
-        low-resolution counts bin for each bin of the low-resolution contact
-        counts matrix.
+        low-resolution distance bin.
         """
 
         pass
@@ -845,14 +807,9 @@ class SparseCountsMatrix(CountsMatrix):
     """Stores data for non-zero counts bins.
     """
 
-    def __init__(self, counts, lengths, ploidy, multiscale_factor=1,
-                 beta=1., fullres_torm=None, weight=1.,
-                 multiscale_reform=False):
+    def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
+                 weight=1):
         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        if multiscale_reform:
-            lengths_counts = lengths
-        else:
-            lengths_counts = lengths_lowres
         _counts = counts.copy()
         if sparse.issparse(_counts):
             _counts = _counts.toarray()
@@ -865,7 +822,7 @@ class SparseCountsMatrix(CountsMatrix):
         _counts = sparse.coo_matrix(_counts)
 
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(_counts.shape) / (lengths_counts.sum() * ploidy)]
+            sum(_counts.shape) / (lengths.sum() * ploidy)]
         self.name = self.ambiguity
         self.beta = beta
         self.weight = (1. if weight is None else weight)
@@ -878,17 +835,9 @@ class SparseCountsMatrix(CountsMatrix):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
 
-        if multiscale_factor != 1:
-            self.fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-                multiscale_factor=multiscale_factor, lengths=lengths,
-                ploidy=ploidy, fullres_torm=fullres_torm)
-        else:
-            self.fullres_per_lowres_bead = None
-
         tmp = _group_counts_multiscale(
             _counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform)
+            multiscale_factor=multiscale_factor)
         self._data, indices, indices3d, self.shape, self.mask = tmp
         self.row, self.col = indices
         self.row3d, self.col3d = indices3d
@@ -937,14 +886,11 @@ class SparseCountsMatrix(CountsMatrix):
             bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
             return bias[self.row] * bias[self.col]
 
-    @property
     def fullres_per_lowres_dis(self):
         if self.multiscale_factor == 1:
             return 1
         else:
-            per_row = self.fullres_per_lowres_bead[self.row]
-            per_col = self.fullres_per_lowres_bead[self.col]
-            return per_row * per_col
+            return self.mask.sum(axis=0)
 
 
 class AtypicalCountsMatrix(CountsMatrix):
@@ -1003,28 +949,20 @@ class AtypicalCountsMatrix(CountsMatrix):
             bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
             return bias[self.row] * bias[self.col]
 
-    @property
     def fullres_per_lowres_dis(self):
         if self.multiscale_factor == 1:
             return 1
         else:
-            per_row = self.fullres_per_lowres_bead[self.row]
-            per_col = self.fullres_per_lowres_bead[self.col]
-            return per_row * per_col
+            return self.mask.sum(axis=0)
 
 
 class ZeroCountsMatrix(AtypicalCountsMatrix):
     """Stores data for zero counts bins.
     """
 
-    def __init__(self, counts, lengths, ploidy, multiscale_factor=1,
-                 beta=1., fullres_torm=None, weight=1.,
-                 multiscale_reform=False):
+    def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
+                 weight=1):
         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        if multiscale_reform:
-            lengths_counts = lengths
-        else:
-            lengths_counts = lengths_lowres
         counts = counts.copy()
         if sparse.issparse(counts):
             # FIXME I think this should be _check_counts_matrix with exclude_zeros=False, right?
@@ -1038,7 +976,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         dummy_counts = sparse.coo_matrix(dummy_counts)
 
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(counts.shape) / (lengths_counts.sum() * ploidy)]
+            sum(counts.shape) / (lengths.sum() * ploidy)]
         self.name = '%s0' % self.ambiguity
         self.beta = beta
         self.weight = (1. if weight is None else weight)
@@ -1051,17 +989,9 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
 
-        if multiscale_factor != 1:
-            self.fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-                multiscale_factor=multiscale_factor, lengths=lengths,
-                ploidy=ploidy, fullres_torm=fullres_torm)
-        else:
-            self.fullres_per_lowres_bead = None
-
         tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform, dummy=True,
+            multiscale_factor=multiscale_factor, dummy=True,
             exclude_each_highres_empty=True)
         data_grouped, indices, indices3d, self.shape, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
@@ -1073,9 +1003,8 @@ class NullCountsMatrix(AtypicalCountsMatrix):
     """Stores null counts data.
     """
 
-    def __init__(self, counts, lengths, ploidy, multiscale_factor=1,
-                 beta=1., fullres_torm=None, weight=1.,
-                 multiscale_reform=False):
+    def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
+                 weight=1):
 
         # TODO make sure all of this is still valid, given multiscale
 
@@ -1087,9 +1016,7 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         # Dummy counts should be "unambiguous" for diploid organisms.
         # All non-zero data in dummy counts is set to 1.
         dummy_counts = _create_unambig_dummy_counts(
-            counts=counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform)
+            counts=counts, lengths=lengths, ploidy=ploidy)
 
         self.ambiguity = 'ua'
         self.name = '%s0' % self.ambiguity
@@ -1109,17 +1036,9 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             else:
                 self.input_sum += counts_maps.sum()
 
-        if multiscale_factor != 1:
-            self.fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-                multiscale_factor=multiscale_factor, lengths=lengths,
-                ploidy=ploidy, fullres_torm=fullres_torm)
-        else:
-            self.fullres_per_lowres_bead = None
-
         tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform, dummy=True)
+            multiscale_factor=multiscale_factor, dummy=True)
         data_grouped, indices, indices3d, self.shape, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
         self.row, self.col = indices

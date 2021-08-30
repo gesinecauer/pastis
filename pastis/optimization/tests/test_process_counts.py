@@ -19,8 +19,8 @@ def test_3d_indices_haploid():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -42,8 +42,8 @@ def test_3d_indices_diploid_unambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -65,8 +65,8 @@ def test_3d_indices_diploid_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -91,8 +91,8 @@ def test_3d_indices_diploid_partially_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0

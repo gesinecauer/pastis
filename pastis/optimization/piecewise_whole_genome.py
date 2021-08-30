@@ -15,7 +15,6 @@ from sklearn.metrics import euclidean_distances
 import os
 from scipy import linalg
 from .utils_poisson import subset_chrom_of_data, subset_chrom
-from .counts import preprocess_counts
 from .pastis_algorithms import infer, _infer_draft
 from .utils_poisson import _print_code_header, _load_infer_var
 from .utils_poisson import _format_structures, _output_subdir
@@ -61,7 +60,8 @@ class ChromReorienter(object):
         if self.reorient:
             self.struct_init = [decrease_struct_res(
                 s, multiscale_factor=multiscale_factor,
-                lengths=self.lengths_fullres) for s in self.struct_init_fullres]
+                lengths=self.lengths_fullres,
+                ploidy=ploidy) for s in self.struct_init_fullres]
 
     def check_X(self, X):
         """
@@ -298,7 +298,7 @@ def _orient_single_fullres_chrom(struct_genome_lowres, struct_chrom_fullres,
     chrom_lengths = np.array([int(struct_chrom_fullres.shape[0] / ploidy)])
     struct_chrom_fullres2lowres = decrease_struct_res(
         struct=struct_chrom_fullres, multiscale_factor=piecewise_factor,
-        lengths=chrom_lengths)
+        lengths=chrom_lengths, ploidy=ploidy)
 
     # For diploid, optionally find separate orientations per homolog
     if ploidy == 2 and not piecewise_fix_homo:
@@ -425,6 +425,9 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
     """Infer whole genome 3D structures piecewise, first inferring chromosomes.
     """
 
+    if multiscale_reform:
+        raise NotImplementedError
+
     if piecewise_step is None:
         piecewise_step = [1, 2, 3, 4]
     elif not (isinstance(piecewise_step, list) or isinstance(
@@ -477,17 +480,6 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
         beta_ = beta
         struct_draft_fullres = None
 
-    # Prepare multiscale optimization
-    if step1_multiscale or step2_multiscale or step3_multiscale:
-        _, _, _, fullres_torm_for_multiscale = preprocess_counts(
-            counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
-            normalize=normalize, filter_threshold=filter_threshold,
-            multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
-            input_weight=input_weight, verbose=verbose,
-            mixture_coefs=mixture_coefs)
-    else:
-        fullres_torm_for_multiscale = None
-
     # Infer entire genome at low res
     if 1 in piecewise_step:
 
@@ -524,8 +516,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
             init=init, max_iter=max_iter, factr=factr_lowres, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, hsc_r=hsc_r, mhs_lambda=mhs_lambda,
-            mhs_k=mhs_k, fullres_torm=fullres_torm_for_multiscale,
-            struct_draft_fullres=struct_draft_fullres,
+            mhs_k=mhs_k, struct_draft_fullres=struct_draft_fullres,
             callback_fxns=callback_fxns,
             callback_freq=callback_freq,
             alpha_true=alpha_true, struct_true=struct_true,
@@ -586,11 +577,6 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                 struct_draft_fullres_chrom = None
             else:
                 struct_draft_fullres_chrom = struct_draft_fullres[draft_index]
-            if fullres_torm_for_multiscale is None:
-                fullres_torm_chrom = None
-            else:
-                fullres_torm_chrom = [
-                    x[index] for x in fullres_torm_for_multiscale]
 
             struct_, infer_var = infer(
                 counts_raw=chrom_counts,
@@ -604,7 +590,6 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                 alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
                 hsc_lambda=hsc_lambda, hsc_r=hsc_r_chrom,
                 mhs_lambda=mhs_lambda, mhs_k=mhs_k_chrom,
-                fullres_torm=fullres_torm_chrom,
                 struct_draft_fullres=struct_draft_fullres_chrom,
                 callback_fxns=callback_fxns,
                 callback_freq=callback_freq, alpha_true=alpha_true,
@@ -674,7 +659,6 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                 pgtol=pgtol, alpha_factr=alpha_factr, bcc_lambda=0.,
                 hsc_lambda=hsc_lambda_3, hsc_r=hsc_r, mhs_lambda=mhs_lambda_3,
                 mhs_k=mhs_k, excluded_counts='intra',
-                fullres_torm=fullres_torm_for_multiscale,
                 struct_draft_fullres=struct_draft_fullres,
                 callback_fxns=callback_fxns,
                 callback_freq=callback_freq, reorienter=reorienter,

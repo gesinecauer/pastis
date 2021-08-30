@@ -22,8 +22,8 @@ def test_estimate_alpha_beta_haploid():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -34,11 +34,11 @@ def test_estimate_alpha_beta_haploid():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -55,8 +55,8 @@ def test_estimate_alpha_beta_haploid_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -70,11 +70,11 @@ def test_estimate_alpha_beta_haploid_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, verbose=False).values())[0]
 
     assert converged
@@ -91,8 +91,8 @@ def test_estimate_alpha_beta_diploid_unambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -103,11 +103,11 @@ def test_estimate_alpha_beta_diploid_unambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -124,8 +124,8 @@ def test_estimate_alpha_beta_diploid_unambig_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -139,11 +139,11 @@ def test_estimate_alpha_beta_diploid_unambig_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, verbose=False).values())[0]
 
     #assert converged
@@ -160,8 +160,8 @@ def test_estimate_alpha_beta_diploid_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -173,11 +173,11 @@ def test_estimate_alpha_beta_diploid_ambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -194,8 +194,8 @@ def test_estimate_alpha_beta_diploid_ambig_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -210,11 +210,11 @@ def test_estimate_alpha_beta_diploid_ambig_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, verbose=False).values())[0]
 
     assert converged
@@ -231,8 +231,8 @@ def test_estimate_alpha_beta_diploid_partially_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -245,11 +245,11 @@ def test_estimate_alpha_beta_diploid_partially_ambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         verbose=False).values())[0]
 
     assert converged
@@ -266,8 +266,8 @@ def test_estimate_alpha_beta_diploid_partially_ambig_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta_true * dis ** alpha_true
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -284,11 +284,11 @@ def test_estimate_alpha_beta_diploid_partially_ambig_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, verbose=False).values())[0]
 
     assert converged
@@ -307,8 +307,8 @@ def test_estimate_alpha_beta_diploid_combo():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     poisson_intensity = dis ** alpha_true
 
@@ -336,11 +336,11 @@ def test_estimate_alpha_beta_diploid_combo():
         counts=counts_raw, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=X_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
+        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, verbose=False).values())[0]
 
     assert converged

@@ -23,7 +23,8 @@ else:
     from autograd.builtins import SequenceBox
 
 from .multiscale_optimization import decrease_lengths_res
-from .utils_poisson import find_beads_to_remove, _inter_counts
+from .multiscale_optimization import _count_fullres_per_lowres_bead
+from .utils_poisson import find_beads_to_remove
 
 
 class Constraints(object):
@@ -81,16 +82,12 @@ class Constraints(object):
     """
 
     def __init__(self, counts, lengths, ploidy, multiscale_factor=1,
-                 multiscale_reform=False, constraint_lambdas=None,
-                 constraint_params=None, verbose=True, mods=[]):
+                 constraint_lambdas=None, constraint_params=None,
+                 fullres_torm=None, verbose=True, mods=[]):
 
         self.lengths = np.asarray(lengths).astype(np.int32)
         self.lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
-        if multiscale_reform:
-            self.lengths_counts = self.lengths
-        else:
-            self.lengths_counts = self.lengths_lowres
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         if constraint_lambdas is None:
@@ -121,8 +118,9 @@ class Constraints(object):
         self.bead_weights = None
         if self.lambdas["hsc"] or self.lambdas["mhs"]:
             if multiscale_factor != 1:
-                fullres_per_lowres_bead = np.max(
-                    [c.fullres_per_lowres_bead for c in counts], axis=0)
+                fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+                    multiscale_factor=multiscale_factor, lengths=lengths,
+                    ploidy=ploidy, fullres_torm=fullres_torm)
                 bead_weights = fullres_per_lowres_bead / multiscale_factor
             else:
                 bead_weights = np.ones((self.lengths_lowres.sum() * ploidy,))
@@ -358,7 +356,14 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
     where_torm = np.where(torm)[0]
-    nghbr_dis_mask = (row_nghbr != where_torm) & (col_nghbr != where_torm)
+
+    # FIXME DeprecationWarning: elementwise comparison failed; this will raise an error in the future.
+    # nghbr_dis_mask = (row_nghbr != where_torm) & (col_nghbr != where_torm)  # FIXME
+    nghbr_dis_mask = (~np.isin(row_nghbr, where_torm)) & (
+        ~np.isin(col_nghbr, where_torm))
+    # FIXME I think I also do something similar elsewhere in multiscale.py... np.where(torm)[0]
+
+
     row_nghbr = row_nghbr[nghbr_dis_mask]
     col_nghbr = col_nghbr[nghbr_dis_mask]
 

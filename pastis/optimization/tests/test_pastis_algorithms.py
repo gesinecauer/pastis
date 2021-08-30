@@ -24,8 +24,8 @@ def test_pastis_poisson_haploid():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -52,8 +52,8 @@ def test_pastis_poisson_diploid_unambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -80,8 +80,8 @@ def test_pastis_poisson_diploid_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -97,6 +97,8 @@ def test_pastis_poisson_diploid_ambig():
 
     assert infer_var['converged']
 
+    # FIXME TODO couldn't we at least compare the distance error or something? these tests are too simplistic!
+
 
 def test_pastis_poisson_diploid_partially_ambig():
     lengths = np.array([20])
@@ -109,8 +111,8 @@ def test_pastis_poisson_diploid_partially_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -140,8 +142,8 @@ def test_pastis_poisson_diploid_combo():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     poisson_intensity = dis ** alpha
 
@@ -184,15 +186,15 @@ def test_pastis_poisson_diploid_unambig_bcc_constraint():
     lengths = np.array([20])
     ploidy = 2
     seed = 42
-    bcc_lambda = 1e8
+    bcc_lambda = 1  # FIXME update
     hsc_lambda = 0
     hsc_r = None
     alpha, beta = -3., 1.
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -209,31 +211,73 @@ def test_pastis_poisson_diploid_unambig_bcc_constraint():
 
 
 def test_pastis_poisson_diploid_unambig_hsc_constraint():
-    lengths = np.array([30])
+    lengths = np.array([40])
     ploidy = 2
     seed = 42
     bcc_lambda = 0
-    hsc_lambda = 1e10
-    true_interhomo_dis = np.array([10.])
+    hsc_lambda = 1e4  # FIXME update
+    true_interhomo_dis = np.array([15.])
     hsc_r = None
     alpha, beta = -3., 1.
+    multiscale_reform = True
+    use_multiscale_variance = False
+    max_attempt = 1e3
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
 
-    X_true = np.zeros((n * ploidy, 3), dtype=float)
-    for i in range(X_true.shape[0]):
-        X_true[i:, random_state.choice([0, 1, 2])] += 1
+    # Create structure, without any beads overlapping
+    struct_true = None
+    dis = np.zeros((n * ploidy, n * ploidy))
+    attempt = 0
+    while attempt < max_attempt and dis[
+            np.triu_indices(dis.shape[0], 1)].min() <= 1e-6:
+        attempt += 1
 
-    X_true[n:] -= X_true[n:].mean(axis=0)
-    X_true[:n] -= X_true[:n].mean(axis=0)
+        # Make structure, very basic random walk
+        struct_true = np.zeros((n * ploidy, 3), dtype=float)
+        for i in range(struct_true.shape[0]):
+            coord1 = random_state.choice([0, 1, 2])
+            coord2 = random_state.choice([x for x in (0, 1, 2) if x != coord1])
+            struct_true[i:, coord1] += random_state.choice([1, -1])
+            struct_true[i:, coord2] += random_state.choice([1, -1]) * 0.5
+
+        # Center homologs, so that distance between barycenters is 0
+        begin = end = 0
+        for i in range(len(lengths)):
+            end += lengths[i]
+            struct_true[n:][begin:end] -= struct_true[n:][begin:end].mean(axis=0)
+            struct_true[:n][begin:end] -= struct_true[:n][begin:end].mean(axis=0)
+            begin = end
+
+        # Separate homologs
+        begin = end = 0
+        for i in range(len(lengths)):
+            end += lengths[i]
+            struct_true[begin:end, 0] += true_interhomo_dis[i]
+            begin = end
+
+        dis = euclidean_distances(struct_true)
+
+    if attempt >= max_attempt:
+        raise ValueError("Couldn't create struct without overlapping beads.")
+
+    # Debugging stuff
+    print(f'tries={attempt}, dis.min()='
+          f'{dis[np.triu_indices(dis.shape[0], 1)].min():.3g}')
     begin = end = 0
     for i in range(len(lengths)):
         end += lengths[i]
-        X_true[begin:end, 0] += true_interhomo_dis[i]
+        hmlg1 = struct_true[n:][begin:end]
+        hmlg2 = struct_true[:n][begin:end]
+        h1_rad = np.sqrt((np.square(hmlg1 - hmlg1.mean(axis=0))).sum(axis=1))
+        h2_rad = np.sqrt((np.square(hmlg2 - hmlg2.mean(axis=0))).sum(axis=1))
+        print(f'hmlg radiuses max: {h1_rad.max():.3g} & {h2_rad.max():.3g}')
+        hmlg_sep = np.sqrt((np.square(hmlg1 - hmlg2)).sum(axis=1))
+        print(f'hmlg sep: min={hmlg_sep.min():.3g}, max={hmlg_sep.max():.3g}')
         begin = end
 
-    dis = euclidean_distances(X_true)
+    # Make counts
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -244,58 +288,19 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint():
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
-        print_freq=None, history_freq=None, save_freq=None, struct_true=X_true)
+        print_freq=None, history_freq=None, save_freq=None,
+        struct_true=struct_true, multiscale_reform=multiscale_reform,
+        use_multiscale_variance=use_multiscale_variance)
     infer_hsc_r = infer_var['hsc_r']
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
+
+    print(f"hmlg sep: true={true_interhomo_dis}, infer={infer_hsc_r}, "
+          f"final={interhomo_dis}")
 
     assert infer_var['converged']
 
     # Make sure inference of hsc_r yields an acceptable result
-    assert_array_almost_equal(true_interhomo_dis, infer_hsc_r, decimal=1)
+    assert_array_almost_equal(true_interhomo_dis, infer_hsc_r, decimal=0)
 
     # Make sure inferred homologs are separated >= inferred hsc_r
     assert interhomo_dis >= infer_hsc_r - 1e-6
-
-
-def test_pastis_poisson_diploid_unambig_mhs_constraint():
-    lengths = np.array([30])
-    ploidy = 2
-    seed = 42
-    bcc_lambda = 0
-    mhs_lambda = 1e11
-    true_interhomo_dis = np.array([10.])
-    alpha, beta = -3., 1.
-
-    random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-
-    X_true = np.zeros((n * ploidy, 3), dtype=float)
-    for i in range(X_true.shape[0]):
-        X_true[i:, random_state.choice([0, 1, 2])] += 1
-
-    X_true[n:] -= X_true[n:].mean(axis=0)
-    X_true[:n] -= X_true[:n].mean(axis=0)
-    begin = end = 0
-    for i in range(len(lengths)):
-        end += lengths[i]
-        X_true[begin:end, 0] += true_interhomo_dis[i]
-        begin = end
-
-    dis = euclidean_distances(X_true)
-    dis[dis == 0] = np.inf
-    counts = beta * dis ** alpha
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = np.triu(counts, 1)
-    counts = sparse.coo_matrix(counts)
-
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
-        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
-        seed=seed, normalize=False, filter_threshold=0, beta=beta,
-        bcc_lambda=bcc_lambda, mhs_lambda=mhs_lambda, print_freq=None,
-        history_freq=None, save_freq=None, struct_true=X_true)
-    interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
-
-    assert infer_var['converged']
-
-    # Make sure inferred homologs are separated by ~true_interhomo_dis
-    assert_allclose(true_interhomo_dis, interhomo_dis, rtol=0.05, atol=0)

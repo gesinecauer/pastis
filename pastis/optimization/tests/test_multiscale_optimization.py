@@ -135,7 +135,7 @@ def decrease_counts_res_correct(counts, multiscale_factor, lengths):
     return counts_lowres
 
 
-@pytest.mark.parametrize("multiscale_factor", [1, 2, 3, 4])
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
 def test_decrease_lengths_res(multiscale_factor):
     lengths_lowres_true = np.array([1, 2, 3, 4, 5])
     lengths_fullres = lengths_lowres_true * multiscale_factor
@@ -190,12 +190,14 @@ def test_increase_struct_res_gaussian():
         std_dev=0.000001)
 
     struct_lowres_new = multiscale_optimization.decrease_struct_res(
-        struct_highres, multiscale_factor=rescale_by, lengths=lengths_final)
+        struct_highres, multiscale_factor=rescale_by, lengths=lengths_final,
+        ploidy=ploidy)
     mask = np.invert(np.isnan(struct_current[:, 0]))
-    assert_array_almost_equal(struct_current[mask], struct_lowres_new[mask])
+    assert_array_almost_equal(
+        struct_current[mask], struct_lowres_new[mask], decimal=5)
 
 
-@pytest.mark.parametrize("multiscale_factor", [1, 2, 3, 4])
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
 def test_decrease_counts_res(multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 2
@@ -206,8 +208,8 @@ def test_decrease_counts_res(multiscale_factor):
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     poisson_intensity = dis ** alpha
 
@@ -257,7 +259,7 @@ def test_decrease_counts_res(multiscale_factor):
     assert_array_equal(ua_counts_lowres_true, ua_counts_lowres)
 
 
-@pytest.mark.parametrize("multiscale_factor", [1, 2, 3, 4])
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
 def test_get_struct_index(multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 2
@@ -274,7 +276,7 @@ def test_get_struct_index(multiscale_factor):
         bad_idx_true, bad_idx)
 
 
-@pytest.mark.parametrize("multiscale_factor", [1, 2, 3, 4])
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
 def test_decrease_struct_res(multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 1
@@ -290,13 +292,14 @@ def test_decrease_struct_res(multiscale_factor):
         struct, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
     struct_lowres = multiscale_optimization.decrease_struct_res(
-        struct, multiscale_factor=multiscale_factor, lengths=lengths)
+        struct, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
 
     assert_array_almost_equal(
         struct_lowres_true, struct_lowres)
 
 
-@pytest.mark.parametrize("multiscale_factor", [2, 3, 4])
+@pytest.mark.parametrize("multiscale_factor", [2, 4, 8])
 def test_get_multiscale_variances_from_struct(multiscale_factor):
     lengths = np.array([10, 21])
     seed = 42
@@ -316,45 +319,53 @@ def test_get_multiscale_variances_from_struct(multiscale_factor):
         end += l
         for i in range(begin, end, multiscale_factor):
             slice = coord0[i:min(end, i + multiscale_factor)]
-            if np.isnan(slice).sum() == slice.shape[0]:
-                multiscale_variances_true.append(np.nan)
+            beads_in_group = np.invert(np.isnan(slice)).sum()
+            if beads_in_group < 1:  # FIXME bugfix 8/28/20... previously was <= 1.. previously was if np.isnan(slice).sum() == slice.shape[0]:
+                var = np.nan
             else:
-                multiscale_variances_true.append(np.var(slice[~np.isnan(slice)]))
+                var = np.var(slice[~np.isnan(slice)])
+            multiscale_variances_true.append(var)
         begin = end
+
     multiscale_variances_true = np.array(multiscale_variances_true)
     multiscale_variances_true[np.isnan(multiscale_variances_true)] = np.nanmedian(
         multiscale_variances_true)
 
     multiscale_variances_infer = multiscale_optimization.get_multiscale_variances_from_struct(
-        struct, lengths=lengths, multiscale_factor=multiscale_factor)
+        struct, lengths=lengths, multiscale_factor=multiscale_factor,
+        verbose=False)
 
     assert_array_almost_equal(
         multiscale_variances_true, multiscale_variances_infer)
 
 
-def test__choose_max_multiscale_factor():
+@pytest.mark.parametrize("min_beads", [5, 10, 11, 100, 101, 200])
+def test__choose_max_multiscale_factor(min_beads):
     lengths = np.array([101])
+    multiscale_factor = multiscale_optimization._choose_max_multiscale_factor(
+        lengths, min_beads=min_beads)
 
-    for min_beads in (5, 10, 11, 100, 101, 200):
-        multiscale_rounds = multiscale_optimization._choose_max_multiscale_factor(
-            lengths, min_beads)
-        assert multiscale_optimization.decrease_lengths_res(
-            lengths, 2 ** (multiscale_rounds + 1)).min() <= min_beads
+    lengths_lowres = multiscale_optimization.decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    lengths_lowres_toosmall = multiscale_optimization.decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor * 2)
+
+    assert (min_beads <= lengths_lowres.min()) or (min_beads > lengths.min())
+    assert min_beads > lengths_lowres_toosmall.min()
 
 
 def test_infer_multiscale_variances_ambig():
-    lengths = np.array([50])
+    lengths = np.array([320])
     ploidy = 2
     seed = 42
-    hsc_r = None
     alpha, beta = -3., 1.
     multiscale_rounds = 4
 
-    multiscale_factor = 2 ** multiscale_rounds
+    multiscale_factor = 2 ** (multiscale_rounds - 1)
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -363,13 +374,13 @@ def test_infer_multiscale_variances_ambig():
     counts = sparse.coo_matrix(counts)
 
     multiscale_variances_true = multiscale_optimization.get_multiscale_variances_from_struct(
-        X_true, lengths=lengths, multiscale_factor=multiscale_factor)
+        struct_true, lengths=lengths, multiscale_factor=multiscale_factor)
 
     struct_draft_fullres, _, _, _, draft_converged = pastis_algorithms._infer_draft(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         multiscale_rounds=multiscale_rounds, use_multiscale_variance=True,
-        hsc_lambda=0., hsc_r=hsc_r,
+        hsc_lambda=0., hsc_r=None,
         callback_freq={'print': None, 'history': None, 'save': None})
 
     assert draft_converged
@@ -380,7 +391,7 @@ def test_infer_multiscale_variances_ambig():
 
     median_true = np.median(multiscale_variances_true)
     median_infer = np.median(multiscale_variances_infer)
-    assert_array_almost_equal(median_true, median_infer, decimal=1)
+    assert_array_almost_equal(median_true, median_infer, decimal=2)
 
 
 def test_poisson_objective_multiscale_ambig():
@@ -390,11 +401,15 @@ def test_poisson_objective_multiscale_ambig():
     alpha, beta = -3., 1.
     multiscale_rounds = 4
 
-    multiscale_factor = 2 ** multiscale_rounds
+    multiscale_factor = 2 ** (multiscale_rounds - 1)
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true_lowres = decrease_struct_res_correct(
+        struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -402,21 +417,18 @@ def test_poisson_objective_multiscale_ambig():
     counts = np.triu(counts, 1)
     counts = sparse.coo_matrix(counts)
 
-    _, _, _, fullres_torm_for_multiscale = preprocess_counts(
-        counts_raw=counts, lengths=lengths, ploidy=ploidy, normalize=False,
-        filter_threshold=0., multiscale_factor=1, beta=beta)
-
     counts, _, torm, _ = preprocess_counts(
         counts_raw=counts, lengths=lengths, ploidy=ploidy, normalize=False,
         filter_threshold=0., multiscale_factor=multiscale_factor, beta=beta,
-        fullres_torm=fullres_torm_for_multiscale)
+        verbose=False)
 
     multiscale_variances_true = multiscale_optimization.get_multiscale_variances_from_struct(
-        X_true, lengths=lengths, multiscale_factor=multiscale_factor)
+        struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
+        verbose=False)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=None, multiscale_factor=multiscale_factor,
+        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=None, multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances_true)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))

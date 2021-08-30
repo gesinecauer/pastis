@@ -20,8 +20,8 @@ def test_poisson_objective_haploid():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -32,7 +32,7 @@ def test_poisson_objective_haploid():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))
 
@@ -45,8 +45,8 @@ def test_poisson_objective_haploid_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -60,7 +60,7 @@ def test_poisson_objective_haploid_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
     assert obj < (-1e3 / sum([c.nnz for c in counts]))
@@ -74,8 +74,8 @@ def test_poisson_objective_diploid_unambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -86,7 +86,7 @@ def test_poisson_objective_diploid_unambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))
 
@@ -99,8 +99,8 @@ def test_poisson_objective_diploid_unambig_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -114,7 +114,7 @@ def test_poisson_objective_diploid_unambig_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))
@@ -128,8 +128,8 @@ def test_poisson_objective_diploid_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -141,7 +141,7 @@ def test_poisson_objective_diploid_ambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))
 
@@ -154,8 +154,8 @@ def test_poisson_objective_diploid_ambig_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -170,7 +170,7 @@ def test_poisson_objective_diploid_ambig_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))
@@ -184,8 +184,8 @@ def test_poisson_objective_diploid_partially_ambig():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -198,7 +198,7 @@ def test_poisson_objective_diploid_partially_ambig():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))
 
@@ -211,8 +211,8 @@ def test_poisson_objective_diploid_partially_ambig_biased():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
-    X_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(X_true)
+    struct_true = random_state.rand(n * ploidy, 3)
+    dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -229,7 +229,7 @@ def test_poisson_objective_diploid_partially_ambig_biased():
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta)
 
     obj = poisson.objective(
-        X=X_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
     assert obj < (-1e4 / sum([c.nnz for c in counts]))

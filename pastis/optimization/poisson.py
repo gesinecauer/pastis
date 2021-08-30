@@ -70,10 +70,10 @@ def relu_min(x1, x2):
     return - (relu((-x1) - (-x2)) + (-x2))
 
 
-def loss2(x, mask, num_highres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO remove
+def loss2(x, mask, num_fullres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO remove
     log1p_theta = np.log1p(theta)
-    obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
-    obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k + 1)
+    obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
+    obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k + 1)
     obj_tmp3 = _masksum(
         _stirling(x + k + 1), mask=mask,
         axis=0)
@@ -97,7 +97,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     ####
 
-    num_highres_per_lowres_bins = counts.fullres_per_lowres_dis.reshape(1, -1)
+    num_fullres_per_lowres_bins = counts.fullres_per_lowres_dis().reshape(1, -1)
 
     bias_per_bin = counts.bias_per_bin(bias)  # TODO
 
@@ -148,12 +148,12 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     # Calculate objective
     log1p_theta = ag_np.log1p(theta)
-    obj_tmp1 = -num_highres_per_lowres_bins * k * log1p_theta
+    obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
     if counts.type == 'zero':
         obj_tmp_sum = obj_tmp1
     else:
         k_plus_1 = k + 1
-        obj_tmp2 = -num_highres_per_lowres_bins * _stirling(k_plus_1)
+        obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k_plus_1)
         obj_tmp3 = _masksum(_stirling(
             counts.data + k_plus_1), mask=counts.mask, axis=0)
         obj_tmp4 = _masksum(counts.data, mask=counts.mask, axis=0) * (
@@ -166,7 +166,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     # if 'ij_mean' in mods:
     if 'ij_sum' not in mods:
-        obj_tmp_sum = obj_tmp_sum / num_highres_per_lowres_bins
+        obj_tmp_sum = obj_tmp_sum / num_fullres_per_lowres_bins
 
     obj = ag_np.mean(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
 
@@ -229,7 +229,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             var_per_dis = multiscale_variances * 2
     else:
         var_per_dis = 0
-    num_highres_per_lowres_bins = counts.fullres_per_lowres_dis
+    num_fullres_per_lowres_bins = counts.fullres_per_lowres_dis()
 
     lambda_intensity = ag_np.zeros(counts.nnz)
     for struct, mix_coef in zip(structures, mixture_coefs):
@@ -244,7 +244,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             bias) * counts.beta * tmp
 
     # Sum main objective function
-    obj = (lambda_intensity * num_highres_per_lowres_bins).mean()  # TODO fix on main branch: mean not sum!
+    obj = (lambda_intensity * num_fullres_per_lowres_bins).mean()  # TODO fix on main branch: mean not sum!
 
     if counts.type != 'zero':
         if lambda_intensity.shape == counts.data.shape:
@@ -388,7 +388,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         # grouped counts
         structures_lowres = [decrease_struct_res(
             struct, multiscale_factor=multiscale_factor,
-            lengths=lengths) for struct in structures]
+            lengths=lengths, ploidy=ploidy) for struct in structures]
         for counts_maps in counts:
             if counts_maps.multiscale_factor == 1:
                 continue
@@ -830,7 +830,7 @@ class PastisPM(object):
         self.callback = callback
         self.multiscale_factor = multiscale_factor
         self.multiscale_variances = multiscale_variances
-        self.multiscale_reform = (epsilon is not None)
+        self.multiscale_reform = multiscale_factor > 1 and epsilon is not None
         self.epsilon = epsilon
         self.epsilon_bounds = epsilon_bounds
         self.epsilon_coord_descent = epsilon_coord_descent

@@ -464,7 +464,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     return lengths_subset, chrom_subset, counts, structures
 
 
-def _intra_counts_mask(counts, lengths):
+def _intra_counts_mask(counts, lengths_counts):
     """Return mask of sparse COO data for intra-chromosomal counts.
     """
 
@@ -473,21 +473,21 @@ def _intra_counts_mask(counts, lengths):
     elif not sparse.issparse(counts):
         counts = counts.tocoo()
     bins_for_row = np.tile(
-        lengths, int(counts.shape[0] / lengths.sum())).cumsum()
+        lengths_counts, int(counts.shape[0] / lengths_counts.sum())).cumsum()
     bins_for_col = np.tile(
-        lengths, int(counts.shape[1] / lengths.sum())).cumsum()
+        lengths_counts, int(counts.shape[1] / lengths_counts.sum())).cumsum()
     row_binned = np.digitize(counts.row, bins_for_row)
     col_binned = np.digitize(counts.col, bins_for_col)
 
     if counts.shape[0] != counts.shape[1]:
-        nchrom = lengths.shape[0]
+        nchrom = lengths_counts.shape[0]
         row_binned[row_binned >= nchrom] -= nchrom
         col_binned[col_binned >= nchrom] -= nchrom
 
     return np.equal(row_binned, col_binned)
 
 
-def _intra_counts(counts, lengths, ploidy, exclude_zeros=False):
+def _intra_counts(counts, lengths_counts, ploidy, exclude_zeros=False):
     """Return intra-chromosomal counts.
     """
 
@@ -501,9 +501,9 @@ def _intra_counts(counts, lengths, ploidy, exclude_zeros=False):
         counts = counts.tocoo()
 
     counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
+        counts, lengths=lengths_counts, ploidy=ploidy, exclude_zeros=True)
 
-    mask = _intra_counts_mask(counts=counts, lengths=lengths)
+    mask = _intra_counts_mask(counts=counts, lengths_counts=lengths_counts)
     counts_new = sparse.coo_matrix(
         (counts.data[mask], (counts.row[mask], counts.col[mask])),
         shape=counts.shape)
@@ -516,7 +516,7 @@ def _intra_counts(counts, lengths, ploidy, exclude_zeros=False):
         return counts_array
 
 
-def _inter_counts(counts, lengths, ploidy, exclude_zeros=False):
+def _inter_counts(counts, lengths_counts, ploidy, exclude_zeros=False):
     """Return inter-chromosomal counts.
     """
 
@@ -530,9 +530,9 @@ def _inter_counts(counts, lengths, ploidy, exclude_zeros=False):
         counts = counts.tocoo()
 
     counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
+        counts, lengths=lengths_counts, ploidy=ploidy, exclude_zeros=True)
 
-    mask = ~_intra_counts_mask(counts=counts, lengths=lengths)
+    mask = ~_intra_counts_mask(counts=counts, lengths_counts=lengths_counts)
     counts_new = sparse.coo_matrix(
         (counts.data[mask], (counts.row[mask], counts.col[mask])),
         shape=counts.shape)
@@ -545,7 +545,7 @@ def _inter_counts(counts, lengths, ploidy, exclude_zeros=False):
         return counts_array
 
 
-def _counts_near_diag(counts, lengths, ploidy, nbins, exclude_zeros=False):
+def _counts_near_diag(counts, lengths_counts, ploidy, nbins, exclude_zeros=False):
     """Return intra-chromosomal counts within `nbins` of diagonal.
     """
 
@@ -559,14 +559,14 @@ def _counts_near_diag(counts, lengths, ploidy, nbins, exclude_zeros=False):
         counts = counts.tocoo()
 
     counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
+        counts, lengths=lengths_counts, ploidy=ploidy, exclude_zeros=True)
 
-    mask_intra = _intra_counts_mask(counts=counts, lengths=lengths)
+    mask_intra = _intra_counts_mask(counts=counts, lengths_counts=lengths_counts)
 
     row = counts.row.copy()
     col = counts.col.copy()
     if counts.shape[0] != counts.shape[1]:
-        n = lengths.sum()
+        n = lengths_counts.sum()
         row[row >= n] -= n
         col[col >= n] -= n
     mask_near_diag = np.abs(row - col) <= nbins
