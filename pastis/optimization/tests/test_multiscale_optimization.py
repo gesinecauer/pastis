@@ -355,7 +355,7 @@ def test__choose_max_multiscale_factor(min_beads):
 
 
 def test_infer_multiscale_variances_ambig():
-    lengths = np.array([320])
+    lengths = np.array([160])
     ploidy = 2
     seed = 42
     alpha, beta = -3., 1.
@@ -366,6 +366,8 @@ def test_infer_multiscale_variances_ambig():
     n = lengths.sum()
     struct_true = random_state.rand(n * ploidy, 3)
     dis = euclidean_distances(struct_true)
+
+    # Make counts
     dis[dis == 0] = np.inf
     counts = beta * dis ** alpha
     counts[np.isnan(counts) | np.isinf(counts)] = 0
@@ -391,7 +393,7 @@ def test_infer_multiscale_variances_ambig():
 
     median_true = np.median(multiscale_variances_true)
     median_infer = np.median(multiscale_variances_infer)
-    assert_array_almost_equal(median_true, median_infer, decimal=2)
+    assert_array_almost_equal(median_true, median_infer, decimal=1)
 
 
 def test_poisson_objective_multiscale_ambig():
