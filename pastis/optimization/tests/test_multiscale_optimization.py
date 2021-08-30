@@ -354,6 +354,69 @@ def test__choose_max_multiscale_factor(min_beads):
     assert min_beads > lengths_lowres_toosmall.min()
 
 
+@pytest.mark.parametrize("multiscale_factor", [2, 4, 8])
+def test_multiscale_bias(multiscale_factor):
+    pass  # FIXME
+
+
+@pytest.mark.parametrize(
+    "multiscale_factor,use_zero_counts",
+    [(2, False), (4, False), (8, False), (2, True), (4, True), (8, True)])
+def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
+    lengths = np.array([100])
+    ploidy = 2
+    seed = 42
+    nan_indices = np.array([0, 1, 2, 3, 12, 15, 25])
+
+    random_state = np.random.RandomState(seed=seed)
+    n = lengths.sum()
+
+    # Make counts
+    counts_raw = random_state.randint(0, 10, size=(n, n))
+    counts_raw = np.triu(counts_raw, 1)
+    if nan_indices is not None:
+        counts_raw[nan_indices, :] = 0
+        counts_raw[:, nan_indices] = 0
+    counts_raw = sparse.coo_matrix(counts_raw)
+
+    fullres_torm_correct = np.full(n * ploidy, False)
+    fullres_torm_correct[nan_indices] = True
+    if ploidy == 2:
+        fullres_torm_correct[nan_indices + n] = True
+
+    counts, _, _, fullres_torm = preprocess_counts(
+        counts_raw=counts_raw, lengths=lengths, ploidy=ploidy, normalize=False,
+        filter_threshold=0., multiscale_factor=multiscale_factor, beta=1.,
+        verbose=False, exclude_zeros=False)
+
+    assert_array_equal(fullres_torm_correct, fullres_torm)
+
+    fullres_per_lowres_bead = multiscale_optimization._count_fullres_per_lowres_bead(
+        multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy, fullres_torm=fullres_torm)
+
+    if use_zero_counts:
+        if len([c for c in counts if c.sum() == 0]) == 0:
+            return
+        counts_matrix = [c for c in counts if c.sum() == 0][0]
+    else:
+        counts_matrix = [c for c in counts if c.sum() != 0][0]
+
+    correct = fullres_per_lowres_bead[counts_matrix.row] * \
+        fullres_per_lowres_bead[counts_matrix.col]
+
+    current = counts_matrix.fullres_per_lowres_dis()
+
+    mask = correct != current
+    row = counts_matrix.row[mask]
+    col = counts_matrix.col[mask]
+    tmp = np.stack([row, col, correct[mask], current[mask]], axis=1)
+    print(fullres_per_lowres_bead)
+    print(tmp)
+
+    assert_array_equal(correct, current)
+
+
 def test_infer_multiscale_variances_ambig():
     lengths = np.array([160])
     ploidy = 2

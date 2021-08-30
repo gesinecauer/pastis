@@ -356,13 +356,8 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
     where_torm = np.where(torm)[0]
-
-    # FIXME DeprecationWarning: elementwise comparison failed; this will raise an error in the future.
-    # nghbr_dis_mask = (row_nghbr != where_torm) & (col_nghbr != where_torm)  # FIXME
     nghbr_dis_mask = (~np.isin(row_nghbr, where_torm)) & (
         ~np.isin(col_nghbr, where_torm))
-    # FIXME I think I also do something similar elsewhere in multiscale.py... np.where(torm)[0]
-
 
     row_nghbr = row_nghbr[nghbr_dis_mask]
     col_nghbr = col_nghbr[nghbr_dis_mask]

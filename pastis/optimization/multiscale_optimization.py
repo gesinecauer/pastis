@@ -546,7 +546,8 @@ def decrease_bias_res(bias, multiscale_factor, lengths, ploidy):
 
     fullres_torm = (bias == 0)
     if fullres_torm.sum() != 0:
-        torm_mask = (idx == np.where(fullres_torm)[0])
+        where_torm = np.where(fullres_torm)[0]
+        torm_mask = np.isin(idx, where_torm)
         bad_idx[torm_mask] = True
         idx[torm_mask] = 0
 
@@ -578,7 +579,8 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
         raise NotImplementedError  # FIXME
 
     if fullres_torm is not None and fullres_torm.sum() != 0:
-        torm_mask = (idx == np.where(fullres_torm)[0])
+        where_torm = np.where(fullres_torm)[0]
+        torm_mask = np.isin(idx, where_torm)
         bad_idx[torm_mask] = True
         idx[torm_mask] = 0
 
@@ -639,7 +641,8 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
         lengths=lengths, ploidy=ploidy)
 
     if fullres_torm is not None and fullres_torm.sum() != 0:
-        bad_idx[fullres_idx == np.where(fullres_torm)[0]] = True
+        where_torm = np.where(fullres_torm)[0]
+        bad_idx[np.isin(fullres_idx, where_torm)] = True
 
     return (~bad_idx).sum(axis=0)
 
