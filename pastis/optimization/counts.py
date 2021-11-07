@@ -320,13 +320,18 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
 
     if excluded_counts is not None:
-        if isinstance(excluded_counts, float) or (isinstance(
-                excluded_counts, str) and re.match(r'[0-9]+', excluded_counts)):
+        if isinstance(excluded_counts, float):
+            if excluded_counts != int(excluded_counts):
+                raise ValueError("excluded_counts must be an integer.")
+            excluded_counts = int(excluded_counts)
+        if isinstance(excluded_counts, str) and re.match(
+                r'[0-9]+', excluded_counts):
             excluded_counts = int(excluded_counts)
         if isinstance(excluded_counts, int):
             counts_prepped = [_counts_near_diag(
                 c, lengths_counts=lengths, ploidy=ploidy, nbins=excluded_counts,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
+            # print(((counts_prepped[0] != 0) & ~np.isnan(counts_prepped[0])).astype(int)[:20, :20])
         elif excluded_counts.lower() == 'intra':
             counts_prepped = [_inter_counts(
                 c, lengths_counts=lengths, ploidy=ploidy,
@@ -351,21 +356,27 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         torm = np.tile(torm, len(mixture_coefs))
 
     if mods is not None and 'highatlow' in mods and multiscale_factor != 1:
-        diag_mod = [int(x.replace('diag', '')) for x in mods if re.match(
-            r'^diag[0-9]+$', x)]
-        if len(diag_mod) == 1:
-            excluded_counts = diag_mod[0]
+        if 'diag-auto' in mods:
+            excluded_counts = int(multiscale_factor - 1)
             print("Including full-res obj at low-res, with intra-chromosomal"
-                  f" counts that are within {excluded_counts} bins of diagonal",
-                  flush=True)
-        elif len(diag_mod) > 1:
-            raise ValueError("Impossible!")
-        elif 'intra' in mods:
-            excluded_counts = 'intra'
-            print("Including full-res obj at low-res, with intra-chromosomal"
-                  " counts", flush=True)
+                  " counts that are within (multiscale_factor - 1) = "
+                  f"{excluded_counts} bins of diagonal", flush=True)
         else:
-            print("Including full-res obj at low-res", flush=True)
+            diag_mod = [int(x.replace('diag', '')) for x in mods if re.match(
+                r'^diag[0-9]+$', x)]
+            if len(diag_mod) == 1:
+                excluded_counts = diag_mod[0]
+                print("Including full-res obj at low-res, with intra-"
+                      f" counts that are within {excluded_counts} bins of diagonal",
+                      flush=True)
+            elif len(diag_mod) > 1:
+                raise ValueError("Impossible!")
+            elif 'intra' in mods:
+                excluded_counts = 'intra'
+                print("Including full-res obj at low-res, with intra-chromosomal"
+                      " counts", flush=True)
+            else:
+                print("Including full-res obj at low-res", flush=True)
         counts_fullres, _, torm, _ = preprocess_counts(
             counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
             normalize=normalize, filter_threshold=filter_threshold,
@@ -555,7 +566,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
     """Format each counts matrix as a CountsMatrix subclass instance.
     """
 
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)  # TODO... remove?
     n = lengths.sum()
 
     # Check input
@@ -581,9 +592,9 @@ def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
                 beta_maps = np.nanmean(counts_maps)
             if ploidy == 2:
                 if counts_maps.shape == (n, n):
-                    beta_maps /= 4
+                    beta_maps /= 4  # Ambiguous
                 elif counts_maps.shape[0] != counts_maps.shape[1]:
-                    beta_maps /= 2
+                    beta_maps /= 2  # Partially ambiguous
             beta.append(beta_maps)
 
     if input_weight is not None:
@@ -1016,7 +1027,8 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         # Dummy counts should be "unambiguous" for diploid organisms.
         # All non-zero data in dummy counts is set to 1.
         dummy_counts = _create_unambig_dummy_counts(
-            counts=counts, lengths=lengths, ploidy=ploidy)
+            counts=counts, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor)
 
         self.ambiguity = 'ua'
         self.name = '%s0' % self.ambiguity
@@ -1036,9 +1048,10 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             else:
                 self.input_sum += counts_maps.sum()
 
+        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
         tmp = _group_counts_multiscale(
-            dummy_counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, dummy=True)
+            dummy_counts, lengths=lengths_lowres, ploidy=ploidy,
+            multiscale_factor=1, dummy=True)
         data_grouped, indices, indices3d, self.shape, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
         self.row, self.col = indices
