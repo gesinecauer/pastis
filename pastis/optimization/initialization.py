@@ -21,6 +21,8 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     random_state = check_random_state(random_state)
 
     ua_index = [i for i in range(len(counts)) if counts[i].name == 'ua']
+    ua_index = [i for i in ua_index if (
+        counts[i].multiscale_factor == multiscale_factor)]
     if len(ua_index) == 1:
         ua_index = ua_index[0]
     elif len(ua_index) != 0:
@@ -34,11 +36,16 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     ua_beta = ua_counts.beta
     if ua_beta is not None:
         ua_beta = ua_beta * multiscale_factor ** 2
-    ua_counts_arr = ua_counts.tocoo()
+    ua_counts_arr = ua_counts.tocoo().toarray()
     if bias is not None:
         bias_per_bin = np.tile(bias, ploidy)
     else:
         bias_per_bin = None
+
+    # print(type(ua_counts_arr))
+    # print(bias)
+    # print(type(bias), bias.dtype)
+    # print(np.nansum(ua_counts_arr.toarray()))
 
     struct = estimate_X(
         ua_counts_arr, alpha=-3. if alpha is None else alpha, beta=ua_beta,
@@ -72,6 +79,9 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
+
+    if init is None:
+        init = 'mds'
 
     if isinstance(init, np.ndarray) or isinstance(init, list):
         if verbose:
