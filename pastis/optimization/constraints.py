@@ -24,7 +24,7 @@ else:
 
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
-from .utils_poisson import find_beads_to_remove
+from .utils_poisson import find_beads_to_remove, _intra_counts_mask
 
 
 class Constraints(object):
@@ -151,6 +151,21 @@ class Constraints(object):
                 counts=counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor)
 
+        self.laplacian = None
+        self.rho = None
+        if self.lambdas["shn"]:
+            self.laplacian, self.affinity = _get_laplacian_matrix(
+                counts=counts, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, sigma=self.params["shn"])
+            nonzero_entries = total_entries = 0
+            for i in range(len(counts)):
+                if counts[i].sum() > 0:
+                    nonzero_entries += counts[i].nnz
+                total_entries += counts[i].nnz
+            nbeads = self.lengths_lowres.sum() * ploidy
+            self.rho = max(
+                (1 - nonzero_entries / total_entries) * np.sqrt(nbeads),
+                min(3, 0.2 * np.sqrt(nbeads)))
 
     def check(self, verbose=True):
         """Check constraints object.
@@ -165,7 +180,7 @@ class Constraints(object):
         """
 
         # Set defaults
-        lambda_defaults = {"bcc": 0., "hsc": 0., "mhs": 0.}
+        lambda_defaults = {"bcc": 0., "hsc": 0., "shn": 0., "mhs": 0.}
         lambda_all = lambda_defaults
         if self.lambdas is not None:
             for k, v in self.lambdas.items():
@@ -176,7 +191,7 @@ class Constraints(object):
                     lambda_all[k] = float(v) # np.float32(v) # FIXME revert
         self.lambdas = lambda_all
 
-        params_defaults = {"hsc": None, "mhs": None, 'bcc': 1}
+        params_defaults = {"hsc": None, "shn": None, 'bcc': 1, "mhs": None}
         params_all = params_defaults
         if self.params is not None:
             for k, v in self.params.items():
@@ -212,7 +227,7 @@ class Constraints(object):
         # Print constraints
         constraint_names = {"bcc": "bead chain connectivity",
                             "hsc": "homolog-separating",
-                            "mhs": "multiscale homolog-separating"}
+                            "shn": "ShNeigh"}
         lambda_to_print = {k: v for k, v in self.lambdas.items() if v != 0}
         if verbose and len(lambda_to_print) > 0:
             for constraint, lambda_val in lambda_to_print.items():
@@ -281,38 +296,49 @@ class Constraints(object):
 
         if self.lambdas["bcc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
-                neighbor_dis = ag_np.sqrt((ag_np.square(
+                nghbr_dis = ag_np.sqrt((ag_np.square(
                     struct[self.row_nghbr] - struct[self.col_nghbr])).sum(axis=1))
-                n_edges = neighbor_dis.shape[0]
-                obj_bcc = (
-                    n_edges * ag_np.square(neighbor_dis).sum() / ag_np.square(
-                        neighbor_dis.sum()) - 1.)
+                n_edges = nghbr_dis.shape[0]
+                nghbr_dis_var = n_edges * ag_np.square(
+                    nghbr_dis).sum() / ag_np.square(nghbr_dis.sum())
+                obj_bcc = nghbr_dis_var - 1.
                 obj_bcc = ag_np.power(obj_bcc, self.params["bcc"])
                 obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
-                homo_sep = self._homolog_separation(struct) # FIXME revert
+                homo_sep = self._homolog_separation(struct)
                 homo_sep_diff = self.params["hsc"] - homo_sep
                 # homo_sep_diff = 1 - homo_sep / self.params["hsc"]  # with scaleR
-                homo_sep_diff = relu(homo_sep_diff)
+
+                if 'hsc10' in self.mods or 'hsc20' in self.mods:
+                    if 'hsc20' in self.mods:
+                        hsc_cutoff = 0.2
+                    if 'hsc10' in self.mods:
+                        hsc_cutoff = 0.1
+                    hsc_r_hsc_cutoff = hsc_cutoff * self.params["hsc"]
+
+                    gt0 = homo_sep_diff > 0
+                    homo_sep_diff = homo_sep_diff.at[gt0].set(relu(
+                        homo_sep_diff[gt0] - hsc_r_hsc_cutoff))
+                    homo_sep_diff = homo_sep_diff.at[~gt0].set(-relu(
+                        -(homo_sep_diff[~gt0] + hsc_r_hsc_cutoff)))
+                elif 'HSCnoRELU'.lower() not in self.mods:
+                    homo_sep_diff = relu(homo_sep_diff)
+                    print("I thought we weren't doing RELU for HSC anymore"); exit(0)
+
+
                 homo_sep_diff_sq = ag_np.square(homo_sep_diff)
                 if 'sum_not_mean' in self.mods:
                     hsc = ag_np.sum(homo_sep_diff_sq)  # TODO fix on main branch: mean not sum!
                 else:
                     hsc = ag_np.mean(homo_sep_diff_sq)  # TODO fix on main branch: mean not sum!
                 obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
-        if self.lambdas["mhs"]:
-            if alpha is None:
-                raise ValueError("Must input alpha for multiscale-based homolog"
-                                 " separating constraint.")
-            lambda_intensity = ag_np.zeros(self.lengths_lowres.shape[0])
+        if self.lambdas["shn"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
-                homo_sep = self._homolog_separation(struct)
-                lambda_intensity = lambda_intensity + gamma * homo_sep
-            lambda_intensity = lambda_intensity / (self.params["mhs"] ** (1 / alpha))
-            poisson_mhs = lambda_intensity.sum() - \
-                ag_np.log(lambda_intensity).sum()
-            obj["mhs"] = self.lambdas["mhs"] * (poisson_mhs - self.subtracted)
+                tmp1 = ag_np.dot(struct.T, self.laplacian)
+                tmp2 = ag_np.dot(tmp1, struct)
+                shn = self.rho * 2 * ag_np.trace(tmp2)
+                obj["shn"] = obj["shn"] + gamma * self.lambdas["shn"] * shn
 
         # Check constraints objective
         for k, v in obj.items():
@@ -371,6 +397,51 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
     col_nghbr = col_nghbr[same_bin]
 
     return row_nghbr, col_nghbr
+
+
+def _get_laplacian_matrix(counts, lengths, ploidy, multiscale_factor,
+                          sigma=None):
+    """TODO"""
+
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    nbeads = lengths_lowres.sum() * ploidy
+
+    if sigma is None:
+        sigma = 0.023 * nbeads
+        sigma /= 10
+
+    torm = find_beads_to_remove(
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor)
+
+    included_idx = np.where(~torm)[0]
+    affinity_matrix = np.zeros((nbeads, nbeads))
+    affinity_matrix[included_idx, :] += included_idx
+    affinity_matrix[:, included_idx] -= included_idx.reshape(-1, 1)
+    # print(np.abs(affinity_matrix[:10, :10]).astype(int))
+    affinity_matrix = -np.square(affinity_matrix) / (2 * np.square(sigma))
+    affinity_matrix = np.exp(affinity_matrix)
+
+    # np.set_printoptions(threshold=np.inf); start = 30; end = 50
+    # print((affinity_matrix != 0).astype(int)[start:end, start:end])
+    affinity_matrix = sparse.coo_matrix(affinity_matrix)
+    mask = _intra_counts_mask(affinity_matrix, lengths_counts=lengths_lowres)
+
+    # nbins = 10
+    # mask_near_diag = np.abs(affinity_matrix.row - affinity_matrix.col) <= nbins
+    # mask = mask & mask_near_diag
+
+    affinity_matrix = sparse.coo_matrix(
+        (affinity_matrix.data[mask], (affinity_matrix.row[mask],
+            affinity_matrix.col[mask])), shape=affinity_matrix.shape).toarray()
+    # print((affinity_matrix != 0).astype(int)[start:end, start:end]); exit(0)
+
+    diagonal_matrix = np.zeros((nbeads, nbeads))
+    np.fill_diagonal(diagonal_matrix, affinity_matrix.sum(axis=1))
+
+    laplacian_matrix = diagonal_matrix - affinity_matrix
+
+    return laplacian_matrix, affinity_matrix
 
 
 def _inter_homolog_dis(struct, lengths):
