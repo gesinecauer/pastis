@@ -7,6 +7,12 @@ import pandas as pd
 from scipy import sparse
 from distutils.util import strtobool
 
+from absl import logging as absl_logging
+absl_logging.set_verbosity('error')
+from jax.config import config as jax_config
+jax_config.update("jax_platform_name", "cpu")
+jax_config.update("jax_enable_x64", True)
+
 from typing import Any as Array
 import jax.numpy as jnp
 from jax import custom_jvp
@@ -46,12 +52,16 @@ def _load_infer_var(infer_var_file):
         infer_var_file, sep='\t', header=None, squeeze=True,
         index_col=0, dtype=str))
     infer_var['beta'] = [float(b) for b in infer_var['beta'].split()]
+    if 'seed' in infer_var:
+        infer_var['seed'] = int(float(infer_var['seed']))
     if 'hsc_r' in infer_var:
         infer_var['hsc_r'] = np.array([float(
             r) for r in infer_var['hsc_r'].split()])
     if 'mhs_k' in infer_var:
         infer_var['mhs_k'] = np.array([float(
             r) for r in infer_var['mhs_k'].split()])
+    if 'shn_sigma' in infer_var:
+        infer_var['shn_sigma'] = float(infer_var['shn_sigma'])
     if 'orient' in infer_var:
         infer_var['orient'] = np.array([float(
             r) for r in infer_var['orient'].split()])
@@ -104,7 +114,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
     from .poisson import _format_X
 
     if isinstance(structures, list):
-        if not all([isinstance(struct, np.ndarray) for struct in structures]):
+        if not all([isinstance(struct, jnp.ndarray) for struct in structures]):
             raise ValueError("Individual structures must use numpy.ndarray"
                              "format.")
         try:
@@ -112,7 +122,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
         except ValueError:
             raise ValueError("Structures should be composed of 3D coordinates")
     else:
-        if not isinstance(structures, np.ndarray):
+        if not isinstance(structures, jnp.ndarray):
             raise ValueError("Structures must be numpy.ndarray or list of"
                              "numpy.ndarrays.")
         try:
