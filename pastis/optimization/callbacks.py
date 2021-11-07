@@ -351,6 +351,10 @@ class Callback(object):
             self.time = current_time[
                 0] + str(float('0.' + current_time[1])).lstrip('0')
         self.obj = obj_logs
+        if self.obj is not None:
+            for k, v in self.obj.items():
+                if type(v).__name__ == 'DeviceArray':
+                    self.obj[k] = v._value
 
         self.X = Xi
         if self.opt_type != 'alpha' or self.iter == 0:
