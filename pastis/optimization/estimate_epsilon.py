@@ -20,7 +20,7 @@ from .poisson import objective
 def objective_epsilon(X, counts, alpha, lengths, ploidy, structures=None,
                       epsilon=None, bias=None, constraints=None, reorienter=None,
                       multiscale_factor=1, mixture_coefs=None,
-                      return_extras=False, obj_type=None):
+                      return_extras=False, mods=[]):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -70,14 +70,14 @@ def objective_epsilon(X, counts, alpha, lengths, ploidy, structures=None,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_variances=None,
         multiscale_reform=True, mixture_coefs=mixture_coefs,
-        return_extras=return_extras, epsilon=my_epsilon, obj_type=obj_type)
+        return_extras=return_extras, epsilon=my_epsilon, mods=mods)
 
 
 def objective_wrapper_epsilon(X, counts, alpha, lengths, ploidy,
                               structures=None, epsilon=None, bias=None,
                               constraints=None, reorienter=None,
                               multiscale_factor=1, mixture_coefs=None,
-                              callback=None, obj_type=None):
+                              callback=None, mods=[]):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
@@ -91,7 +91,7 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, ploidy,
         bias=bias, structures=structures, epsilon=epsilon,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
-        mixture_coefs=mixture_coefs, return_extras=True, obj_type=obj_type)
+        mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
 
     if callback is not None:
         if epsilon is None:
@@ -111,7 +111,7 @@ gradient_epsilon = grad(objective_epsilon)
 def fprime_wrapper_epsilon(X, counts, alpha, lengths, ploidy, structures=None,
                            epsilon=None, bias=None, constraints=None,
                            reorienter=None, multiscale_factor=1,
-                           mixture_coefs=None, callback=None, obj_type=None):
+                           mixture_coefs=None, callback=None, mods=[]):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
@@ -129,7 +129,7 @@ def fprime_wrapper_epsilon(X, counts, alpha, lengths, ploidy, structures=None,
             bias=bias, structures=structures, epsilon=epsilon,
             constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs, obj_type=obj_type)).flatten()
+            mixture_coefs=mixture_coefs, mods=mods)).flatten()
     if epsilon is None and new_grad[-1] == 0:
         print(f"* * * * EPSILON GRADIENT IS 0 * * * *")
 
@@ -143,7 +143,7 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
                      factr=10000000., pgtol=1e-05, callback=None,
                      alpha_loop=None, epsilon_loop=None,
                      reorienter=None, mixture_coefs=None, verbose=True,
-                     obj_type=None):
+                     mods=[]):
     """Estimates a 3D structure, given current alpha.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -237,7 +237,7 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
             structures=structures, epsilon=epsilon,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
-            mixture_coefs=mixture_coefs, callback=callback, obj_type=obj_type)
+            mixture_coefs=mixture_coefs, callback=callback, mods=mods)
     else:
         obj = np.nan
 
@@ -265,7 +265,7 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, structures, epsilon, bias,
                   constraints, reorienter, multiscale_factor, mixture_coefs,
-                  callback, obj_type))
+                  callback, mods))
         X, obj, d = results
         converged = d['warnflag'] == 0
         # TODO add conv_desc to main branch
