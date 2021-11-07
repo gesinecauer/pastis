@@ -67,24 +67,34 @@ def test_hsc_constraint(multiscale_factor):
         coord = random_state.choice([0, 1, 2])
         struct_true[i:, coord] += random_state.choice([1, -1])
 
-    struct_true[n:] -= struct_true[n:].mean(axis=0)
-    struct_true[:n] -= struct_true[:n].mean(axis=0)
+    # Fill nan_indices of structure with nan
+    if nan_indices is not None:
+        struct_true[nan_indices] = np.nan
+
+    # Separate homologs
     begin = end = 0
     for i in range(len(lengths)):
         end += lengths[i]
+        struct_true[begin:end] -= np.nanmean(struct_true[begin:end], axis=0)
+        struct_true[(n + begin):(n + end)] -= np.nanmean(
+            struct_true[(n + begin):(n + end)], axis=0)
         struct_true[begin:end, 0] += true_interhmlg_dis[i]
         begin = end
 
+    # Fill nan_indices of structure with junk
+    if nan_indices is not None:
+        struct_true[nan_indices] = np.array([[100, 1000, 10000]]) * np.flip(
+            nan_indices + 1).reshape(-1, 1)
+
+    # Make counts
     dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
     counts_raw = beta * dis ** alpha
     counts_raw[np.isnan(counts_raw) | np.isinf(counts_raw)] = 0
     counts_raw = np.triu(counts_raw, 1)
 
-    # Fill nan_indices with junk
+    # Zero out nan_indices of counts
     if nan_indices is not None:
-        struct_true[nan_indices] = np.array([[100, 1000, 10000]]) * np.flip(
-            nan_indices + 1).reshape(-1, 1)
         counts_raw[nan_indices, :] = 0
         counts_raw[:, nan_indices] = 0
     counts_raw = sparse.coo_matrix(counts_raw)
@@ -97,6 +107,8 @@ def test_hsc_constraint(multiscale_factor):
     struct_true_lowres = decrease_struct_res(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy, fullres_torm=fullres_torm)
+    struct_true_lowres = np.where(
+        np.isnan(struct_true_lowres), 0, struct_true_lowres)
 
     constraint = constraints.Constraints(
         counts, lengths=lengths, ploidy=ploidy,
@@ -104,5 +116,11 @@ def test_hsc_constraint(multiscale_factor):
         constraint_params={'hsc': true_interhmlg_dis},
         fullres_torm=fullres_torm, verbose=False)
     constraint.check()
+
+    print(np.isnan(struct_true_lowres).sum())
+
+    actual_interhmlg_dis = constraint._homolog_separation(struct_true_lowres)
+    assert_allclose(true_interhmlg_dis, actual_interhmlg_dis)
+
     obj = constraint.apply(struct_true_lowres)['obj_hsc']
     assert obj < 1e-6
