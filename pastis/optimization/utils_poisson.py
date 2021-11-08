@@ -60,8 +60,6 @@ def _load_infer_var(infer_var_file):
     if 'mhs_k' in infer_var:
         infer_var['mhs_k'] = np.array([float(
             r) for r in infer_var['mhs_k'].split()])
-    if 'shn_sigma' in infer_var:
-        infer_var['shn_sigma'] = float(infer_var['shn_sigma'])
     if 'orient' in infer_var:
         infer_var['orient'] = np.array([float(
             r) for r in infer_var['orient'].split()])

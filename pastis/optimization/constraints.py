@@ -99,10 +99,9 @@ class Constraints(object):
         if constraint_params is None:
             self.params = {}
         elif isinstance(constraint_params, dict):
-            for hsc in ("hsc", "mhs"):
-                if hsc in constraint_params and constraint_params[hsc] is not None:
-                    constraint_params[hsc] = np.array(
-                        constraint_params[hsc]).flatten().astype(float)
+            if "hsc" in constraint_params and constraint_params["hsc"] is not None:
+                constraint_params["hsc"] = np.array(
+                    constraint_params["hsc"]).flatten().astype(float)
             self.params = constraint_params
         else:
             raise ValueError("Constraint params must be inputted as dict.")
@@ -116,7 +115,7 @@ class Constraints(object):
         self.check(verbose=verbose)
 
         self.bead_weights = None
-        if self.lambdas["hsc"] or self.lambdas["mhs"]:
+        if self.lambdas["hsc"]:
             if multiscale_factor != 1:
                 fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                     multiscale_factor=multiscale_factor, lengths=lengths,
@@ -139,33 +138,11 @@ class Constraints(object):
                 begin = end
             self.bead_weights = bead_weights.reshape(-1, 1)
 
-        self.subtracted = None
-        if self.lambdas["mhs"]:
-            lambda_intensity = np.ones((self.lengths.shape[0],))
-            self.subtracted = (lambda_intensity.sum() - (
-                1 * np.log(lambda_intensity)).sum())
-
         self.row_nghbr = self.col_nghbr = None
-        if self.lambdas["bcc"]:
+        if self.lambdas["bcc"] or self.lambdas["ndc"]:
             self.row_nghbr, self.col_nghbr = _neighboring_bead_indices(
                 counts=counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor)
-
-        self.laplacian = None
-        self.rho = None
-        if self.lambdas["shn"]:
-            self.laplacian, self.affinity = _get_laplacian_matrix(
-                counts=counts, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor, sigma=self.params["shn"])
-            nonzero_entries = total_entries = 0
-            for i in range(len(counts)):
-                if counts[i].sum() > 0:
-                    nonzero_entries += counts[i].nnz
-                total_entries += counts[i].nnz
-            nbeads = self.lengths_lowres.sum() * ploidy
-            self.rho = max(
-                (1 - nonzero_entries / total_entries) * np.sqrt(nbeads),
-                min(3, 0.2 * np.sqrt(nbeads)))
 
     def check(self, verbose=True):
         """Check constraints object.
@@ -180,7 +157,7 @@ class Constraints(object):
         """
 
         # Set defaults
-        lambda_defaults = {"bcc": 0., "hsc": 0., "shn": 0., "mhs": 0.}
+        lambda_defaults = {"bcc": 0., "hsc": 0., "ndc": 0.}
         lambda_all = lambda_defaults
         if self.lambdas is not None:
             for k, v in self.lambdas.items():
@@ -191,7 +168,7 @@ class Constraints(object):
                     lambda_all[k] = float(v) # np.float32(v) # FIXME revert
         self.lambdas = lambda_all
 
-        params_defaults = {"hsc": None, "shn": None, 'bcc': 1, "mhs": None}
+        params_defaults = {"hsc": None, "ndc": None, 'bcc': 1, }
         params_all = params_defaults
         if self.params is not None:
             for k, v in self.params.items():
@@ -220,14 +197,14 @@ class Constraints(object):
                 raise ValueError("Constraint for %s is supplied, but lambda is"
                                  " 0" % k)
 
-        if (self.lambdas["hsc"] or self.lambdas["mhs"]) and self.ploidy == 1:
+        if self.lambdas["hsc"] and self.ploidy == 1:
             raise ValueError("Homolog-separating constraint can not be"
                              " applied to haploid genome.")
 
         # Print constraints
         constraint_names = {"bcc": "bead chain connectivity",
                             "hsc": "homolog-separating",
-                            "shn": "ShNeigh"}
+                            "ndc": "neighbor distance"}
         lambda_to_print = {k: v for k, v in self.lambdas.items() if v != 0}
         if verbose and len(lambda_to_print) > 0:
             for constraint, lambda_val in lambda_to_print.items():
@@ -235,7 +212,7 @@ class Constraints(object):
                     constraint_names[constraint], lambda_val), flush=True)
                 if constraint not in self.params:
                     continue
-                if constraint in ("hsc", "mhs"):
+                if constraint == "hsc":
                     if self.params[constraint] is None:
                         print("            param = inferred", flush=True)
                     elif isinstance(self.params[constraint], np.ndarray):
@@ -304,6 +281,12 @@ class Constraints(object):
                 obj_bcc = nghbr_dis_var - 1.
                 obj_bcc = ag_np.power(obj_bcc, self.params["bcc"])
                 obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
+        if self.lambdas["ndc"] and not inferring_alpha:
+            for struct, gamma in zip(structures, mixture_coefs):
+                nghbr_dis = ag_np.sqrt((ag_np.square(
+                    struct[self.row_nghbr] - struct[self.col_nghbr])).sum(axis=1))
+                obj_ndc = _get_nghbr_dis_constraint(nghbr_dis)
+                obj['ndc'] = obj['ndc'] + gamma * self.lambdas['ndc'] * obj_ndc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
                 homo_sep = self._homolog_separation(struct)
@@ -333,12 +316,6 @@ class Constraints(object):
                 else:
                     hsc = ag_np.mean(homo_sep_diff_sq)  # TODO fix on main branch: mean not sum!
                 obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
-        if self.lambdas["shn"] and not inferring_alpha:
-            for struct, gamma in zip(structures, mixture_coefs):
-                tmp1 = ag_np.dot(struct.T, self.laplacian)
-                tmp2 = ag_np.dot(tmp1, struct)
-                shn = self.rho * 2 * ag_np.trace(tmp2)
-                obj["shn"] = obj["shn"] + gamma * self.lambdas["shn"] * shn
 
         # Check constraints objective
         for k, v in obj.items():
@@ -365,6 +342,16 @@ class Constraints(object):
             begin = end
 
         return homo_sep
+
+
+def _get_nghbr_dis_constraint(nghbr_dis):
+    nghbr_dis_scaled = nghbr_dis / ag_np.median(nghbr_dis)
+
+    nghbr_dis_var = ag_np.var(nghbr_dis_scaled)
+    nghbr_dis_mad = ag_np.median(ag_np.absolute(
+        nghbr_dis_scaled - ag_np.median(nghbr_dis_scaled)))
+
+    return relu(nghbr_dis_var - nghbr_dis_mad)
 
 
 def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
@@ -397,51 +384,6 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
     col_nghbr = col_nghbr[same_bin]
 
     return row_nghbr, col_nghbr
-
-
-def _get_laplacian_matrix(counts, lengths, ploidy, multiscale_factor,
-                          sigma=None):
-    """TODO"""
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    nbeads = lengths_lowres.sum() * ploidy
-
-    if sigma is None:
-        sigma = 0.023 * nbeads
-        sigma /= 10
-
-    torm = find_beads_to_remove(
-        counts, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor)
-
-    included_idx = np.where(~torm)[0]
-    affinity_matrix = np.zeros((nbeads, nbeads))
-    affinity_matrix[included_idx, :] += included_idx
-    affinity_matrix[:, included_idx] -= included_idx.reshape(-1, 1)
-    # print(np.abs(affinity_matrix[:10, :10]).astype(int))
-    affinity_matrix = -np.square(affinity_matrix) / (2 * np.square(sigma))
-    affinity_matrix = np.exp(affinity_matrix)
-
-    # np.set_printoptions(threshold=np.inf); start = 30; end = 50
-    # print((affinity_matrix != 0).astype(int)[start:end, start:end])
-    affinity_matrix = sparse.coo_matrix(affinity_matrix)
-    mask = _intra_counts_mask(affinity_matrix, lengths_counts=lengths_lowres)
-
-    # nbins = 10
-    # mask_near_diag = np.abs(affinity_matrix.row - affinity_matrix.col) <= nbins
-    # mask = mask & mask_near_diag
-
-    affinity_matrix = sparse.coo_matrix(
-        (affinity_matrix.data[mask], (affinity_matrix.row[mask],
-            affinity_matrix.col[mask])), shape=affinity_matrix.shape).toarray()
-    # print((affinity_matrix != 0).astype(int)[start:end, start:end]); exit(0)
-
-    diagonal_matrix = np.zeros((nbeads, nbeads))
-    np.fill_diagonal(diagonal_matrix, affinity_matrix.sum(axis=1))
-
-    laplacian_matrix = diagonal_matrix - affinity_matrix
-
-    return laplacian_matrix, affinity_matrix
 
 
 def _inter_homolog_dis(struct, lengths):

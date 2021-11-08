@@ -204,7 +204,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     final_multiscale_round=False, init='mds', max_iter=30000,
                     factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                     bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
-                    shn_lambda=0., shn_sigma=None, excluded_counts=None,
+                    ndc_lambda=0., excluded_counts=None,
                     struct_draft_fullres=None, draft=False, simple_diploid=False,
                     callback_freq=None, callback_fxns=None, reorienter=None,
                     multiscale_reform=False, init_std_dev=None,
@@ -352,9 +352,9 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             counts=counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
             constraint_lambdas={
-                'bcc': bcc_lambda, 'hsc': hsc_lambda, 'shn': shn_lambda},
+                'bcc': bcc_lambda, 'hsc': hsc_lambda, 'ndc': ndc_lambda},
             constraint_params={
-                'bcc': bcc_power, 'hsc': hsc_r, 'shn': shn_sigma},
+                'bcc': bcc_power, 'hsc': hsc_r},
             fullres_torm=fullres_torm, verbose=verbose, mods=mods)
 
         # SETUP CALLBACKS
@@ -396,7 +396,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           final_multiscale_round=False, init='mds', max_iter=30000,
           factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
           bcc_lambda=0., hsc_lambda=0., bcc_power=1, hsc_r=None, hsc_min_beads=5,
-          shn_lambda=0., shn_sigma=None, excluded_counts=None,
+          ndc_lambda=0., excluded_counts=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_fxns=None, reorienter=None,
           multiscale_reform=False, epsilon_min=1e-6, epsilon_max=1e6,
@@ -475,14 +475,9 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     hsc_min_beads : int, optional
         For diploid organisms: number of beads in the low-resolution
         structure from which `hsc_r` is estimated.
-    shn_lambda : float, optional
+    ndc_lambda : float, optional
         For diploid organisms: lambda of the multiscale-based homolog-
         separating constraint.
-    shn_sigma : list of float, optional
-        For diploid organisms: hyperparameter of the multiscale-based
-        homolog-separating constraint specificying the expected mean inter-
-        homolog count for each chromosome, scaled by beta and biases. If
-        not supplied, `shn_sigma` will be estimated from the counts data.
     excluded_counts : {"inter", "intra"}, optional
         Whether to exclude inter- or intra-chromosomal counts from optimization.
     struct_draft_fullres : np.ndarray, optional
@@ -545,7 +540,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         final_multiscale_round=final_multiscale_round, init=init,
         max_iter=max_iter, factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_power=bcc_power, hsc_r=hsc_r,
-        hsc_min_beads=hsc_min_beads, shn_lambda=shn_lambda, shn_sigma=shn_sigma,
+        hsc_min_beads=hsc_min_beads, ndc_lambda=ndc_lambda,
         excluded_counts=excluded_counts,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
         simple_diploid=simple_diploid, callback_freq=callback_freq,
@@ -599,8 +594,6 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                      'multiscale_variances': multiscale_variances}
         if hsc_lambda > 0:
             infer_var['hsc_r'] = hsc_r
-        if shn_lambda > 0:
-            infer_var['shn_sigma'] = shn_sigma
         if reorienter is not None and reorienter.reorient:
             infer_var['orient'] = pm.orientation_.flatten()
 
@@ -657,7 +650,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
                 hsc_lambda=hsc_lambda, bcc_power=bcc_power,
                 hsc_r=hsc_r, hsc_min_beads=hsc_min_beads,
-                shn_lambda=shn_lambda, shn_sigma=shn_sigma,
+                ndc_lambda=ndc_lambda,
                 struct_draft_fullres=struct_draft_fullres,
                 callback_fxns=callback_fxns,
                 callback_freq=callback_freq, reorienter=reorienter,
@@ -699,7 +692,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    beta=None, multiscale_rounds=1, use_multiscale_variance=True,
                    max_iter=30000, factr=10000000., pgtol=1e-05,
                    alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,
-                   bcc_power=1, hsc_r=None, hsc_min_beads=5, shn_lambda=0., shn_sigma=None,
+                   bcc_power=1, hsc_r=None, hsc_min_beads=5, ndc_lambda=0.,
                    struct_draft_fullres=None,
                    callback_fxns=None, print_freq=100, history_freq=100,
                    save_freq=None, piecewise=False, piecewise_step=None,
@@ -778,14 +771,9 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
     hsc_min_beads : int, optional
         For diploid organisms: number of beads in the low-resolution
         structure from which `hsc_r` is estimated.
-    shn_lambda : float, optional
+    ndc_lambda : float, optional
         For diploid organisms: lambda of the multiscale-based homolog-
         separating constraint.
-    shn_sigma : list of float, optional
-        For diploid organisms: hyperparameter of the multiscale-based
-        homolog-separating constraint specificying the expected mean inter-
-        homolog count for each chromosome, scaled by beta and biases. If
-        not supplied, `shn_sigma` will be estimated from the counts data.
 
     Returns
     -------
@@ -838,7 +826,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, bcc_power=bcc_power, hsc_r=hsc_r,
-            hsc_min_beads=hsc_min_beads, shn_lambda=shn_lambda, shn_sigma=shn_sigma,
+            hsc_min_beads=hsc_min_beads, ndc_lambda=ndc_lambda,
             struct_draft_fullres=struct_draft_fullres,
             callback_fxns=callback_fxns, callback_freq=callback_freq,
             multiscale_reform=multiscale_reform,
@@ -858,7 +846,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             use_multiscale_variance=use_multiscale_variance, max_iter=max_iter,
             factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
             bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_power=bcc_power,
-            hsc_r=hsc_r, shn_lambda=shn_lambda, shn_sigma=shn_sigma,
+            hsc_r=hsc_r, ndc_lambda=ndc_lambda,
             struct_draft_fullres=struct_draft_fullres,
             hsc_min_beads=hsc_min_beads, callback_fxns=callback_fxns,
             callback_freq=callback_freq,
