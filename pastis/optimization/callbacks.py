@@ -233,8 +233,8 @@ class Callback(object):
                 info_dict['epsilon= '] = f"{self.epsilon:.3g}"
             print('\t\t'.join(['%s%s' % (k, v)
                                for k, v in info_dict.items()]), flush=True)
-            if self.iter == 10:
-                print('. . .', flush=True)
+            # if self.iter == 10 and self.frequency['print'] > 1:
+            #     print('. . .', flush=True)  # TODO
             print('', flush=True)
 
     def _save_X(self):
