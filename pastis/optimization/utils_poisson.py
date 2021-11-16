@@ -112,7 +112,8 @@ def _format_structures(structures, lengths=None, ploidy=None,
     from .poisson import _format_X
 
     if isinstance(structures, list):
-        if not all([isinstance(struct, jnp.ndarray) for struct in structures]):
+        if not all([isinstance(
+                struct, (np.ndarray, jnp.ndarray)) for struct in structures]):
             raise ValueError("Individual structures must use numpy.ndarray"
                              "format.")
         try:
@@ -120,7 +121,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
         except ValueError:
             raise ValueError("Structures should be composed of 3D coordinates")
     else:
-        if not isinstance(structures, jnp.ndarray):
+        if not isinstance(structures, (np.ndarray, jnp.ndarray)):
             raise ValueError("Structures must be numpy.ndarray or list of"
                              "numpy.ndarrays.")
         try:
