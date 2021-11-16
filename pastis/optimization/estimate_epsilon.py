@@ -269,7 +269,9 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
         X, obj, d = results
         converged = d['warnflag'] == 0
         # TODO add conv_desc to main branch
-        conv_desc = d['task'].decode('utf8')
+        conv_desc = d['task']
+        if isinstance(conv_desc, bytes):
+            conv_desc = conv_desc.decode('utf8')
 
     history = None
     if callback is not None:
