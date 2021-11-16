@@ -737,6 +737,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             x0=x0,
             fprime=fprime_wrapper,
             iprint=0,
+            # iprint=1; maxls=50,
             maxiter=max_iter,
             maxfun=max_fun,
             pgtol=pgtol,
@@ -748,7 +749,9 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         X, obj, d = results
         converged = d['warnflag'] == 0
         # TODO add conv_desc to main branch
-        conv_desc = d['task'].decode('utf8')
+        conv_desc = d['task']
+        if isinstance(conv_desc, bytes):
+            conv_desc = conv_desc.decode('utf8')
 
     history = None
     if callback is not None:
