@@ -285,7 +285,7 @@ class Constraints(object):
             for struct, gamma in zip(structures, mixture_coefs):
                 nghbr_dis = ag_np.sqrt((ag_np.square(
                     struct[self.row_nghbr] - struct[self.col_nghbr])).sum(axis=1))
-                obj_ndc = _get_nghbr_dis_constraint(nghbr_dis)
+                obj_ndc = _get_nghbr_dis_constraint(nghbr_dis, mods=self.mods)
                 obj['ndc'] = obj['ndc'] + gamma * self.lambdas['ndc'] * obj_ndc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
@@ -307,7 +307,7 @@ class Constraints(object):
                         -(homo_sep_diff[~gt0] + hsc_r_hsc_cutoff)))
                 elif 'HSCnoRELU'.lower() not in self.mods:
                     homo_sep_diff = relu(homo_sep_diff)
-                    print("I thought we weren't doing RELU for HSC anymore"); exit(0)
+                    raise ValueError("I thought we weren't doing RELU for HSC anymore")
 
 
                 homo_sep_diff_sq = ag_np.square(homo_sep_diff)
@@ -344,14 +344,39 @@ class Constraints(object):
         return homo_sep
 
 
-def _get_nghbr_dis_constraint(nghbr_dis):
-    nghbr_dis_scaled = nghbr_dis / ag_np.median(nghbr_dis)
+from jax import grad
+relu_grad = grad(relu)
 
-    nghbr_dis_var = ag_np.var(nghbr_dis_scaled)
-    nghbr_dis_mad = ag_np.median(ag_np.absolute(
-        nghbr_dis_scaled - ag_np.median(nghbr_dis_scaled)))
+def _get_nghbr_dis_constraint(nghbr_dis, mods=['kurt']):
+    # nghbr_dis_scaled = nghbr_dis / ag_np.median(nghbr_dis)
+    nghbr_dis_scaled = nghbr_dis / ag_np.mean(nghbr_dis)
 
-    return relu(nghbr_dis_var - nghbr_dis_mad)
+    if 'kurt' in mods or 'skew' in mods:
+        if 'kurt' in mods and 'skew' in mods:
+            raise ValueError("Can't do kurt + skew")
+        z = (nghbr_dis_scaled - ag_np.mean(nghbr_dis_scaled)) / ag_np.std(
+            nghbr_dis_scaled)
+        if 'kurt' in mods:
+            obj_ndc = ag_np.mean(ag_np.power(z, 4)) - 3
+            # if type(obj_ndc).__name__ == 'DeviceArray':
+            #     print(f'kurt\t{(obj_ndc + 3):.3f}\t{ag_np.square(obj_ndc):.3f}')
+            # obj_ndc = relu(obj_ndc)
+            obj_ndc = ag_np.square(obj_ndc)
+        elif 'skew' in mods:
+            obj_ndc = ag_np.mean(ag_np.power(z, 3))
+    elif 'norm' in mods:
+        raise NotImplementedError
+    else:
+        nghbr_dis_var = ag_np.var(nghbr_dis_scaled)
+        nghbr_dis_mad_sq = ag_np.square(ag_np.median(ag_np.absolute(
+            nghbr_dis_scaled - ag_np.median(nghbr_dis_scaled))))
+        obj_ndc = nghbr_dis_var - nghbr_dis_mad_sq
+        obj_ndc = relu(obj_ndc)
+
+        # if type(obj_ndc).__name__ == 'DeviceArray':
+        #     print(f"std: {nghbr_dis_std:.6f},\tvar:{ag_np.square(nghbr_dis_std):.6f},\tmad:{nghbr_dis_mad:6f}", flush=True)
+
+    return obj_ndc
 
 
 def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
