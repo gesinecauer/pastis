@@ -376,7 +376,9 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     alpha, obj, d = results
     converged = d['warnflag'] == 0
     # TODO add conv_desc to main branch
-    conv_desc = d['task'].decode('utf8')
+    conv_desc = d['task']
+    if isinstance(conv_desc, bytes):
+        conv_desc = conv_desc.decode('utf8')
 
     if verbose:
         print(f'INIT ALPHA: {alpha_init:.3g},  FINAL ALPHA: {float(alpha):.3g}',
