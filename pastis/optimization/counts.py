@@ -40,34 +40,60 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
     if not isinstance(counts, list):
         counts = [counts]
 
-    if len(counts) == 1 and counts[0].shape == (n, n):
+    if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
         return _check_counts_matrix(
             counts[0], lengths=lengths, ploidy=ploidy,
             exclude_zeros=exclude_zeros)
 
     output = np.zeros((n, n))
     for c in counts:
-        if not isinstance(c, ZeroCountsMatrix):
-            if not isinstance(c, np.ndarray):
-                c = c.toarray()
-            c = _check_counts_matrix(
-                c, lengths=lengths, ploidy=ploidy, exclude_zeros=True).toarray()
-            if c.shape[0] > c.shape[1]:
-                c_ambig = np.nansum(
-                    [c[:n, :], c[n:, :], c[:n, :].T, c[n:, :].T], axis=0)
-            elif c.shape[0] < c.shape[1]:
-                c_ambig = np.nansum(
-                    [c[:, :n].T, c[:, n:].T, c[:, :n], c[:, n:]], axis=0)
-            elif c.shape[0] == n:
-                c_ambig = c
-            else:
-                c_ambig = np.nansum(
-                    [c[:n, :n], c[:n, n:], c[:n, n:].T, c[n:, n:]], axis=0)
-            output[~np.isnan(c_ambig)] += c_ambig[~np.isnan(c_ambig)]
+        if isinstance(c, ZeroCountsMatrix):
+            continue
+        if not isinstance(c, np.ndarray):
+            c = c.toarray()
+        c = _check_counts_matrix(
+            c, lengths=lengths, ploidy=ploidy, exclude_zeros=True).toarray()
+        if c.shape[0] > c.shape[1]:
+            c_ambig = np.nansum(
+                [c[:n, :], c[n:, :], c[:n, :].T, c[n:, :].T], axis=0)
+        elif c.shape[0] < c.shape[1]:
+            c_ambig = np.nansum(
+                [c[:, :n].T, c[:, n:].T, c[:, :n], c[:, n:]], axis=0)
+        elif c.shape[0] == n:
+            c_ambig = c
+        else:
+            c_ambig = np.nansum(
+                [c[:n, :n], c[:n, n:], c[:n, n:].T, c[n:, n:]], axis=0)
+        output[~np.isnan(c_ambig)] += c_ambig[~np.isnan(c_ambig)]
 
     output = np.triu(output, 1)
     return _check_counts_matrix(
         output, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
+
+
+def _ambiguate_beta(beta, counts, lengths, ploidy):
+    """Sum betas to be consistent with ambiguated counts
+    """
+
+    if beta is None or ploidy == 1:
+        return beta
+
+    if not isinstance(counts, list):
+        counts = [counts]
+    counts = [c for c in counts if (
+        isinstance(c, np.ndarray) and np.nansum(c) != 0) or c.sum() != 0]
+    if len(counts) != len(beta):
+        raise ValueError(
+            "Inconsistent number of betas (%d) and counts matrices (%d)"
+            % (len(beta), len(counts)))
+
+    summed_beta = 0.
+    for i in range(len(beta)):
+        if counts[i].shape[0] == counts[i].shape[1]:
+            summed_beta += beta[i]
+        else:
+            summed_beta += beta[i] * 2
+    return summed_beta
 
 
 def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
