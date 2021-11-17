@@ -22,9 +22,10 @@ else:
     import autograd.numpy as ag_np
     from autograd.builtins import SequenceBox
 
-from .multiscale_optimization import decrease_lengths_res
+from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .utils_poisson import find_beads_to_remove, _intra_counts_mask
+from .counts import ambiguate_counts, _ambiguate_beta
 
 
 class Constraints(object):
@@ -143,6 +144,14 @@ class Constraints(object):
             self.row_nghbr, self.col_nghbr = _neighboring_bead_indices(
                 counts=counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor)
+
+        self.ndc_mu = self.ndc_beta = None  # FIXME ndc_beta needs to be reset with alpha infer
+        if self.lambdas["ndc"]:
+            self.ndc_mu, self.ndc_sigmamax, self.ndc_beta = _prep_nghbr_dis_constraint(
+                counts=counts, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, bias=None,  # FIXME add bias
+                fullres_torm=fullres_torm)
+            print(f"\n\n*** NDC:  μ={self.ndc_mu} σ={self.ndc_sigmamax} beta={self.ndc_beta} ***\n\n")
 
     def check(self, verbose=True):
         """Check constraints object.
@@ -281,11 +290,13 @@ class Constraints(object):
                 obj_bcc = nghbr_dis_var - 1.
                 obj_bcc = ag_np.power(obj_bcc, self.params["bcc"])
                 obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
-        if self.lambdas["ndc"] and not inferring_alpha:
+        if self.lambdas["ndc"]:
             for struct, gamma in zip(structures, mixture_coefs):
                 nghbr_dis = ag_np.sqrt((ag_np.square(
                     struct[self.row_nghbr] - struct[self.col_nghbr])).sum(axis=1))
-                obj_ndc = _get_nghbr_dis_constraint(nghbr_dis, mods=self.mods)
+                obj_ndc = _get_nghbr_dis_constraint(
+                    nghbr_dis, mu=self.ndc_mu, sigma_max=self.ndc_sigmamax,
+                    beta=self.ndc_beta, alpha=alpha, mods=self.mods)
                 obj['ndc'] = obj['ndc'] + gamma * self.lambdas['ndc'] * obj_ndc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
@@ -344,10 +355,48 @@ class Constraints(object):
         return homo_sep
 
 
-from jax import grad
-relu_grad = grad(relu)
+from .poisson import relu_min  # FIXME temporary
 
-def _get_nghbr_dis_constraint(nghbr_dis, mods=['kurt']):
+
+def _get_nghbr_dis_constraint(nghbr_dis, mu, sigma_max, beta, alpha, mods=[]):
+    mu = ag_np.power(mu / beta, 1 / alpha)
+
+    mad = ag_np.median(ag_np.absolute(
+        nghbr_dis - ag_np.median(nghbr_dis)))
+    sigma = 1.4826 * mad
+
+    obj_ndc = ag_np.log(sigma) + ag_np.mean(
+        ag_np.square(nghbr_dis - mu)) / (2 * ag_np.square(sigma))
+
+    if type(obj_ndc).__name__ == 'DeviceArray':
+        data = nghbr_dis
+        # TRUE:  μ=0.985     mean=1.004      sigma=0.098     std=0.098   obj=-1.8019
+        # BCC1e1: rmsd_intra=3.72   disterr_intra=39.9   disterr_interhmlg=70.8
+        print(f'μ={mu:.3f} \t mean={data.mean():.3f} \t sigma={sigma:.3f} \t std={data.std():.3f} \t obj={obj_ndc:.5g}')
+
+    return obj_ndc
+
+
+def _get_nghbr_dis_constraint_old(nghbr_dis, mu, sigma_max, beta, alpha, mods=[]):
+    data = beta * ag_np.power(nghbr_dis, alpha)
+
+    # mad = ag_np.median(ag_np.absolute(
+    #     data - ag_np.median(data)))
+
+    sigma_tmp = ag_np.sqrt(ag_np.mean(ag_np.square(data - mu)))
+    sigma = relu_min(sigma_tmp, sigma_max)  # FIXME temporary
+
+    obj_ndc = ag_np.log(sigma) + ag_np.mean(
+        ag_np.square(data - mu)) / (2 * ag_np.square(sigma))
+
+    if type(obj_ndc).__name__ == 'DeviceArray':
+        # TRUE:  [[ μ=7.939      σMax=2.648 ]]   data=7.937      sigma=2.455     sigma_tmp=2.455     std=2.455   nghbr_dis.mean=1.004    nghbr_dis.std=0.098     obj=1.3981
+        print(f'[[ μ={mu:.3f} \t σMax={sigma_max:.3f} ]] \t data={data.mean():.3f} \t sigma={sigma:.3f} \t sigma_tmp={sigma_tmp:.3f} \t std={ag_np.std(data):.3f} \t nghbr_dis.mean={nghbr_dis.mean():.3f} \t nghbr_dis.std={nghbr_dis.std():.3f} \t obj={obj_ndc:.5g}')
+
+    return obj_ndc
+
+
+def _get_nghbr_dis_constraint_oldest(nghbr_dis, mods=['kurt']):
     # nghbr_dis_scaled = nghbr_dis / ag_np.median(nghbr_dis)
     nghbr_dis_scaled = nghbr_dis / ag_np.mean(nghbr_dis)
 
@@ -364,19 +413,56 @@ def _get_nghbr_dis_constraint(nghbr_dis, mods=['kurt']):
             obj_ndc = ag_np.square(obj_ndc)
         elif 'skew' in mods:
             obj_ndc = ag_np.mean(ag_np.power(z, 3))
-    elif 'norm' in mods:
-        raise NotImplementedError
-    else:
+    elif 'old' in mods:
         nghbr_dis_var = ag_np.var(nghbr_dis_scaled)
         nghbr_dis_mad_sq = ag_np.square(ag_np.median(ag_np.absolute(
             nghbr_dis_scaled - ag_np.median(nghbr_dis_scaled))))
         obj_ndc = nghbr_dis_var - nghbr_dis_mad_sq
         obj_ndc = relu(obj_ndc)
-
         # if type(obj_ndc).__name__ == 'DeviceArray':
         #     print(f"std: {nghbr_dis_std:.6f},\tvar:{ag_np.square(nghbr_dis_std):.6f},\tmad:{nghbr_dis_mad:6f}", flush=True)
+    else:
+        nghbr_dis_std = ag_np.std(nghbr_dis_scaled)
+        nghbr_dis_mad = ag_np.median(ag_np.absolute(
+            nghbr_dis_scaled - ag_np.median(nghbr_dis_scaled)))
+        # std = 1.4826 * mad
+        obj_ndc = nghbr_dis_std / nghbr_dis_mad - 1.4826
 
     return obj_ndc
+
+
+def _prep_nghbr_dis_constraint(counts, lengths, ploidy, multiscale_factor, bias,
+                               fullres_torm):
+    """TODO
+    """
+
+    counts = [c for c in counts if c.sum() != 0]
+
+    beta = _ambiguate_beta(
+        [c.beta for c in counts], counts=counts, lengths=lengths, ploidy=ploidy)
+    counts_ambig = ambiguate_counts(
+        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
+
+    row_nghbr, _ = _neighboring_bead_indices(
+        counts_ambig, lengths=lengths, ploidy=1,
+        multiscale_factor=multiscale_factor)
+
+    if bias is not None:
+        raise NotImplementedError  # TODO
+
+    counts_ambig = decrease_counts_res(
+        counts_ambig, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+
+    nghbr = counts_ambig.diagonal(k=1)[row_nghbr] / ploidy
+
+    if multiscale_factor == 1:
+        return nghbr.mean(), nghbr.std(), beta
+    else:
+        fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+            multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=1, fullres_torm=fullres_torm)
+        raise NotImplementedError  # TODO
 
 
 def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
