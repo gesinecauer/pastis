@@ -31,6 +31,8 @@ def _adjust_beta_simple_diploid(beta, counts, lengths):
     """Adjust beta for simple diploid.
     """
 
+    # TODO use _ambiguate_beta fxn in counts.py for this
+
     if beta is None:
         raise ValueError(
             "Beta must not be None to adjust beta for simple diploid.")
