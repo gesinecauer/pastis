@@ -359,20 +359,26 @@ from .poisson import relu_min  # FIXME temporary
 
 
 def _get_nghbr_dis_constraint(nghbr_dis, mu, sigma_max, beta, alpha, mods=[]):
-    mu = ag_np.power(mu / beta, 1 / alpha)
-
     mad = ag_np.median(ag_np.absolute(
         nghbr_dis - ag_np.median(nghbr_dis)))
-    sigma = 1.4826 * mad
+    sigma_tmp = 1.4826 * mad
+
+    if 'norm_dis_nomin' not in mods:
+        sigma = relu_min(sigma_tmp, sigma_max)  # FIXME temporary
+    else:
+        sigma = sigma_tmp
 
     obj_ndc = ag_np.log(sigma) + ag_np.mean(
         ag_np.square(nghbr_dis - mu)) / (2 * ag_np.square(sigma))
 
     if type(obj_ndc).__name__ == 'DeviceArray':
         data = nghbr_dis
-        # TRUE:  μ=0.985     mean=1.004      sigma=0.098     std=0.098   obj=-1.8019
-        # BCC1e1: rmsd_intra=3.72   disterr_intra=39.9   disterr_interhmlg=70.8
-        print(f'μ={mu:.3f} \t mean={data.mean():.3f} \t sigma={sigma:.3f} \t std={data.std():.3f} \t obj={obj_ndc:.5g}')
+        # TRUE:    μ=1.010   σMax=0.119      mean=1.004      sigma=0.098     sigma_tmp=0.098     std=0.098   obj=-1.8202
+        # oldTRUE: μ=0.985     mean=1.004      sigma=0.098     std=0.098   obj=-1.8019
+        # BCC1e1:         rmsd_intra=3.72   disterr_intra=39.9   disterr_interhmlg=70.8   ndv_nrmse=3.53  ()
+        # norm_dis:       rmsd_intra=   disterr_intra=   disterr_interhmlg=   ndv_nrmse= ()
+        # norm_dis_nomin: rmsd_intra=   disterr_intra=   disterr_interhmlg=   ndv_nrmse= ()
+        print(f'μ={mu:.3f} \t σMax={sigma_max:.3f} \t mean={data.mean():.3f} \t sigma={sigma:.3f} \t sigma_tmp={sigma_tmp:.3f} \t std={data.std():.3f} \t obj={obj_ndc:.5g}')
 
     return obj_ndc
 
@@ -432,7 +438,7 @@ def _get_nghbr_dis_constraint_oldest(nghbr_dis, mods=['kurt']):
 
 
 def _prep_nghbr_dis_constraint(counts, lengths, ploidy, multiscale_factor, bias,
-                               fullres_torm):
+                               fullres_torm, alpha=-3):
     """TODO
     """
 
@@ -454,14 +460,18 @@ def _prep_nghbr_dis_constraint(counts, lengths, ploidy, multiscale_factor, bias,
         counts_ambig, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
 
-    nghbr = counts_ambig.diagonal(k=1)[row_nghbr] / ploidy
+    nghbr_counts = counts_ambig.diagonal(k=1)[row_nghbr] / ploidy
 
-    if multiscale_factor == 1:
-        return nghbr.mean(), nghbr.std(), beta
-    else:
+    if multiscale_factor > 1:
         fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
             multiscale_factor=multiscale_factor, lengths=lengths,
             ploidy=1, fullres_torm=fullres_torm)
+        raise NotImplementedError  # TODO
+
+    if (nghbr_counts == 0).sum() == 0:
+        nghbr_dis = np.power(nghbr_counts / beta, 1 / alpha)
+        return nghbr_dis.mean(), nghbr_dis.std(), beta
+    else:
         raise NotImplementedError  # TODO
 
 
