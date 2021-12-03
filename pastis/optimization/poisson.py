@@ -36,14 +36,9 @@ from .utils_poisson import _print_code_header, jax_max
 coefs_mean = [5.549172757571418e-20, -1.6470775119344408e-17, 2.2606861003877433e-15, -1.903579023849604e-13, 1.1000461737635397e-11, -4.6239683202570464e-10, 1.4619806820341588e-08, -3.546250613583712e-07, 6.670958632097694e-06, -9.772260096077662e-05, 0.0011130662843361946, -0.00978764088393751, 0.0655592914191458, -0.3273049894339556, 1.1766273423250435, -2.872565184957617, 4.228635441434826, -2.533538222083517, -1.3991509787571033, 0.5364137375876942, -0.014652303861952376]
 coefs_var = [-8.89723012160453e-20, 2.6939031920163006e-17, -3.780088866833452e-15, 3.262503889748274e-13, -1.9384315351972383e-11, 8.408736957761065e-10, -2.7561824714335875e-08, 6.969965186508444e-07, -1.3766418318829012e-05, 0.00021367122264464005, -0.002609568682021054, 0.025003741308379887, -0.18663053580505512, 1.0728333419317682, -4.671837208672972, 15.062582659039125, -34.8224086368473, 55.041717936059165, -54.63542672952499, 25.766016969084514, -5.116935512532633]
 
-coefs_var_lt_half = [-16288.454450454283, 331728.0634644935, -3132201.853319932, 18197632.94062407, -72809727.7145518, 212757730.62707162, -469880836.0920273, 800747765.2273313, -1065750563.8683218, 1114343929.0456493, -916173419.1692024, 590189427.729789, -295537030.07243896, 113585407.61194263, -32899560.631264366, 7003108.982123546, -1058963.2854164022, 108758.56293913156, -7190.9957768750255, 301.03729255890966, -10.174570994982268]
-# coefs_var_lt_half = [-2894010198328.0254, 31120325252681.355, -152615723212761.3, 452238082633150.5, -904493766121800.0, 1291889126929733.2, -1359983550441447.5, 1073855309583883.8, -641339081180716.1, 290159847992524.8, -99053391931688.66, 25290930382577.043, -4766892378065.112, 652163186346.6976, -63472298328.52432, 4291896683.8477497, -195786431.5482419, 5796998.7427892955, -106189.00941011876, 1186.5017683660237, -12.995893307370174]
-coefs_var_gt_half = [-6.972660546073957e-20, 2.118759642128232e-17, -2.9848024173735214e-15, 2.5873600186835814e-13, -1.544722982747355e-11, 6.736816147523431e-10, -2.221349241409283e-08, 5.654864669189048e-07, -1.1252143133121578e-05, 0.00017610479727915855, -0.002170938168843324, 0.02102036821497427, -0.15876031477595498, 0.9247975108734416, -4.087359874047335, 13.397022973007195, -31.53543800501973, 50.81138045409649, -51.401854017922965, 24.51829152111672, -4.947694047477528]
-
 
 def _polyval(x, coefs):
-    """Analagous to np.polyval (which sadly is not differentiable with
-    autograd)"""
+    """Analagous to np.polyval (which is not differentiable with jax)"""
     ans = 0
     power = len(coefs) - 1
     for coef in coefs:
@@ -128,51 +123,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
         ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
-
-        if 'splitvar' not in mods:
-            ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
-        else:
-            mask = epsilon_over_dis <= 0.5
-            ln_gamma_var = ag_np.zeros_like(epsilon_over_dis)
-            ln_gamma_var = ln_gamma_var.at[mask].set(_polyval(
-                epsilon_over_dis[mask], coefs=coefs_var_lt_half))
-            ln_gamma_var = ln_gamma_var.at[~mask].set(_polyval(
-                epsilon_over_dis[~mask], coefs=coefs_var_gt_half))
-
-            # from matplotlib import pyplot as plt
-            # ln_gamma_var_old = _polyval(epsilon_over_dis, coefs=coefs_var)
-            # sort_idx = ag_np.argsort(epsilon_over_dis)
-            # epsilon_over_dis = epsilon_over_dis[sort_idx]
-            # ln_gamma_var = ln_gamma_var[sort_idx]
-            # ln_gamma_var_old = ln_gamma_var_old[sort_idx]
-            # plt.plot(epsilon_over_dis, ln_gamma_var_old, label="Old")
-            # plt.plot(epsilon_over_dis, ln_gamma_var, label="New", linestyle='--')
-            # # plt.scatter(epsilon_over_dis, ln_gamma_var_old, label="Old")
-            # # plt.scatter(epsilon_over_dis, ln_gamma_var, label="New", alpha=0.5)
-            # plt.xlim((-0.1, 1))
-            # plt.legend()
-            # plt.savefig("TEST_POLYVAL_GAMMA_VAR.real_data.new_fit2.0-1.png")
-            # plt.clf()
-            # exit(0)
-
-            # ln_gamma_var_old = _polyval(epsilon_over_dis, coefs=coefs_var)
-            # notclose = ~ag_np.isclose(ln_gamma_var, ln_gamma_var_old, rtol=0.01, atol=0.01) # rtol=1e-05, atol=1e-08
-            # print(ag_np.median(dis.reshape(-1, counts.nnz), axis=1))
-            # print(ag_np.median(epsilon_over_dis.reshape(-1, counts.nnz), axis=1))
-            # print(notclose.reshape(-1, counts.nnz).sum(axis=1))
-
-            # diffs = (ln_gamma_var / ln_gamma_var_old).reshape(-1, counts.nnz)
-            # print('diffs mean', diffs.mean(axis=1))
-            # print('diffs med ', np.median(diffs, axis=1))
-            # try:
-            #     print(f'~isclose\tcount={notclose.sum()}\tmean={epsilon_over_dis[notclose].mean():.3g}\tmed={ag_np.median(epsilon_over_dis[notclose]):.3g}\tmin={epsilon_over_dis[notclose].min():.3g}\tmax={epsilon_over_dis[notclose].max():.3g}')
-            # except:
-            #     pass
-            # try:
-            #     print(f' isclose\tcount={(~notclose).sum()}\tmean={epsilon_over_dis[~notclose].mean():.3g}\tmed={ag_np.median(epsilon_over_dis[~notclose]):.3g}\tmin={epsilon_over_dis[~notclose].min():.3g}\tmax={epsilon_over_dis[~notclose].max():.3g}')
-            # except:
-            #     pass
-            # exit(0)
+        ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
 
         gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
         gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
