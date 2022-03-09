@@ -259,30 +259,32 @@ class Callback(object):
                 np.savetxt(filename, X_list[i])
 
     def _log_history(self, last_iter=False):
-        """Keeps a history of the loss and other values every given number of iters."""
+        """Keeps a log of the loss and other values."""
 
-        if self._check_frequency(self.frequency['history'], last_iter):
-            if not isinstance(self.alpha, np.ndarray) or self.alpha.shape == () or self.alpha.shape[0] == 1:
-                alpha = float(self.alpha)
+        if not self._check_frequency(self.frequency['history'], last_iter):
+            return
+
+        if not isinstance(self.alpha, np.ndarray) or self.alpha.shape == ():
+            alpha = float(self.alpha)
+        else:
+            alpha = ','.join(map(str, self.alpha))
+        to_log = [('iter', self.iter), ('alpha', alpha),
+                  ('alpha_loop', self.alpha_loop),
+                  ('epsilon_loop', self.epsilon_loop),
+                  ('opt_type', self.opt_type),
+                  ('multiscale_factor', self.multiscale_factor),
+                  ('seconds', self.seconds),
+                  ('epsilon', self.epsilon)]
+        to_log.extend(list(self.obj.items()))
+
+        if self.analysis_function is not None:
+            to_log.extend(self.analysis_function(self).items())
+
+        for k, v in to_log:
+            if k in self.history:
+                self.history[k].append(v)
             else:
-                alpha = ','.join(map(str, self.alpha))
-            to_log = [('iter', self.iter), ('alpha', alpha),
-                      ('alpha_loop', self.alpha_loop),
-                      ('epsilon_loop', self.epsilon_loop),
-                      ('opt_type', self.opt_type),
-                      ('multiscale_factor', self.multiscale_factor),
-                      ('seconds', self.seconds),
-                      ('epsilon', self.epsilon)]
-            to_log.extend(list(self.obj.items()))
-
-            if self.analysis_function is not None:
-                to_log.extend(self.analysis_function(self).items())
-
-            for k, v in to_log:
-                if k in self.history:
-                    self.history[k].append(v)
-                else:
-                    self.history[k] = [v]
+                self.history[k] = [v]
 
     def on_training_begin(self, opt_type=None, alpha_loop=None,
                           epsilon_loop=None, **kwargs):
