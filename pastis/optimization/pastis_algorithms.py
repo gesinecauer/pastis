@@ -368,7 +368,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             struct_true_tmp = struct_true
         if callback_freq is None:
-            callback_freq = {'print': 100, 'history': 100, 'save': None}
+            callback_freq = {'print': 100, 'history': 1000, 'save': None}
         if callback_fxns is None:
             callback_fxns = {}
         # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
