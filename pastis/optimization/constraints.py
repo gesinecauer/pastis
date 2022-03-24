@@ -139,9 +139,9 @@ class Constraints(object):
                 begin = end
             self.bead_weights = bead_weights.reshape(-1, 1)
 
-        self.row_nghbr = self.col_nghbr = None
+        self.row_nghbr = None
         if self.lambdas["bcc"] or self.lambdas["ndc"]:
-            self.row_nghbr, self.col_nghbr = _neighboring_bead_indices(
+            self.row_nghbr = _neighboring_bead_indices(
                 counts=counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor)
 
@@ -281,9 +281,10 @@ class Constraints(object):
         obj = {k: 0. for k, v in self.lambdas.items() if v != 0}
 
         if self.lambdas["bcc"] and not inferring_alpha:
+            col_nghbr = self.row_nghbr + 1
             for struct, gamma in zip(structures, mixture_coefs):
                 nghbr_dis = ag_np.sqrt((ag_np.square(
-                    struct[self.row_nghbr] - struct[self.col_nghbr])).sum(axis=1))
+                    struct[self.row_nghbr] - struct[col_nghbr])).sum(axis=1))
                 n_edges = nghbr_dis.shape[0]
                 nghbr_dis_var = n_edges * ag_np.square(
                     nghbr_dis).sum() / ag_np.square(nghbr_dis.sum())
@@ -291,9 +292,10 @@ class Constraints(object):
                 obj_bcc = ag_np.power(obj_bcc, self.params["bcc"])
                 obj['bcc'] = obj['bcc'] + gamma * self.lambdas['bcc'] * obj_bcc
         if self.lambdas["ndc"]:
+            col_nghbr = self.row_nghbr + 1
             for struct, gamma in zip(structures, mixture_coefs):
                 nghbr_dis = ag_np.sqrt((ag_np.square(
-                    struct[self.row_nghbr] - struct[self.col_nghbr])).sum(axis=1))
+                    struct[self.row_nghbr] - struct[col_nghbr])).sum(axis=1))
                 obj_ndc = _get_nghbr_dis_constraint(
                     nghbr_dis, mu=self.ndc_mu, sigma_max=self.ndc_sigmamax,
                     beta=self.ndc_beta, alpha=alpha, mods=self.mods)
@@ -449,9 +451,9 @@ def _prep_nghbr_dis_constraint(counts, lengths, ploidy, multiscale_factor, bias,
     counts_ambig = ambiguate_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
 
-    row_nghbr, _ = _neighboring_bead_indices(
+    row_nghbr = _neighboring_bead_indices(
         counts_ambig, lengths=lengths, ploidy=1,
-        multiscale_factor=multiscale_factor)
+        multiscale_factor=multiscale_factor, include_torm_beads=False)
 
     if bias is not None:
         raise NotImplementedError  # TODO
@@ -475,7 +477,8 @@ def _prep_nghbr_dis_constraint(counts, lengths, ploidy, multiscale_factor, bias,
         raise NotImplementedError  # TODO
 
 
-def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
+def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor,
+                              include_torm_beads=True):
     """Return row & col of neighboring beads, along a homolog of a chromosome.
     """
 
@@ -485,16 +488,16 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
     row_nghbr = np.arange(nbeads - 1, dtype=int)
     col_nghbr = np.arange(1, nbeads, dtype=int)
 
-    # Remove beads for which there is no counts data
-    torm = find_beads_to_remove(
-        counts, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor)
-    where_torm = np.where(torm)[0]
-    nghbr_dis_mask = (~np.isin(row_nghbr, where_torm)) & (
-        ~np.isin(col_nghbr, where_torm))
-
-    row_nghbr = row_nghbr[nghbr_dis_mask]
-    col_nghbr = col_nghbr[nghbr_dis_mask]
+    # Optionally remove beads for which there is no counts data
+    if not include_torm_beads:
+        torm = find_beads_to_remove(
+            counts, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor)
+        where_torm = np.where(torm)[0]
+        nghbr_dis_mask = (~np.isin(row_nghbr, where_torm)) & (
+            ~np.isin(col_nghbr, where_torm))
+        row_nghbr = row_nghbr[nghbr_dis_mask]
+        col_nghbr = col_nghbr[nghbr_dis_mask]
 
     # Remove if "neighbor" beads are actually on different chromosomes
     # or homologs
@@ -504,7 +507,7 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor):
     row_nghbr = row_nghbr[same_bin]
     col_nghbr = col_nghbr[same_bin]
 
-    return row_nghbr, col_nghbr
+    return row_nghbr
 
 
 def _inter_homolog_dis(struct, lengths):
