@@ -114,12 +114,12 @@ def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
-    nbeads = lengths_lowres.sum() * ploidy
+    nbeads_lowres = lengths_lowres.sum() * ploidy
 
     row = []
     col = []
     for i in range(len(counts)):
-        if max(counts[i].shape) not in (nbeads, nbeads / ploidy):
+        if max(counts[i].shape) not in (nbeads_lowres, nbeads_lowres / ploidy):
             raise ValueError(
                 "Resolution of counts is not consistent with lengths at"
                 f" multiscale_factor={multiscale_factor}. Counts shape is ("
@@ -129,7 +129,7 @@ def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
             col_i = counts[i].col3d
         else:
             row_i, col_i = _counts_indices_to_3d_indices(
-                counts[i], nbeads=nbeads)
+                counts[i], nbeads_lowres=nbeads_lowres)
         row.append(np.minimum(row_i, col_i))
         col.append(np.maximum(row_i, col_i))
 
@@ -157,8 +157,8 @@ def _create_unambig_dummy_counts(counts, lengths, ploidy, multiscale_factor=1):
         lengths, multiscale_factor=multiscale_factor)
     nbeads = lengths_lowres.sum() * ploidy
 
-    dummy_counts = sparse.coo_matrix((np.ones_like(rows), (rows, cols)),
-        shape=(nbeads, nbeads)).toarray()
+    dummy_counts = sparse.coo_matrix(
+        (np.ones_like(rows), (rows, cols)), shape=(nbeads, nbeads)).toarray()
     dummy_counts = sparse.coo_matrix(np.triu(
         np.maximum(dummy_counts + dummy_counts.T, 1), 1))
 
@@ -170,7 +170,8 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
     """Check counts dimensions, reformat, & excise selected chromosomes.
     """
 
-    if chrom_subset_index is not None and len(chrom_subset_index) / max(counts.shape) not in (1, 2):
+    if chrom_subset_index is not None and len(
+            chrom_subset_index) / max(counts.shape) not in (1, 2):
         raise ValueError("chrom_subset_index size (%d) does not fit counts"
                          " shape (%d, %d)." %
                          (len(chrom_subset_index), counts.shape[0],
@@ -587,13 +588,53 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
     return output_counts, bias
 
 
-def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
-                   exclude_zeros=False, multiscale_factor=1):
+def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
+                      multiscale_factor=1, neighboring_beads_only=True):
+    """Estimate compatible betas for each counts matrix."""
+
+    # Set the mean (distance ** alpha)...
+    # ...of either the whole structure or only for distances between beads...
+    # ...to be equal to 1
+
+    n = lengths.sum()
+    nbeads_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor) * ploidy
+
+    beta = [0] * len(counts)
+    for i in range(len(counts)):
+        counts_ambig = ambiguate_counts(
+            counts[i], lengths=lengths, ploidy=ploidy,
+            exclude_zeros=exclude_zeros)
+
+        if neighboring_beads_only:
+            if not sparse.issparse(counts_ambig):
+                counts_ambig = sparse.coo_matrix(counts_ambig)
+            mask = (counts_ambig.row == counts_ambig.col + 1)
+            counts_ambig = sparse.coo_matrix(
+                (counts_ambig.data[mask],
+                    (counts_ambig.row[mask], counts_ambig.col[mask])),
+                shape=counts_ambig.shape)
+            counts_ambig = _check_counts_matrix(
+                counts_ambig, lengths=lengths, ploidy=ploidy,
+                exclude_zeros=exclude_zeros)
+
+        num_dis_bins = _counts_indices_to_3d_indices(
+            counts_ambig, nbeads_lowres=nbeads_lowres)[0].size
+
+        if bias is None:
+            counts_normed = counts_ambig
+        else:
+            bias = bias.reshape(-1, 1)
+            counts_normed = counts_ambig / bias / bias.T
+
+        beta[i] = counts_normed.sum() / num_dis_bins
+    return beta
+
+
+def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
+                   input_weight=None, exclude_zeros=False, multiscale_factor=1):
     """Format each counts matrix as a CountsMatrix subclass instance.
     """
-
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)  # TODO... remove?
-    n = lengths.sum()
 
     # Check input
     counts = check_counts(
@@ -607,21 +648,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, input_weight=None,
                              " as there are datasets (%d). It is of length (%d)"
                              % (len(counts), len(beta)))
     else:
-        # To estimate compatible betas for each counts matrix, assume a
-        # structure with a mean pairwise distance ** alpha of 1
-        beta = []
-        for counts_maps in counts:
-            if exclude_zeros:
-                beta_maps = counts_maps.data.mean()
-
-            else:
-                beta_maps = np.nanmean(counts_maps)
-            if ploidy == 2:
-                if counts_maps.shape == (n, n):
-                    beta_maps /= 4  # Ambiguous
-                elif counts_maps.shape[0] != counts_maps.shape[1]:
-                    beta_maps /= 2  # Partially ambiguous
-            beta.append(beta_maps)
+        raise NotImplementedError
 
     if input_weight is not None:
         if not (isinstance(input_weight, list) or isinstance(input_weight, np.ndarray)):
@@ -664,19 +691,19 @@ def _row_and_col(data):
         return data.row, data.col
 
 
-def _counts_indices_to_3d_indices(counts, nbeads):
+def _counts_indices_to_3d_indices(counts, nbeads_lowres):
     """Return distance matrix indices associated with counts matrix data.
     """
 
-    nbeads = int(nbeads)
+    nbeads_lowres = int(nbeads_lowres)
 
     row3d, col3d = _row_and_col(counts)
 
-    if counts.shape[0] != nbeads or counts.shape[1] != nbeads:
+    if counts.shape[0] != nbeads_lowres or counts.shape[1] != nbeads_lowres:
         nnz = len(row3d)
 
-        map_factor_rows = int(nbeads / counts.shape[0])
-        map_factor_cols = int(nbeads / counts.shape[1])
+        map_factor_rows = int(nbeads_lowres / counts.shape[0])
+        map_factor_cols = int(nbeads_lowres / counts.shape[1])
         map_factor = map_factor_rows * map_factor_cols
 
         x, y = np.indices((map_factor_rows, map_factor_cols))

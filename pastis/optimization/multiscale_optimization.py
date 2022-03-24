@@ -416,7 +416,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
 
         indices = row_lowres, col_lowres
         indices3d = _counts_indices_to_3d_indices(
-            counts_lowres, nbeads=lengths_lowres.sum() * ploidy)
+            counts_lowres, nbeads_lowres=lengths_lowres.sum() * ploidy)
 
         if dummy:
             data_grouped = np.zeros_like(data_grouped)
@@ -424,7 +424,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     else:
         indices = counts_coo.row, counts_coo.col
         indices3d = _counts_indices_to_3d_indices(
-            counts_coo, nbeads=lengths_lowres.sum() * ploidy)
+            counts_coo, nbeads_lowres=lengths_lowres.sum() * ploidy)
         data_grouped = counts_coo.data
         mask = None
         shape_lowres = counts_coo.shape
