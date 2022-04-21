@@ -3,6 +3,7 @@ from __future__ import print_function
 import numpy as np
 import sys
 import os
+import textwrap
 import pandas as pd
 from scipy import sparse
 from distutils.util import strtobool
@@ -33,14 +34,9 @@ def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
         if blank_lines is not None and blank_lines > 0:
             print('\n' * (blank_lines - 1), flush=True)
         print('=' * max_length, flush=True)
-        for line in header:
-            pad_left = ('=' * int(np.ceil((max_length - len(line) - 2) / 2)))
-            if pad_left != '':
-                pad_left = pad_left + ' '
-            pad_right = ('=' * int(np.floor((max_length - len(line) - 2) / 2)))
-            if pad_right != '':
-                pad_right = ' ' + pad_right
-            print(pad_left + line + pad_right, flush=True)
+        for line_full in header:
+            for line in textwrap.wrap(line_full, width=max_length - 4):
+                print(f" {line} ".center(max_length, '='), flush=True)
         print('=' * max_length, flush=True)
 
 
@@ -49,8 +45,8 @@ def _load_infer_var(infer_var_file):
     """
 
     infer_var = dict(pd.read_csv(
-        infer_var_file, sep='\t', header=None, squeeze=True,
-        index_col=0, dtype=str))
+        infer_var_file, sep='\t', header=None, index_col=0,
+        dtype=str).squeeze("columns"))
     infer_var['beta'] = [float(b) for b in infer_var['beta'].split()]
     if 'seed' in infer_var:
         infer_var['seed'] = int(float(infer_var['seed']))
