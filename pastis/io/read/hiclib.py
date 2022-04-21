@@ -52,7 +52,7 @@ def load_hiclib_counts(filename, lengths=None):
 
     # This is the interaction count files
     dataframe = pd.read_csv(filename, sep="\t", comment="#", header=None)
-    row, col, data = dataframe.values.T
+    row, col, data = dataframe.values.T[:3]
 
     # If there are NAs remove them
     mask = np.isnan(data)
