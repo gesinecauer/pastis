@@ -47,28 +47,21 @@ def _load_infer_var(infer_var_file):
     infer_var = dict(pd.read_csv(
         infer_var_file, sep='\t', header=None, index_col=0,
         dtype=str).squeeze("columns"))
-    infer_var['beta'] = [float(b) for b in infer_var['beta'].split()]
-    if 'seed' in infer_var:
-        infer_var['seed'] = int(float(infer_var['seed']))
-    if 'hsc_r' in infer_var:
-        infer_var['hsc_r'] = np.array([float(
-            r) for r in infer_var['hsc_r'].split()])
-    if 'mhs_k' in infer_var:
-        infer_var['mhs_k'] = np.array([float(
-            r) for r in infer_var['mhs_k'].split()])
-    if 'orient' in infer_var:
-        infer_var['orient'] = np.array([float(
-            r) for r in infer_var['orient'].split()])
-    if 'multiscale_variances' in infer_var:
-        infer_var['multiscale_variances'] = float(
-            infer_var['multiscale_variances'])
-    if 'epsilon' in infer_var:
-        if ' ' not in infer_var['epsilon']:
-            infer_var['epsilon'] = float(infer_var['epsilon'])
-        else:
-            infer_var['epsilon'] = np.array(map(float, infer_var['epsilon'].split(' ')))
-    infer_var['alpha'] = float(infer_var['alpha'])
-    infer_var['converged'] = strtobool(infer_var['converged'])
+
+    for key in ['beta', 'hsc_r', 'orient', 'epsilon']:
+        if key in infer_var:
+            infer_var[key] = np.array(infer_var[key].split(), dtype=float)
+    convert_type_fxns = {
+        'alpha': float, 'converged': strtobool, 'seed': (float, int),
+        'multiscale_variances': float, 'obj': float, 'time': float}
+    for key, type_fxns in convert_type_fxns.items():
+        if key in infer_var:
+            for type_fxn in type_fxns:
+                infer_var[key] = type_fxn(infer_var[key])
+
+    if 'epsilon' in infer_var and infer_var['epsilon'].size == 1:
+        infer_var['epsilon'] = infer_var['epsilon'][0]  # TODO just put epsilon above
+
     return infer_var
 
 

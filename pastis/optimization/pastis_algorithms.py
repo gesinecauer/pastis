@@ -368,7 +368,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             struct_true_tmp = struct_true
         if callback_freq is None:
-            callback_freq = {'print': 100, 'history': 1000, 'save': None}
+            callback_freq = {'print': 100, 'history': 100, 'save': None}
         if callback_fxns is None:
             callback_fxns = {}
         # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
@@ -592,7 +592,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         # TODO add conv_desc to main branch
         infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
                      'seed': seed, 'converged': pm.converged_,
-                     'conv_desc': pm.conv_desc_, 'epsilon': pm.epsilon_,
+                     'conv_desc': pm.conv_desc_, 'time': pm.time_elapsed_,
+                     'epsilon': pm.epsilon_,
                      'multiscale_variances': multiscale_variances}
         if hsc_lambda > 0:
             infer_var['hsc_r'] = hsc_r

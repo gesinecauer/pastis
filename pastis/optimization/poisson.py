@@ -885,6 +885,7 @@ class PastisPM(object):
         self.history_ = None
         self.struct_ = None
         self.orientation_ = None
+        self.time_elapsed_ = None
 
     def _infer_beta(self, update_counts=True, verbose=True):
         """Estimate beta, given current structure and alpha.
@@ -1089,7 +1090,7 @@ class PastisPM(object):
             time_current = str(
                 timedelta(seconds=round(timer() - time_start)))
             _print_code_header([
-                f"Jointly inferring structure & alpha",
+                "Jointly inferring structure & alpha",
                 f"Inferring ALPHA #{alpha_loop},"
                 f" total time={time_current}"], max_length=50)
             self._fit_alpha(alpha_loop=alpha_loop)
@@ -1099,7 +1100,7 @@ class PastisPM(object):
             time_current = str(
                 timedelta(seconds=round(timer() - time_start)))
             _print_code_header([
-                f"Jointly inferring structure & alpha",
+                "Jointly inferring structure & alpha",
                 f"Inferring STRUCTURE #{alpha_loop},"
                 f" total time={time_current}"], max_length=50)
             self._fit_structure(alpha_loop=alpha_loop)
@@ -1155,7 +1156,7 @@ class PastisPM(object):
             time_current = str(
                 timedelta(seconds=round(timer() - time_start)))
             _print_code_header([
-                f"Jointly inferring structure & epsilon",
+                "Jointly inferring structure & epsilon",
                 f"Inferring EPSILON #{epsilon_loop},"
                 f" total time={time_current}"], max_length=50)
             self._fit_epsilon(
@@ -1166,7 +1167,7 @@ class PastisPM(object):
             time_current = str(
                 timedelta(seconds=round(timer() - time_start)))
             _print_code_header([
-                f"Jointly inferring structure & epsilon",
+                "Jointly inferring structure & epsilon",
                 f"Inferring STRUCTURE #{epsilon_loop},"
                 f" total time={time_current}"], max_length=50)
             self._fit_epsilon(
@@ -1210,9 +1211,10 @@ class PastisPM(object):
         #self._fit_naive_multiscale()
         self._fit_struct_epsilon_jointly(time_start)
         #self._fit_struct_alpha_jointly(time_start)  # FIXME duh, temporary
-        time_current = str(timedelta(seconds=round(timer() - time_start)))
-        print("OPTIMIZATION AT %dX RESOLUTION COMPLETE, TOTAL ELAPSED TIME=%s" %
-              (self.multiscale_factor, time_current), flush=True)
+        self.time_elapsed_ = timer() - time_start
+        time_current = str(timedelta(seconds=round(self.time_elapsed_)))
+        print(f"OPTIMIZATION AT {self.multiscale_factor}X RESOLUTION COMPLETE,"
+              f" TOTAL ELAPSED TIME={time_current}", flush=True)
 
         if self.multiscale_reform and not self.epsilon_coord_descent:
             self.epsilon_ = self.X_[-1]
