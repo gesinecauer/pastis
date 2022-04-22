@@ -502,10 +502,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     """
 
     if outdir is not None:
-        try:
-            os.makedirs(outdir)
-        except OSError:
-            pass
+        os.makedirs(outdir, exist_ok=True)
         if seed is None:
             seed_str = ''
         else:
