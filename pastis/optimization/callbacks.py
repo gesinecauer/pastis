@@ -49,6 +49,9 @@ class Callback(object):
         Function to be executed at the end of each iter.
     directory : str, optional
         Directory in which to save structures generated during optimization.
+    seed : int, optional
+        Random seed used when generating the starting point in the
+        optimization.
     struct_true : array of float, optional
         True structure, to be used by `analysis_function`.
     alpha_true : array of float, optional
@@ -85,6 +88,9 @@ class Callback(object):
         Function to be executed at the end of each iter.
     directory : str
         Directory in which to save structures generated during optimization.
+    seed : int, optional
+        Random seed used when generating the starting point in the
+        optimization.
     struct_true : array of float or None
         True structure, to be used by `analysis_function`.
     alpha_true : array of float or None
@@ -129,7 +135,7 @@ class Callback(object):
                  multiscale_factor=1, multiscale_reform=False,
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
-                 on_iter_end=None, directory=None, struct_true=None,
+                 on_iter_end=None, directory=None, seed=None, struct_true=None,
                  alpha_true=None, epsilon_true=None, constraints=None,
                  multiscale_variances=None, mixture_coefs=None, verbose=False,
                  mods=[]):
@@ -173,6 +179,7 @@ class Callback(object):
         if directory is None:
             directory = ''
         self.directory = directory
+        self.seed = seed
         if struct_true is not None:
             # TODO 2 lines add below to main branch
             struct_true = struct_true.reshape(-1, 3)
@@ -225,38 +232,38 @@ class Callback(object):
     def _print(self, last_iter=False):
         """Prints loss every given number of iters."""
 
-        if self._check_frequency(self.frequency['print'], last_iter):
-            info_dict = {'At iterate': ' ' * (6 - len(str(self.iter))) + str(
-                self.iter), 'f= ': '%.6g' % self.obj['obj'],
-                'time= ': self.time}
-            if self.epsilon is not None:
-                info_dict['epsilon= '] = f"{self.epsilon:.3g}"
-            print('\t\t'.join(['%s%s' % (k, v)
-                               for k, v in info_dict.items()]), flush=True)
-            # if self.iter == 10 and self.frequency['print'] > 1:
-            #     print('. . .', flush=True)  # TODO
-            print('', flush=True)
+        if not self._check_frequency(self.frequency['print'], last_iter):
+            return
+
+        info_dict = {'At iterate': ' ' * (6 - len(str(self.iter))) + str(
+            self.iter), 'f= ': '%.6g' % self.obj['obj'],
+            'time= ': self.time}
+        if self.epsilon is not None:
+            info_dict['epsilon= '] = f"{self.epsilon:.3g}"
+        print('\t\t'.join([f'{k}{v}' for k, v in info_dict.items()]) + '\n',
+              flush=True)
 
     def _save_X(self):
         """This will save the model to disk every given number of iters."""
 
-        if self._check_frequency(self.frequency['save']):
-            X_list = self.X
-            if not isinstance(X_list, list):
-                X_list = [X_list]
-            for i in range(len(X_list)):
-                if len(X_list) == 1:
-                    filename = os.path.join(
-                        self.directory, 'inferred_%s.iter_%07d.txt'
-                                        % (self.opt_type, self.iter))
-                else:
-                    filename = os.path.join(
-                        self.directory, 'struct%d.inferred_%s.iter_%07d.txt'
-                                        % (i, self.opt_type, self.iter))
-                if self.verbose:
-                    print("[%d] Saving model checkpoint to %s" %
-                          (self.iter, filename))
-                np.savetxt(filename, X_list[i])
+        if not self._check_frequency(self.frequency['save']):
+            return
+
+        X = self.X
+        if isinstance(X, list):
+            X = np.concatenate(X)
+
+        if self.seed is None:
+            seed_str = ''
+        else:
+            seed_str = f'.{self.seed:03d}'
+        filename = os.path.join(
+            self.directory,
+            f"{self.opt_type}_inferred{seed_str}.iter{self.iter:07d}.coords")
+        if self.verbose:
+            print(f"[{self.iter}] Saving model checkpoint to {filename}",
+                  flush=True)
+        np.savetxt(filename, X)
 
     def _log_history(self, last_iter=False):
         """Keeps a log of the loss and other values."""

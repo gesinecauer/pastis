@@ -86,7 +86,19 @@ parser.add_argument("--hsc_min_beads", type=int, default=5,
                          " low-resolution structure from which `hsc_r` is"
                          " estimated.")
 parser.add_argument("--ndc_lambda", type=float, default=0.,
-                    help="For diploid organisms: TODO")
+                    help="For diploid organisms: TODO")  # TODO
+
+# Callback
+parser.add_argument("--print_freq", type=int, default=100,
+                    help="Frequency of iterations at which to print status"
+                         " during optimization.")
+parser.add_argument("--history_freq", type=int, default=None,
+                    help="Frequency of iterations at which to log objective"
+                         " value and other information during"
+                         " optimization.")
+parser.add_argument("--save_freq", type=int, default=None,
+                    help="Frequency of iterations at which to save the 3D"
+                         " structure during optimization.")
 
 # Hidden options
 parser.add_argument('--piecewise', default=False, action='store_true',

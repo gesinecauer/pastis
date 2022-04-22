@@ -368,7 +368,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             struct_true_tmp = struct_true
         if callback_freq is None:
-            callback_freq = {'print': 100, 'history': 100, 'save': None}
+            callback_freq = {'print': 100, 'history': None, 'save': None}
         if callback_fxns is None:
             callback_fxns = {}
         # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
@@ -376,7 +376,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             lengths, ploidy, counts=counts, bias=bias,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, frequency=callback_freq,
-            directory=outdir, struct_true=struct_true_tmp,
+            directory=outdir, seed=seed, struct_true=struct_true_tmp,
             alpha_true=alpha_true, epsilon_true=epsilon_true,
             constraints=constraints, mixture_coefs=mixture_coefs,
             **callback_fxns, multiscale_variances=multiscale_variances,
@@ -509,15 +509,15 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         if seed is None:
             seed_str = ''
         else:
-            seed_str = '.%03d' % seed
-        out_file = os.path.join(outdir, 'struct_inferred%s.coords' % seed_str)
+            seed_str = f'.{seed:03d}'
+        out_file = os.path.join(outdir, f'struct_inferred{seed_str}.coords')
         orient_file = os.path.join(
-            outdir, 'orient_inferred%s.coords' % seed_str)
-        history_file = os.path.join(outdir, 'history%s' % seed_str)
+            outdir, f'orient_inferred{seed_str}.coords')
+        history_file = os.path.join(outdir, f'history{seed_str}')
         infer_var_file = os.path.join(
-            outdir, 'inference_variables%s' % seed_str)
+            outdir, f'inference_variables{seed_str}')
         out_fail = os.path.join(
-            outdir, 'struct_nonconverged%s.coords' % seed_str)
+            outdir, f'struct_nonconverged{seed_str}.coords')
 
         if os.path.exists(out_file) or os.path.exists(out_fail):
             if verbose:
