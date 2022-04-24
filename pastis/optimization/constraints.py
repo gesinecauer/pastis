@@ -373,14 +373,14 @@ def _get_nghbr_dis_constraint(nghbr_dis, mu, sigma_max, beta, alpha, mods=[]):
     obj_ndc = ag_np.log(sigma) + ag_np.mean(
         ag_np.square(nghbr_dis - mu)) / (2 * ag_np.square(sigma))
 
-    if type(obj_ndc).__name__ == 'DeviceArray':
-        data = nghbr_dis
-        # TRUE:    μ=1.010   σMax=0.119      mean=1.004      sigma=0.098     sigma_tmp=0.098     std=0.098   obj=-1.8202
-        # oldTRUE: μ=0.985     mean=1.004      sigma=0.098     std=0.098   obj=-1.8019
-        # BCC1e1:         rmsd_intra=3.72   disterr_intra=39.9   disterr_interhmlg=70.8   ndv_nrmse=3.53  ()
-        # norm_dis:       rmsd_intra=   disterr_intra=   disterr_interhmlg=   ndv_nrmse= ()
-        # norm_dis_nomin: rmsd_intra=   disterr_intra=   disterr_interhmlg=   ndv_nrmse= ()
-        print(f'μ={mu:.3f} \t σMax={sigma_max:.3f} \t mean={data.mean():.3f} \t sigma={sigma:.3f} \t sigma_tmp={sigma_tmp:.3f} \t std={data.std():.3f} \t obj={obj_ndc:.5g}')
+    # if type(obj_ndc).__name__ == 'DeviceArray':
+    #     data = nghbr_dis
+    #     # TRUE:    μ=1.010   σMax=0.119      mean=1.004      sigma=0.098     sigma_tmp=0.098     std=0.098   obj=-1.8202
+    #     # oldTRUE: μ=0.985     mean=1.004      sigma=0.098     std=0.098   obj=-1.8019
+    #     # BCC1e1:         rmsd_intra=3.72   disterr_intra=39.9   disterr_interhmlg=70.8   ndv_nrmse=3.53  ()
+    #     # norm_dis:       rmsd_intra=   disterr_intra=   disterr_interhmlg=   ndv_nrmse= ()
+    #     # norm_dis_nomin: rmsd_intra=   disterr_intra=   disterr_interhmlg=   ndv_nrmse= ()
+    #     print(f'μ={mu:.3f} \t σMax={sigma_max:.3f} \t mean={data.mean():.3f} \t sigma={sigma:.3f} \t sigma_tmp={sigma_tmp:.3f} \t std={data.std():.3f} \t obj={obj_ndc:.5g}')
 
     return obj_ndc
 
