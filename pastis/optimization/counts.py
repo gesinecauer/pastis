@@ -1104,9 +1104,10 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         # excluded from calculations of constraints.
         # Dummy counts should be "unambiguous" for diploid organisms.
         # All non-zero data in dummy counts is set to 1.
+        # (multiscale_factor=1 because counts are always high-resolution)
         dummy_counts = _create_unambig_dummy_counts(
             counts=counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor)
+            multiscale_factor=1)
 
         self.ambiguity = 'ua'
         self.name = '%s0' % self.ambiguity
