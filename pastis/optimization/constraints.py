@@ -142,7 +142,7 @@ class Constraints(object):
         self.row_nghbr = None
         if self.lambdas["bcc"] or self.lambdas["ndc"]:
             self.row_nghbr = _neighboring_bead_indices(
-                counts=counts, lengths=lengths, ploidy=ploidy,
+                lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor)
 
         self.ndc_mu = self.ndc_beta = None  # FIXME ndc_beta needs to be reset with alpha infer
@@ -302,6 +302,16 @@ class Constraints(object):
                 obj['ndc'] = obj['ndc'] + gamma * self.lambdas['ndc'] * obj_ndc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
+                # ============================ FIXME ratio temp
+                if 'hsc_ratio' in self.mods:
+                    hsc = _get_nghbr_ratio_constraint(
+                        struct, nrc_k=self.params["hsc"], lengths=self.lengths,
+                        multiscale_factor=self.multiscale_factor, alpha=alpha,
+                        mods=self.mods)
+                    obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
+                    continue
+                # ============================ FIXME ratio temp
+
                 homo_sep = self._homolog_separation(struct)
                 homo_sep_diff = self.params["hsc"] - homo_sep
                 # homo_sep_diff = 1 - homo_sep / self.params["hsc"]  # with scaleR
@@ -321,7 +331,6 @@ class Constraints(object):
                 elif 'HSCnoRELU'.lower() not in self.mods:
                     homo_sep_diff = relu(homo_sep_diff)
                     raise ValueError("I thought we weren't doing RELU for HSC anymore")
-
 
                 homo_sep_diff_sq = ag_np.square(homo_sep_diff)
                 if 'sum_not_mean' in self.mods:
@@ -357,10 +366,89 @@ class Constraints(object):
         return homo_sep
 
 
+def _euclidean_distance(struct, row, col):  # FIXME move to utils
+    dis_sq = (ag_np.square(struct[row] - struct[col])).sum(axis=1)
+    return ag_np.sqrt(dis_sq)
+
+
+def _get_nghbr_ratio_constraint(struct, nrc_k, lengths, multiscale_factor,
+                                alpha, mods=[]):
+    row_nghbr = _neighboring_bead_indices(
+        lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
+    row_nghbr_h1 = row_nghbr[int(row_nghbr.size / 2):]
+    row_nghbr_h2 = row_nghbr[:int(row_nghbr.size / 2)]
+    row_nghbr_swap_hmlg = np.concatenate([row_nghbr_h1, row_nghbr_h2])
+
+    nghbr_dis = _euclidean_distance(
+        struct, row=row_nghbr, col=row_nghbr + 1)
+    nghbr_dis_interhmlg = _euclidean_distance(
+        struct, row=row_nghbr, col=row_nghbr_swap_hmlg + 1)
+
+    ratio_dis_alpha = ag_np.power(nghbr_dis, alpha) / ag_np.mean(
+        ag_np.power(nghbr_dis_interhmlg, alpha))
+    mse = ag_np.mean(ag_np.square(ratio_dis_alpha / nrc_k - 1))
+
+    if type(mse).__name__ == 'DeviceArray':
+        nghbr = ag_np.power(nghbr_dis, alpha)
+        n_hmlg = ag_np.power(nghbr_dis_interhmlg, alpha)
+        print(f"mean(nghbr)={nghbr.mean():.3f}  var(nghbr)={nghbr.var():.3f}    mean(n_hmlg)={n_hmlg.mean():.3f}  var(n_hmlg)={n_hmlg.var():.3f}    mean(ratio)={ratio_dis_alpha.mean():.3f}  var(ratio)={ratio_dis_alpha.var():.3f}    mse={mse:.3f}", flush=True)
+
+    if True:
+        return mse
+
+    n = int(struct.shape[0] / 2)
+    row_nghbr_h1 = row_nghbr[row_nghbr < n]
+    row_nghbr_h2 = row_nghbr[row_nghbr >= n]
+
+    nghbr_dis_h1h1 = _euclidean_distance(
+        struct, row=row_nghbr_h1, col=row_nghbr_h1 + 1)
+    nghbr_dis_h2h2 = _euclidean_distance(
+        struct, row=row_nghbr_h2, col=row_nghbr_h2 + 1)
+    nghbr_dis_h1h2 = _euclidean_distance(
+        struct, row=row_nghbr_h1, col=row_nghbr_h2 + 1)
+    nghbr_dis_h2h1 = _euclidean_distance(
+        struct, row=row_nghbr_h2, col=row_nghbr_h1 + 1)
+
+    h1h1_h1h2 = nghbr_dis_h1h1 / nghbr_dis_h1h2
+    h1h1_h2h1 = nghbr_dis_h1h1 / nghbr_dis_h2h1
+    h2h2_h1h2 = nghbr_dis_h2h2 / nghbr_dis_h1h2
+    h2h2_h2h1 = nghbr_dis_h2h2 / nghbr_dis_h2h1
+
+    ratio_dis = ag_np.concatenate([h1h1_h1h2, h1h1_h2h1, h2h2_h1h2, h2h2_h2h1])
+    ratio_dis_alpha = ag_np.power(ratio_dis, alpha)
+    mse = ag_np.mean(ag_np.square(ratio_dis_alpha / nrc_k - 1))
+
+    if type(mse).__name__ == 'DeviceArray':
+        from sklearn.metrics import euclidean_distances
+        interhmlg = ag_np.power(euclidean_distances(struct[n:], struct[:n]), alpha)
+        intrahmlg_nghbr = ag_np.power(ag_np.concatenate([nghbr_dis_h1h1, nghbr_dis_h2h2]), alpha)
+        interhmlg_nghbr = ag_np.power(ag_np.concatenate([nghbr_dis_h1h2, nghbr_dis_h2h1]), alpha)
+        print(f"mean(INTRAhmlg_nghbr)={intrahmlg_nghbr.mean():.3f}", flush=True)
+        print(f"mean(interhmlg_nghbr)={interhmlg_nghbr.mean():.3f}", flush=True)
+        # print(ag_np.diag(interhmlg, k=1).mean())
+        print(f"mean(interhmlg)={interhmlg.mean():.3f}", flush=True)
+        print(f"mean(ratio)={(intrahmlg_nghbr/interhmlg_nghbr).mean()}", flush=True)
+        ratio_mean_internghbr = intrahmlg_nghbr / interhmlg_nghbr.mean()
+        mse_rom = ag_np.mean(ag_np.square(ratio_mean_internghbr / nrc_k - 1))
+        print(f"ratio(mean)={ratio_mean_internghbr.mean()}  var(ratio)={ratio_mean_internghbr.var():.3f}  mse={mse_rom:.3f}", flush=True)
+        print(f"\nmean(ratio)={ratio_dis_alpha.mean():.3f}  var(ratio)={ratio_dis_alpha.var():.3f}  mse={mse:.3f}", flush=True)
+        print(flush=True)
+        exit(1)
+    return mse
+
+
 from .poisson import relu_min  # FIXME temporary
 
 
 def _get_nghbr_dis_constraint(nghbr_dis, mu, sigma_max, beta, alpha, mods=[]):
+    if 'ndc_ratio' in mods:
+        n_per_hmlg = int(nghbr_dis.size / 2)
+        ratio = nghbr_dis[:n_per_hmlg] / nghbr_dis[n_per_hmlg:]
+        mse = ag_np.mean(ag_np.square(ratio - 1))
+        # if type(mse).__name__ == 'DeviceArray':
+        #     print(f"mean(ratio)={ratio.mean():.3f}  var(ratio)={ratio.var():.3f}  mse={mse:.3f}")
+        return mse
+
     mad = ag_np.median(ag_np.absolute(
         nghbr_dis - ag_np.median(nghbr_dis)))
     sigma_tmp = 1.4826 * mad
@@ -452,11 +540,11 @@ def _prep_nghbr_dis_constraint(counts, lengths, ploidy, multiscale_factor, bias,
         counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
 
     row_nghbr = _neighboring_bead_indices(
-        counts_ambig, lengths=lengths, ploidy=1,
-        multiscale_factor=multiscale_factor, include_torm_beads=False)
+        lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor,
+        counts=counts_ambig, include_torm_beads=False)
 
     if bias is not None:
-        raise NotImplementedError  # TODO
+        raise NotImplementedError("Implement for bias")  # TODO
 
     counts_ambig = decrease_counts_res(
         counts_ambig, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -468,16 +556,38 @@ def _prep_nghbr_dis_constraint(counts, lengths, ploidy, multiscale_factor, bias,
         fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
             multiscale_factor=multiscale_factor, lengths=lengths,
             ploidy=1, fullres_torm=fullres_torm)
-        raise NotImplementedError  # TODO
+        raise NotImplementedError("Implement for multiscale")  # TODO
 
     if (nghbr_counts == 0).sum() == 0:
         nghbr_dis = np.power(nghbr_counts / beta, 1 / alpha)
         return nghbr_dis.mean(), nghbr_dis.std(), beta
     else:
-        raise NotImplementedError  # TODO
+        mean, std = taylor_approx_ndc(
+            nghbr_counts, beta=beta, alpha=alpha, order=1)
+        return mean, std, beta
 
 
-def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor,
+def taylor_approx_ndc(x, beta=1, alpha=-3, order=1):
+    x = x / beta
+    x_mean = np.mean(x)
+    x_var = np.var(x)
+
+    fx_mean = np.power(x_mean, 1 / alpha)
+    fx_var = 1 / np.power(alpha, 2) * np.power(
+        x_mean, (2 - 2 * alpha) / alpha) * x_var
+
+    if order == 2:
+        tmp = (1 - alpha) / (2 * np.square(alpha)) * np.power(
+            x_mean, (1 - 2 * alpha) / alpha)
+        fx_mean = fx_mean + tmp * x_var
+        fx_var = fx_var + np.square(tmp) * (np.var(
+            np.square(x)) - 4 * np.square(x_mean) * x_var)
+
+    fx_std = np.sqrt(fx_var)
+    return fx_mean, fx_std
+
+
+def _neighboring_bead_indices(lengths, ploidy, multiscale_factor, counts=None,
                               include_torm_beads=True):
     """Return row & col of neighboring beads, along a homolog of a chromosome.
     """
@@ -490,6 +600,8 @@ def _neighboring_bead_indices(counts, lengths, ploidy, multiscale_factor,
 
     # Optionally remove beads for which there is no counts data
     if not include_torm_beads:
+        if counts is None:
+            raise ValueError("Counts must be inputted if including torm beads.")
         torm = find_beads_to_remove(
             counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor)
