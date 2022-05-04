@@ -153,6 +153,14 @@ class Constraints(object):
                 fullres_torm=fullres_torm)
             print(f"\n\n*** NDC:  μ={self.ndc_mu} σ={self.ndc_sigmamax} beta={self.ndc_beta} ***\n\n")
 
+        # ============================ FIXME hsc_new temp
+        self.counts_nghbr = None
+        if self.lambdas["hsc"] and 'hsc_new' in self.mods and ploidy == 2:
+            self.counts_nghbr = _get_nghbr_counts(
+                counts, lengths=lengths, multiscale_factor=multiscale_factor)
+        # ============================ FIXME hsc_new temp
+
+
     def check(self, verbose=True):
         """Check constraints object.
 
@@ -302,15 +310,17 @@ class Constraints(object):
                 obj['ndc'] = obj['ndc'] + gamma * self.lambdas['ndc'] * obj_ndc
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
-                # ============================ FIXME ratio temp
-                if 'hsc_ratio' in self.mods:
+                # ============================ FIXME hsc_new temp
+                if 'hsc_new' in self.mods:
                     hsc = _get_nghbr_ratio_constraint(
-                        struct, nrc_k=self.params["hsc"], lengths=self.lengths,
+                        struct, counts_nghbr=self.counts_nghbr,
+                        counts_interhmlg_mean=self.params["hsc"][0],
+                        lengths=self.lengths,
                         multiscale_factor=self.multiscale_factor, alpha=alpha,
                         mods=self.mods)
                     obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
                     continue
-                # ============================ FIXME ratio temp
+                # ============================ FIXME hsc_new temp
 
                 homo_sep = self._homolog_separation(struct)
                 homo_sep_diff = self.params["hsc"] - homo_sep
@@ -371,70 +381,67 @@ def _euclidean_distance(struct, row, col):  # FIXME move to utils
     return ag_np.sqrt(dis_sq)
 
 
-def _get_nghbr_ratio_constraint(struct, nrc_k, lengths, multiscale_factor,
-                                alpha, mods=[]):
+def _get_nghbr_ratio_constraint(struct, counts_nghbr, counts_interhmlg_mean,
+                                lengths, multiscale_factor, alpha, mods=[]):
+
+    if "hsc_mean_mse" in mods:
+        nrc_k = (counts_nghbr.mean() / 2) / counts_interhmlg_mean
+
+        row_nghbr = _neighboring_bead_indices(
+            lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
+        row_nghbr_h1 = row_nghbr[int(row_nghbr.size / 2):]
+        row_nghbr_h2 = row_nghbr[:int(row_nghbr.size / 2)]
+        row_nghbr_swap_hmlg = np.concatenate([row_nghbr_h1, row_nghbr_h2])
+
+        nghbr_dis = _euclidean_distance(
+            struct, row=row_nghbr, col=row_nghbr + 1)
+
+        if "all_interh" in mods:
+            n = int(struct.shape[0] / 2)
+            row, col = np.indices((n, n))
+            nghbr_dis_interhmlg = _euclidean_distance(
+                struct, row=row.flatten(), col=col.flatten() + n)
+        else:
+            nghbr_dis_interhmlg = _euclidean_distance(
+                struct, row=row_nghbr, col=row_nghbr_swap_hmlg + 1)
+
+        ratio_dis_alpha = ag_np.power(nghbr_dis, alpha) / ag_np.mean(
+            ag_np.power(nghbr_dis_interhmlg, alpha))
+        mse = ag_np.mean(ag_np.square(ratio_dis_alpha / nrc_k - 1))
+
+        if type(mse).__name__ == 'DeviceArray':
+            nghbr = ag_np.power(nghbr_dis, alpha)
+            n_hmlg = ag_np.power(nghbr_dis_interhmlg, alpha)
+            print(f"mean(nghbr)={nghbr.mean():.3f}  var(nghbr)={nghbr.var():.3f}    mean(n_hmlg)={n_hmlg.mean():.3f}  var(n_hmlg)={n_hmlg.var():.3f}    mean(ratio)={ratio_dis_alpha.mean():.3f}  var(ratio)={ratio_dis_alpha.var():.3f}    mse={mse:.3f}", flush=True)
+    return mse
+
+
+def _get_nghbr_counts(counts, lengths, multiscale_factor):
+    """TODO
+    """
+
+    if multiscale_factor != 1:
+        raise NotImplementedError
+
+    counts = [c for c in counts if c.sum() != 0]
+
+    beta = _ambiguate_beta(
+        [c.beta for c in counts], counts=counts, lengths=lengths, ploidy=2)
+    counts_ambig = ambiguate_counts(
+        counts=counts, lengths=lengths, ploidy=2, exclude_zeros=True)
+
     row_nghbr = _neighboring_bead_indices(
         lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
-    row_nghbr_h1 = row_nghbr[int(row_nghbr.size / 2):]
-    row_nghbr_h2 = row_nghbr[:int(row_nghbr.size / 2)]
-    row_nghbr_swap_hmlg = np.concatenate([row_nghbr_h1, row_nghbr_h2])
+    row_nghbr = row_nghbr[:int(row_nghbr.size / 2)]
 
-    nghbr_dis = _euclidean_distance(
-        struct, row=row_nghbr, col=row_nghbr + 1)
-    nghbr_dis_interhmlg = _euclidean_distance(
-        struct, row=row_nghbr, col=row_nghbr_swap_hmlg + 1)
+    mask = np.isin(counts_ambig.row, row_nghbr) & (counts_ambig.col == counts_ambig.row + 1)
+    counts_nghbr = counts_ambig.data[mask]
 
-    ratio_dis_alpha = ag_np.power(nghbr_dis, alpha) / ag_np.mean(
-        ag_np.power(nghbr_dis_interhmlg, alpha))
-    mse = ag_np.mean(ag_np.square(ratio_dis_alpha / nrc_k - 1))
+    if not np.array_equal(counts_ambig.row[mask], row_nghbr):
+        raise ValueError("oh no")
 
-    if type(mse).__name__ == 'DeviceArray':
-        nghbr = ag_np.power(nghbr_dis, alpha)
-        n_hmlg = ag_np.power(nghbr_dis_interhmlg, alpha)
-        print(f"mean(nghbr)={nghbr.mean():.3f}  var(nghbr)={nghbr.var():.3f}    mean(n_hmlg)={n_hmlg.mean():.3f}  var(n_hmlg)={n_hmlg.var():.3f}    mean(ratio)={ratio_dis_alpha.mean():.3f}  var(ratio)={ratio_dis_alpha.var():.3f}    mse={mse:.3f}", flush=True)
+    return counts_nghbr
 
-    if True:
-        return mse
-
-    n = int(struct.shape[0] / 2)
-    row_nghbr_h1 = row_nghbr[row_nghbr < n]
-    row_nghbr_h2 = row_nghbr[row_nghbr >= n]
-
-    nghbr_dis_h1h1 = _euclidean_distance(
-        struct, row=row_nghbr_h1, col=row_nghbr_h1 + 1)
-    nghbr_dis_h2h2 = _euclidean_distance(
-        struct, row=row_nghbr_h2, col=row_nghbr_h2 + 1)
-    nghbr_dis_h1h2 = _euclidean_distance(
-        struct, row=row_nghbr_h1, col=row_nghbr_h2 + 1)
-    nghbr_dis_h2h1 = _euclidean_distance(
-        struct, row=row_nghbr_h2, col=row_nghbr_h1 + 1)
-
-    h1h1_h1h2 = nghbr_dis_h1h1 / nghbr_dis_h1h2
-    h1h1_h2h1 = nghbr_dis_h1h1 / nghbr_dis_h2h1
-    h2h2_h1h2 = nghbr_dis_h2h2 / nghbr_dis_h1h2
-    h2h2_h2h1 = nghbr_dis_h2h2 / nghbr_dis_h2h1
-
-    ratio_dis = ag_np.concatenate([h1h1_h1h2, h1h1_h2h1, h2h2_h1h2, h2h2_h2h1])
-    ratio_dis_alpha = ag_np.power(ratio_dis, alpha)
-    mse = ag_np.mean(ag_np.square(ratio_dis_alpha / nrc_k - 1))
-
-    if type(mse).__name__ == 'DeviceArray':
-        from sklearn.metrics import euclidean_distances
-        interhmlg = ag_np.power(euclidean_distances(struct[n:], struct[:n]), alpha)
-        intrahmlg_nghbr = ag_np.power(ag_np.concatenate([nghbr_dis_h1h1, nghbr_dis_h2h2]), alpha)
-        interhmlg_nghbr = ag_np.power(ag_np.concatenate([nghbr_dis_h1h2, nghbr_dis_h2h1]), alpha)
-        print(f"mean(INTRAhmlg_nghbr)={intrahmlg_nghbr.mean():.3f}", flush=True)
-        print(f"mean(interhmlg_nghbr)={interhmlg_nghbr.mean():.3f}", flush=True)
-        # print(ag_np.diag(interhmlg, k=1).mean())
-        print(f"mean(interhmlg)={interhmlg.mean():.3f}", flush=True)
-        print(f"mean(ratio)={(intrahmlg_nghbr/interhmlg_nghbr).mean()}", flush=True)
-        ratio_mean_internghbr = intrahmlg_nghbr / interhmlg_nghbr.mean()
-        mse_rom = ag_np.mean(ag_np.square(ratio_mean_internghbr / nrc_k - 1))
-        print(f"ratio(mean)={ratio_mean_internghbr.mean()}  var(ratio)={ratio_mean_internghbr.var():.3f}  mse={mse_rom:.3f}", flush=True)
-        print(f"\nmean(ratio)={ratio_dis_alpha.mean():.3f}  var(ratio)={ratio_dis_alpha.var():.3f}  mse={mse:.3f}", flush=True)
-        print(flush=True)
-        exit(1)
-    return mse
 
 
 from .poisson import relu_min  # FIXME temporary
