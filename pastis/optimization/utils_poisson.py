@@ -52,8 +52,8 @@ def _load_infer_var(infer_var_file):
         if key in infer_var:
             infer_var[key] = np.array(infer_var[key].split(), dtype=float)
     convert_type_fxns = {
-        'alpha': float, 'converged': strtobool, 'seed': (float, int),
-        'multiscale_variances': float, 'obj': float, 'time': float}
+        'alpha': [float], 'converged': [strtobool], 'seed': [float, int],
+        'multiscale_variances': [float], 'obj': [float], 'time': [float]}
     for key, type_fxns in convert_type_fxns.items():
         if key in infer_var:
             for type_fxn in type_fxns:
