@@ -37,7 +37,7 @@ coefs_mean = [5.549172757571418e-20, -1.6470775119344408e-17, 2.2606861003877433
 coefs_var = [-8.89723012160453e-20, 2.6939031920163006e-17, -3.780088866833452e-15, 3.262503889748274e-13, -1.9384315351972383e-11, 8.408736957761065e-10, -2.7561824714335875e-08, 6.969965186508444e-07, -1.3766418318829012e-05, 0.00021367122264464005, -0.002609568682021054, 0.025003741308379887, -0.18663053580505512, 1.0728333419317682, -4.671837208672972, 15.062582659039125, -34.8224086368473, 55.041717936059165, -54.63542672952499, 25.766016969084514, -5.116935512532633]
 
 
-def _polyval(x, coefs):
+def _polyval(x, coefs):  # TODO move to likelihoods.py or maybe utils_poisson.py
     """Analagous to np.polyval (which is not differentiable with jax)"""
     ans = 0
     power = len(coefs) - 1
@@ -47,7 +47,7 @@ def _polyval(x, coefs):
     return ans
 
 
-def _stirling(z):
+def _stirling(z):  # TODO move to likelihoods.py
     """Computes B_N(z)
     """
     sterling_coefs = [
@@ -58,13 +58,13 @@ def _stirling(z):
     return _polyval(z_sq_inv, coefs=sterling_coefs) / z
 
 
-def _masksum(x, mask, axis=None):
+def _masksum(x, mask, axis=None):  # TODO move to likelihoods.py
     """Sum of masked array (for autograd)"""
     return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
-def relu_min(x1, x2):
-    # FIXME this is temporary, remove this and switch to jax_min
+def relu_min(x1, x2):  # TODO move to likelihoods.py
+    # TODO this is temporary, remove this and switch to jax_min
     # returns min(x1, x2)
     return - (relu((-x1) - (-x2)) + (-x2))
 
@@ -148,7 +148,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         k = k + mix_coef * k_tmp
         # mu = mu + mix_coef * counts.beta * gamma_mean  # Not needed
 
-    # Calculate objective
+    # Calculate objective  # TODO use multires_negbinom from likelihoods.py
     log1p_theta = ag_np.log1p(theta)
     obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
     if counts.type == 'zero':
@@ -244,7 +244,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
         lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
             bias) * counts.beta * tmp
 
-    # Sum main objective function
+    # Sum main objective function  # TODO use function in likelihoods.py
     obj = (lambda_intensity * num_fullres_per_lowres_bins).mean()  # TODO fix on main branch: mean not sum!
 
     if counts.type != 'zero':
@@ -389,8 +389,8 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         obj_constraints = {}
     else:
         obj_constraints = constraints.apply(
-            structures, alpha=alpha, inferring_alpha=inferring_alpha,
-            mixture_coefs=mixture_coefs)
+            structures, alpha=alpha, epsilon=epsilon, bias=bias,
+            inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs)
 
     obj_poisson = {}
     obj_poisson_sum = 0.

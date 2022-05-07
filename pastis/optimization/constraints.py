@@ -26,6 +26,7 @@ from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .utils_poisson import find_beads_to_remove, _intra_counts_mask
 from .counts import ambiguate_counts, _ambiguate_beta
+from .likelihoods import skellam_nll
 
 
 class Constraints(object):
@@ -154,12 +155,10 @@ class Constraints(object):
             print(f"\n\n*** NDC:  μ={self.ndc_mu} σ={self.ndc_sigmamax} beta={self.ndc_beta} ***\n\n")
 
         # ============================ FIXME hsc_new temp
-        self.counts_nghbr = None
-        if self.lambdas["hsc"] and 'hsc_new' in self.mods and ploidy == 2:
-            self.counts_nghbr = _get_nghbr_counts(
-                counts, lengths=lengths, multiscale_factor=multiscale_factor)
+        self.counts = None
+        if 'hsc_new' in self.mods:
+            self.counts = counts
         # ============================ FIXME hsc_new temp
-
 
     def check(self, verbose=True):
         """Check constraints object.
@@ -248,8 +247,8 @@ class Constraints(object):
                     print(f"            param = {self.params[constraint]:.3g}",
                           flush=True)
 
-    def apply(self, structures, alpha=None, inferring_alpha=False,
-              mixture_coefs=None):
+    def apply(self, structures, alpha=None, epsilon=None, bias=None,
+              inferring_alpha=False, mixture_coefs=None):
         """Apply constraints using given structure(s).
 
         Compute negative log likelhood for each constraint using the given
@@ -311,13 +310,22 @@ class Constraints(object):
         if self.lambdas["hsc"] and not inferring_alpha:
             for struct, gamma in zip(structures, mixture_coefs):
                 # ============================ FIXME hsc_new temp
-                if 'hsc_new' in self.mods:
+                if 'hsc_new' in self.mods and 'hsc_mean_mse' in self.mods:
                     hsc = _get_nghbr_ratio_constraint(
-                        struct, counts_nghbr=self.counts_nghbr,
-                        counts_interhmlg_mean=self.params["hsc"][0],
-                        lengths=self.lengths,
+                        struct, counts=self.counts,
+                        counts_interchrom_mean=self.params["hsc"][0],
+                        lengths=self.lengths, bias=bias,
                         multiscale_factor=self.multiscale_factor, alpha=alpha,
                         mods=self.mods)
+                    obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
+                    continue
+                elif 'hsc_new' in self.mods:
+                    hsc = _get_nghbr_diff_constraint(
+                        struct=struct, counts=self.counts,
+                        counts_interchrom_mean=self.params["hsc"][0],
+                        lengths=self.lengths, bias=bias,
+                        multiscale_factor=self.multiscale_factor, alpha=alpha,
+                        epsilon=epsilon, mods=self.mods)
                     obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
                     continue
                 # ============================ FIXME hsc_new temp
@@ -381,67 +389,205 @@ def _euclidean_distance(struct, row, col):  # FIXME move to utils
     return ag_np.sqrt(dis_sq)
 
 
-def _get_nghbr_ratio_constraint(struct, counts_nghbr, counts_interhmlg_mean,
-                                lengths, multiscale_factor, alpha, mods=[]):
+def _get_nghbr_diff_constraint(struct, counts, counts_interchrom_mean, lengths,
+                               bias, multiscale_factor, alpha, epsilon=None,
+                               mods=[]):
 
-    if "hsc_mean_mse" in mods:
-        nrc_k = (counts_nghbr.mean() / 2) / counts_interhmlg_mean
+    row_nghbr = _neighboring_bead_indices(
+        lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
+    row_nghbr_h1 = row_nghbr[:int(row_nghbr.size / 2)]
+    row_nghbr_h2 = row_nghbr[int(row_nghbr.size / 2):]
+    dis_nghbr_h1h1 = _euclidean_distance(
+        struct, row=row_nghbr_h1, col=row_nghbr_h1 + 1)
+    dis_nghbr_h2h2 = _euclidean_distance(
+        struct, row=row_nghbr_h2, col=row_nghbr_h2 + 1)
+    dis_nghbr_h1h2 = _euclidean_distance(
+        struct, row=row_nghbr_h1, col=row_nghbr_h2 + 1)
+    dis_nghbr_h2h1 = _euclidean_distance(
+        struct, row=row_nghbr_h2, col=row_nghbr_h1 + 1)
 
-        row_nghbr = _neighboring_bead_indices(
-            lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
-        row_nghbr_h1 = row_nghbr[int(row_nghbr.size / 2):]
-        row_nghbr_h2 = row_nghbr[:int(row_nghbr.size / 2)]
-        row_nghbr_swap_hmlg = np.concatenate([row_nghbr_h1, row_nghbr_h2])
+    n = int(struct.shape[0] / 2)
+    row, col = (x.flatten() for x in np.indices((n, n)))  # TODO what about excluded rows/cols?
+    if bias is None or np.all(bias == 1):
+        bias_interhmlg = 1
+    else:
+        bias_interhmlg = bias.ravel()[row] * bias.ravel()[col]
+    dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
 
-        nghbr_dis = _euclidean_distance(
-            struct, row=row_nghbr, col=row_nghbr + 1)
+    counts_nghbr, beta, bias_nghbr = _get_nghbr_counts(
+        counts, lengths=lengths, multiscale_factor=multiscale_factor, bias=bias)
 
-        if "all_interh" in mods:
-            n = int(struct.shape[0] / 2)
-            row, col = np.indices((n, n))
-            nghbr_dis_interhmlg = _euclidean_distance(
-                struct, row=row.flatten(), col=col.flatten() + n)
-        else:
-            nghbr_dis_interhmlg = _euclidean_distance(
-                struct, row=row_nghbr, col=row_nghbr_swap_hmlg + 1)
+    # # FIXME!! using fake counts
+    # from sklearn.metrics import euclidean_distances
+    # c = np.power(euclidean_distances(struct), alpha) * beta
+    # n = lengths.sum()
+    # c = c[:n, :n] + c[n:, n:] + c[:n, n:] + c[n:, :n]
+    # counts_nghbr = c[row_nghbr_h1, row_nghbr_h1 + 1]
+    # #####
 
-        ratio_dis_alpha = ag_np.power(nghbr_dis, alpha) / ag_np.mean(
-            ag_np.power(nghbr_dis_interhmlg, alpha))
-        mse = ag_np.mean(ag_np.square(ratio_dis_alpha / nrc_k - 1))
+    data = np.maximum(0, counts_nghbr - counts_interchrom_mean)
 
-        if type(mse).__name__ == 'DeviceArray':
-            nghbr = ag_np.power(nghbr_dis, alpha)
-            n_hmlg = ag_np.power(nghbr_dis_interhmlg, alpha)
-            print(f"mean(nghbr)={nghbr.mean():.3f}  var(nghbr)={nghbr.var():.3f}    mean(n_hmlg)={n_hmlg.mean():.3f}  var(n_hmlg)={n_hmlg.var():.3f}    mean(ratio)={ratio_dis_alpha.mean():.3f}  var(ratio)={ratio_dis_alpha.var():.3f}    mse={mse:.3f}", flush=True)
+    if multiscale_factor == 1 and 'stricter' in mods:
+        lambda_nghbr_inter = beta * bias_nghbr * (ag_np.power(
+            dis_nghbr_h1h2, alpha) + ag_np.power(dis_nghbr_h2h1, alpha))
+        lambda_interhmlg = 2 * ag_np.mean(beta * bias_interhmlg * ag_np.power(
+            dis_interhmlg, alpha))
+        lambda_sum1 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h1h1, alpha)
+        lambda_sum2 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h2h2, alpha)
+        mu2 = lambda_interhmlg
+        nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
+        nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
+        if type(nll1).__name__ == 'DeviceArray':
+            nghbr = beta * bias_nghbr * ag_np.power(np.concatenate([dis_nghbr_h1h1, dis_nghbr_h2h2]), alpha)
+            print(f"nghbr={nghbr.mean():.3f} \t inter={lambda_interhmlg / 2:.3f} \t obj={nll1 + nll2:.3g}", flush=True)
+        return nll1 + nll2
+
+    elif multiscale_factor == 1 and 'mean_internghbr' in mods:
+        lambda_nghbr_inter = beta * bias_nghbr * (ag_np.power(
+            dis_nghbr_h1h2, alpha) + ag_np.power(dis_nghbr_h2h1, alpha))
+        lambda_interhmlg = 2 * ag_np.mean(beta * bias_interhmlg * ag_np.power(
+            dis_interhmlg, alpha))
+        lambda_sum1 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h1h1, alpha) + lambda_nghbr_inter
+        lambda_sum2 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h2h2, alpha) + lambda_nghbr_inter
+        mu2 = ag_np.mean(lambda_nghbr_inter) + lambda_interhmlg
+        nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
+        nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
+        obj = (nll1 + nll2) / 2
+        if type(nll1).__name__ == 'DeviceArray':
+            nghbr = beta * bias_nghbr * ag_np.power(np.concatenate([dis_nghbr_h1h1, dis_nghbr_h2h2]), alpha)
+            print(f"nghbr={nghbr.mean():.3f} \t inter={lambda_interhmlg / 2:.3f} \t mu1_h1={lambda_sum1.mean():.3f} \t mu1_h2={lambda_sum2.mean():.3f} \t mu2={mu2.mean():.3f} \t data={data.mean():.3f} \t obj={obj:.3g}", flush=True)
+            # # print(ag_np.mean(lambda_nghbr_inter), lambda_interhmlg)
+            # diff1 = (lambda_sum1 - mu2) - data
+            # diff2 = (lambda_sum2 - mu2) - data
+            # diff = np.concatenate([diff1, diff2])
+            # print(f"\norig         mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
+            # diff1 = (lambda_sum1 - mu2) - data.mean()
+            # diff2 = (lambda_sum2 - mu2) - data.mean()
+            # diff = np.concatenate([diff1, diff2])
+            # print(f"\ndata.mean()  mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
+            # diff1 = (lambda_sum1 - mu2) - np.median(data)
+            # diff2 = (lambda_sum2 - mu2) - np.median(data)
+            # diff = np.concatenate([diff1, diff2])
+            # print(f"\ndata.MED()   mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
+            # diff1 = (lambda_sum1) - counts_nghbr
+            # diff2 = (lambda_sum2) - counts_nghbr
+            # diff = np.concatenate([diff1, diff2])
+            # print(f"\nnghbr_Hsum    mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
+            # diff = np.mean([lambda_sum1, lambda_sum2], axis=0) - counts_nghbr
+            # print(f"\nnghbr_Hsum !! mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
+            # print(skellam_nll(mu1=np.mean([lambda_sum1, lambda_sum2], axis=0), mu2=mu2, data=data, mods=mods))
+            # print(skellam_nll(mu1=np.mean([lambda_sum1, lambda_sum2]), mu2=mu2, data=data.mean(), mods=mods))
+            # t1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data.mean(), mods=mods)
+            # t2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data.mean(), mods=mods)
+            # print((t1 + t2) / 2)
+            # exit(0)
+        return obj * 2
+
+    elif multiscale_factor == 1:
+        lambda_nghbr_inter = beta * bias_nghbr * (ag_np.power(
+            dis_nghbr_h1h2, alpha) + ag_np.power(dis_nghbr_h2h1, alpha))
+        lambda_interhmlg = 2 * ag_np.mean(beta * bias_interhmlg * ag_np.power(
+            dis_interhmlg, alpha))
+        lambda_sum1 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h1h1, alpha) + lambda_nghbr_inter
+        lambda_sum2 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h2h2, alpha) + lambda_nghbr_inter
+        mu2 = lambda_nghbr_inter + lambda_interhmlg
+        nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
+        nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
+        if type(nll1).__name__ == 'DeviceArray':
+            nghbr = beta * bias_nghbr * ag_np.power(np.concatenate([dis_nghbr_h1h1, dis_nghbr_h2h2]), alpha)
+            print(f"nghbr={nghbr.mean():.3f} \t inter={lambda_interhmlg / 2:.3f} \t obj={nll1 + nll2:.3g}", flush=True)
+        return nll1 + nll2
+    else:
+        raise NotImplementedError
+
+
+def _get_nghbr_ratio_constraint(struct, counts, counts_interchrom_mean, lengths,
+                                bias, multiscale_factor, alpha, mods=[]):
+    counts_nghbr, _, bias_nghbr = _get_nghbr_counts(
+        counts, lengths=lengths, multiscale_factor=multiscale_factor, bias=bias)
+    nrc_k = (counts_nghbr.mean() / 2) / counts_interchrom_mean
+
+    row_nghbr = _neighboring_bead_indices(
+        lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
+    row_nghbr_h1 = row_nghbr[int(row_nghbr.size / 2):]
+    row_nghbr_h2 = row_nghbr[:int(row_nghbr.size / 2)]
+    row_nghbr_swap_hmlg = np.concatenate([row_nghbr_h1, row_nghbr_h2])
+
+    nghbr_dis = _euclidean_distance(
+        struct, row=row_nghbr, col=row_nghbr + 1)
+
+    if "all_interh" in mods:
+        n = int(struct.shape[0] / 2)
+        row, col = np.indices((n, n))
+        nghbr_dis_interhmlg = _euclidean_distance(
+            struct, row=row.flatten(), col=col.flatten() + n)
+    else:
+        nghbr_dis_interhmlg = _euclidean_distance(
+            struct, row=row_nghbr, col=row_nghbr_swap_hmlg + 1)
+
+    ratio_dis_alpha = ag_np.power(nghbr_dis, alpha) / ag_np.mean(
+        ag_np.power(nghbr_dis_interhmlg, alpha))
+    mse = ag_np.mean(ag_np.square(ratio_dis_alpha / nrc_k - 1))
+
+    if type(mse).__name__ == 'DeviceArray':
+        nghbr = ag_np.power(nghbr_dis, alpha)
+        n_hmlg = ag_np.power(nghbr_dis_interhmlg, alpha)
+        print(f"mean(nghbr)={nghbr.mean():.3f}  var(nghbr)={nghbr.var():.3f}    mean(n_hmlg)={n_hmlg.mean():.3f}  var(n_hmlg)={n_hmlg.var():.3f}    mean(ratio)={ratio_dis_alpha.mean():.3f}  var(ratio)={ratio_dis_alpha.var():.3f}    mse={mse:.3f}", flush=True)
     return mse
 
 
-def _get_nghbr_counts(counts, lengths, multiscale_factor):
+def _get_nghbr_counts(counts, lengths, multiscale_factor, bias):
     """TODO
     """
 
     if multiscale_factor != 1:
-        raise NotImplementedError
+        raise NotImplementedError("or maybe it is implemented. who am i to say??")
 
-    counts = [c for c in counts if c.sum() != 0]
-
-    beta = _ambiguate_beta(
-        [c.beta for c in counts], counts=counts, lengths=lengths, ploidy=2)
-    counts_ambig = ambiguate_counts(
-        counts=counts, lengths=lengths, ploidy=2, exclude_zeros=True)
+    # counts = [c for c in counts if c.sum() != 0]
+    # beta = _ambiguate_beta(
+    #     [c.beta for c in counts], counts=counts, lengths=lengths, ploidy=2)
+    # counts_ambig = ambiguate_counts(
+    #     counts=counts, lengths=lengths, ploidy=2, exclude_zeros=True)
+    counts_ambig = [c for c in counts if c.name == 'ambig']
+    if len(counts_ambig) == 1:
+        counts_ambig = counts_ambig[0]
+    elif len(counts_ambig) == 0:
+        raise ValueError("0 ambiguous counts matrices inputted.")
+    else:
+        raise ValueError(">1 ambiguous counts matrix inputted.")
 
     row_nghbr = _neighboring_bead_indices(
-        lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
-    row_nghbr = row_nghbr[:int(row_nghbr.size / 2)]
+        lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor)
 
-    mask = np.isin(counts_ambig.row, row_nghbr) & (counts_ambig.col == counts_ambig.row + 1)
-    counts_nghbr = counts_ambig.data[mask]
+    # FIXME check the below
+    idx = np.where(np.isin(counts_ambig.row, row_nghbr) & (
+        counts_ambig.col == counts_ambig.row + 1))[0]
+    counts_nghbr = np.zeros_like(row_nghbr)
+    counts_nghbr[np.isin(row_nghbr, counts_ambig.row)] = counts_ambig.data[idx]
 
-    if not np.array_equal(counts_ambig.row[mask], row_nghbr):
-        raise ValueError("oh no")
+    # row_nghbr_non0 = counts_ambig.row[counts_ambig.col == counts_ambig.row + 1]
+    # # Remove if "neighbor" beads are actually on different chromosomes
+    # # or homologs
+    # lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    # bins = np.tile(lengths_lowres, ploidy).cumsum()
+    # same_bin = np.digitize(row_nghbr_non0, bins) == np.digitize(row_nghbr_non0 + 1, bins)
+    # row_nghbr_non0 = row_nghbr_non0[same_bin]
+    # # blah
+    # counts_nghbr_non0 = 
 
-    return counts_nghbr
 
+    if bias is None or np.all(bias == 1):
+        bias_nghbr = 1
+    else:
+        bias_nghbr = bias.ravel()[row_nghbr] * bias.ravel()[row_nghbr + 1]
+
+    return counts_nghbr, counts_ambig.beta, bias_nghbr
 
 
 from .poisson import relu_min  # FIXME temporary
