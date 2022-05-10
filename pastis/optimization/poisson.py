@@ -395,48 +395,18 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     obj_poisson = {}
     obj_poisson_sum = 0.
 
-    if 'highatlow' in mods and multiscale_factor != 1:
-        # Compute low-res objective on low-res structures, using low-res or
-        # grouped counts
-        structures_lowres = [decrease_struct_res(
-            struct, multiscale_factor=multiscale_factor,
-            lengths=lengths, ploidy=ploidy) for struct in structures]
-        for counts_maps in counts:
-            if counts_maps.multiscale_factor == 1:
-                continue
-            obj_counts = _obj_single(
-                structures=structures_lowres, counts=counts_maps, alpha=alpha,
-                lengths=lengths, ploidy=ploidy, bias=bias,
-                multiscale_factor=multiscale_factor,
-                multiscale_variances=multiscale_variances, epsilon=epsilon,
-                mixture_coefs=mixture_coefs, mods=mods)
-            if 'sum_not_mean' in mods:
-                obj_poisson[f"obj_{counts_maps.name}_lowres"] = obj_counts * counts_maps.nnz
-            else:
-                obj_poisson[f"obj_{counts_maps.name}_lowres"] = obj_counts
-            obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
-
     for counts_maps in counts:
-        if 'highatlow' in mods and multiscale_factor != 1:
-            if counts_maps.multiscale_factor != 1:
-                continue
         obj_counts = _obj_single(
             structures=structures, counts=counts_maps, alpha=alpha,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
             mixture_coefs=mixture_coefs, mods=mods)
-        if 'sum_not_mean' in mods:
-            obj_poisson[f"obj_{counts_maps.name}"] = obj_counts * counts_maps.nnz
-        else:
-            obj_poisson[f"obj_{counts_maps.name}"] = obj_counts
+        obj_poisson[f"obj_{counts_maps.name}"] = obj_counts
         obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
 
-    # Take mean of poisson/negbinom obj terms
-    if 'sum_not_mean' in mods:
-        obj_poisson_mean = obj_poisson_sum
-    else:
-        obj_poisson_mean = obj_poisson_sum / sum([c.nnz for c in counts])
+    # Take weighted mean of poisson/negbinom obj terms
+    obj_poisson_mean = obj_poisson_sum / sum([c.nnz for c in counts])
 
     obj = obj_poisson_mean + sum(obj_constraints.values())
 
@@ -466,10 +436,8 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
     if lengths is None or ploidy is None:
         nbeads = None
     else:
-        # lengths_lowres = decrease_lengths_res(  # FIXME THIS SEEMS WRONG - highatlow below
-        #     lengths, multiscale_factor=(1 if (mods is None or 'highatlow' in mods) else multiscale_factor))
         lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor))
+            lengths, multiscale_factor=multiscale_factor)
         nbeads = lengths_lowres.sum() * ploidy
 
     if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # FIXME epsilon

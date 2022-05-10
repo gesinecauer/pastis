@@ -44,9 +44,12 @@ def _stirling(z):
     return _polyval(z_sq_inv, coefs=sterling_coefs) / z
 
 
-def _masksum(x, mask, axis=None):
+def _masksum(x, mask=None, axis=None):
     """Sum of masked array (for autograd)"""
-    return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
+    if mask is None:
+        return ag_np.sum(x, axis=axis)
+    else:
+        return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
 def relu_min(x1, x2):
@@ -154,17 +157,23 @@ def skellam_nll(mu1, mu2, data, mods=[]):
 
 
     obj = ag_np.mean(mu1) + ag_np.mean(mu2) - log_mod_bessel1_mean
-    if data.sum() > 0: # Technically should be if not all zeros...
+    if np.any(data != 0):
         obj = obj - ag_np.mean(data / 2 * (ag_np.log(mu1) - ag_np.log(mu2)))
     return obj
 
 
-def poisson_nll(lambda_intensity, data, mask, num_fullres_per_lowres_bins=1):
-    obj = (lambda_intensity * num_fullres_per_lowres_bins).mean()
-    if data.sum() > 0:
-        if lambda_intensity.shape != data.shape:
+def poisson_nll(lambda_pois, data, mask=None, num_fullres_per_lowres_bins=1):
+    lambda_pois = ag_np.asarray(lambda_pois)
+    data = np.asarray(data)
+
+    obj = ag_np.mean(lambda_pois * num_fullres_per_lowres_bins)
+    non0 = (data != 0)
+    if np.any(non0):
+        if data.size > lambda_pois.size:
             data = _masksum(data, mask=mask, axis=0)
-        obj = obj - (data * ag_np.log(lambda_intensity)).mean()
+            # non0 = (data != 0)
+        # obj = obj - ag_np.mean(data[non0] * ag_np.log(lambda_pois[non0])) # TODO implement
+        obj = obj - ag_np.mean(data * ag_np.log(lambda_pois))
     return obj
 
 

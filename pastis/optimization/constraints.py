@@ -26,7 +26,7 @@ from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .utils_poisson import find_beads_to_remove, _intra_counts_mask
 from .counts import ambiguate_counts, _ambiguate_beta
-from .likelihoods import skellam_nll
+from .likelihoods import skellam_nll, poisson_nll
 
 
 class Constraints(object):
@@ -301,6 +301,8 @@ class Constraints(object):
         if self.lambdas["ndc"]:
             col_nghbr = self.row_nghbr + 1
             for struct, gamma in zip(structures, mixture_coefs):
+                if 'redirect_ndc' in self.mods:
+                    continue
                 nghbr_dis = ag_np.sqrt((ag_np.square(
                     struct[self.row_nghbr] - struct[col_nghbr])).sum(axis=1))
                 obj_ndc = _get_nghbr_dis_constraint(
@@ -325,7 +327,8 @@ class Constraints(object):
                         counts_interchrom_mean=self.params["hsc"][0],
                         lengths=self.lengths, bias=bias,
                         multiscale_factor=self.multiscale_factor, alpha=alpha,
-                        epsilon=epsilon, mods=self.mods)
+                        epsilon=epsilon, ndc_lambda=self.lambdas["ndc"],
+                        mods=self.mods)
                     obj["hsc"] = obj["hsc"] + gamma * self.lambdas["hsc"] * hsc
                     continue
                 # ============================ FIXME hsc_new temp
@@ -391,12 +394,13 @@ def _euclidean_distance(struct, row, col):  # FIXME move to utils
 
 def _get_nghbr_diff_constraint(struct, counts, counts_interchrom_mean, lengths,
                                bias, multiscale_factor, alpha, epsilon=None,
-                               mods=[]):
+                               ndc_lambda=0, mods=[]):
 
     row_nghbr = _neighboring_bead_indices(
         lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor)
-    row_nghbr_h1 = row_nghbr[:int(row_nghbr.size / 2)]
-    row_nghbr_h2 = row_nghbr[int(row_nghbr.size / 2):]
+    num_nghbr_hmlg = int(row_nghbr.size / 2)
+    row_nghbr_h1 = row_nghbr[:num_nghbr_hmlg]
+    row_nghbr_h2 = row_nghbr[num_nghbr_hmlg:]
     dis_nghbr_h1h1 = _euclidean_distance(
         struct, row=row_nghbr_h1, col=row_nghbr_h1 + 1)
     dis_nghbr_h2h2 = _euclidean_distance(
@@ -406,105 +410,102 @@ def _get_nghbr_diff_constraint(struct, counts, counts_interchrom_mean, lengths,
     dis_nghbr_h2h1 = _euclidean_distance(
         struct, row=row_nghbr_h2, col=row_nghbr_h1 + 1)
 
+    # Get inter-homolog distances
     n = int(struct.shape[0] / 2)
     row, col = (x.flatten() for x in np.indices((n, n)))  # TODO what about excluded rows/cols?
+    if ('sep2' in mods) and ('trim_inter' in mods):
+        mask_inter_nghbr = ((col == row + 1) & np.isin(row, row_nghbr_h1)) | (
+            (col + 1 == row) & np.isin(col, row_nghbr_h1))
+        row = row[~mask_inter_nghbr]
+        col = col[~mask_inter_nghbr]
+    dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
     if bias is None or np.all(bias == 1):
         bias_interhmlg = 1
     else:
         bias_interhmlg = bias.ravel()[row] * bias.ravel()[col]
-    dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
 
+    # Get counts corresponding to distances between neighoring beads
     counts_nghbr, beta, bias_nghbr = _get_nghbr_counts(
         counts, lengths=lengths, multiscale_factor=multiscale_factor, bias=bias)
 
     # # FIXME!! using fake counts
     # from sklearn.metrics import euclidean_distances
     # c = np.power(euclidean_distances(struct), alpha) * beta
-    # n = lengths.sum()
     # c = c[:n, :n] + c[n:, n:] + c[:n, n:] + c[n:, :n]
     # counts_nghbr = c[row_nghbr_h1, row_nghbr_h1 + 1]
     # #####
 
-    data = np.maximum(0, counts_nghbr - counts_interchrom_mean)
+    if multiscale_factor > 1:
+        raise NotImplementedError
 
-    if multiscale_factor == 1 and 'stricter' in mods:
-        lambda_nghbr_inter = beta * bias_nghbr * (ag_np.power(
-            dis_nghbr_h1h2, alpha) + ag_np.power(dis_nghbr_h2h1, alpha))
-        lambda_interhmlg = 2 * ag_np.mean(beta * bias_interhmlg * ag_np.power(
-            dis_interhmlg, alpha))
+    lambda_nghbr_inter = beta * bias_nghbr * (ag_np.power(
+        dis_nghbr_h1h2, alpha) + ag_np.power(dis_nghbr_h2h1, alpha))
+    lambda_interhmlg = 2 * ag_np.mean(beta * bias_interhmlg * ag_np.power(
+        dis_interhmlg, alpha))
+
+    if ('stricter' in mods):
         lambda_sum1 = beta * bias_nghbr * 2 * ag_np.power(
             dis_nghbr_h1h1, alpha)
         lambda_sum2 = beta * bias_nghbr * 2 * ag_np.power(
             dis_nghbr_h2h2, alpha)
-        mu2 = lambda_interhmlg
-        nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
-        nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
-        if type(nll1).__name__ == 'DeviceArray':
-            nghbr = beta * bias_nghbr * ag_np.power(np.concatenate([dis_nghbr_h1h1, dis_nghbr_h2h2]), alpha)
-            print(f"nghbr={nghbr.mean():.3f} \t inter={lambda_interhmlg / 2:.3f} \t obj={nll1 + nll2:.3g}", flush=True)
-        return nll1 + nll2
-
-    elif multiscale_factor == 1 and 'mean_internghbr' in mods:
-        lambda_nghbr_inter = beta * bias_nghbr * (ag_np.power(
-            dis_nghbr_h1h2, alpha) + ag_np.power(dis_nghbr_h2h1, alpha))
-        lambda_interhmlg = 2 * ag_np.mean(beta * bias_interhmlg * ag_np.power(
-            dis_interhmlg, alpha))
-        lambda_sum1 = beta * bias_nghbr * 2 * ag_np.power(
-            dis_nghbr_h1h1, alpha) + lambda_nghbr_inter
-        lambda_sum2 = beta * bias_nghbr * 2 * ag_np.power(
-            dis_nghbr_h2h2, alpha) + lambda_nghbr_inter
-        mu2 = ag_np.mean(lambda_nghbr_inter) + lambda_interhmlg
-        nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
-        nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
-        obj = (nll1 + nll2) / 2
-        if type(nll1).__name__ == 'DeviceArray':
-            nghbr = beta * bias_nghbr * ag_np.power(np.concatenate([dis_nghbr_h1h1, dis_nghbr_h2h2]), alpha)
-            print(f"nghbr={nghbr.mean():.3f} \t inter={lambda_interhmlg / 2:.3f} \t mu1_h1={lambda_sum1.mean():.3f} \t mu1_h2={lambda_sum2.mean():.3f} \t mu2={mu2.mean():.3f} \t data={data.mean():.3f} \t obj={obj:.3g}", flush=True)
-            # # print(ag_np.mean(lambda_nghbr_inter), lambda_interhmlg)
-            # diff1 = (lambda_sum1 - mu2) - data
-            # diff2 = (lambda_sum2 - mu2) - data
-            # diff = np.concatenate([diff1, diff2])
-            # print(f"\norig         mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
-            # diff1 = (lambda_sum1 - mu2) - data.mean()
-            # diff2 = (lambda_sum2 - mu2) - data.mean()
-            # diff = np.concatenate([diff1, diff2])
-            # print(f"\ndata.mean()  mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
-            # diff1 = (lambda_sum1 - mu2) - np.median(data)
-            # diff2 = (lambda_sum2 - mu2) - np.median(data)
-            # diff = np.concatenate([diff1, diff2])
-            # print(f"\ndata.MED()   mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
-            # diff1 = (lambda_sum1) - counts_nghbr
-            # diff2 = (lambda_sum2) - counts_nghbr
-            # diff = np.concatenate([diff1, diff2])
-            # print(f"\nnghbr_Hsum    mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
-            # diff = np.mean([lambda_sum1, lambda_sum2], axis=0) - counts_nghbr
-            # print(f"\nnghbr_Hsum !! mean(diff)={diff.mean():.3f}... \t max(diff)={diff.max():.3f} \t min(diff)={diff.min():.3f}...  \t var(diff)={diff.var():.3f}")
-            # print(skellam_nll(mu1=np.mean([lambda_sum1, lambda_sum2], axis=0), mu2=mu2, data=data, mods=mods))
-            # print(skellam_nll(mu1=np.mean([lambda_sum1, lambda_sum2]), mu2=mu2, data=data.mean(), mods=mods))
-            # t1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data.mean(), mods=mods)
-            # t2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data.mean(), mods=mods)
-            # print((t1 + t2) / 2)
-            # exit(0)
-        return obj * 2
-
-    elif multiscale_factor == 1:
-        lambda_nghbr_inter = beta * bias_nghbr * (ag_np.power(
-            dis_nghbr_h1h2, alpha) + ag_np.power(dis_nghbr_h2h1, alpha))
-        lambda_interhmlg = 2 * ag_np.mean(beta * bias_interhmlg * ag_np.power(
-            dis_interhmlg, alpha))
-        lambda_sum1 = beta * bias_nghbr * 2 * ag_np.power(
-            dis_nghbr_h1h1, alpha) + lambda_nghbr_inter
-        lambda_sum2 = beta * bias_nghbr * 2 * ag_np.power(
-            dis_nghbr_h2h2, alpha) + lambda_nghbr_inter
-        mu2 = lambda_nghbr_inter + lambda_interhmlg
-        nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
-        nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
-        if type(nll1).__name__ == 'DeviceArray':
-            nghbr = beta * bias_nghbr * ag_np.power(np.concatenate([dis_nghbr_h1h1, dis_nghbr_h2h2]), alpha)
-            print(f"nghbr={nghbr.mean():.3f} \t inter={lambda_interhmlg / 2:.3f} \t obj={nll1 + nll2:.3g}", flush=True)
-        return nll1 + nll2
+        if ('sep' in mods) or ('sep2' in mods):
+            mu2 = np.array(0.)
+        else:
+            mu2 = lambda_interhmlg
     else:
-        raise NotImplementedError
+        lambda_sum1 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h1h1, alpha) + lambda_nghbr_inter
+        lambda_sum2 = beta * bias_nghbr * 2 * ag_np.power(
+            dis_nghbr_h2h2, alpha) + lambda_nghbr_inter
+        if ('sep2' in mods):
+            mu2 = np.array(0.)
+        elif ('sep' in mods):
+            mu2 = lambda_nghbr_inter
+        else:
+            mu2 = lambda_nghbr_inter + lambda_interhmlg
+        if ('mean_internghbr' in mods):  # not relevant for sep2
+            mu2 = ag_np.mean(mu2)
+
+    nll_interhmlg = nll_nghbr_inter = 0
+    if ('sep' in mods) or ('sep2' in mods):
+        nll_interhmlg = poisson_nll(
+            2 * lambda_interhmlg, data=counts_interchrom_mean)
+        if ('sep2' in mods):
+            nll_nghbr_inter = poisson_nll(
+                2 * ag_np.mean(lambda_nghbr_inter), data=counts_interchrom_mean)
+
+        if ('stricter' in mods):  # (if sep/sep2 & stricter, mu2 = 0)
+            data = np.maximum(0, counts_nghbr - counts_interchrom_mean / 2)
+            nll1 = poisson_nll(lambda_sum1, data=data)
+            nll2 = poisson_nll(lambda_sum2, data=data)
+        elif ('sep2' in mods):
+            data = counts_nghbr
+            nll1 = poisson_nll(lambda_sum1, data=data)
+            nll2 = poisson_nll(lambda_sum2, data=data)
+        else:
+            data = np.maximum(0, counts_nghbr - counts_interchrom_mean / 2)
+            nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
+            nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
+    else:
+        data = np.maximum(0, counts_nghbr - counts_interchrom_mean)
+        nll1 = skellam_nll(mu1=lambda_sum1, mu2=mu2, data=data, mods=mods)
+        nll2 = skellam_nll(mu1=lambda_sum2, mu2=mu2, data=data, mods=mods)
+
+    nll_nghbr = (nll1 + nll2) / 2
+    if nll_interhmlg != 0 and nll_nghbr_inter != 0:
+        nll_inter = (nll_interhmlg + nll_nghbr_inter) / 2
+    else:
+        nll_inter = nll_interhmlg + nll_nghbr_inter
+    if 'redirect_ndc' in mods and ndc_lambda != 0:
+        nll_inter = nll_inter * ndc_lambda
+    obj = nll_inter + nll_nghbr
+
+    if type(nll1).__name__ == 'DeviceArray':
+        nghbr = beta * bias_nghbr * ag_np.power(np.concatenate([dis_nghbr_h1h1, dis_nghbr_h2h2]), alpha)
+        mu1 = ag_np.concatenate([lambda_sum1, lambda_sum2])
+        mu_diff = ag_np.concatenate([lambda_sum1 - mu2, lambda_sum2 - mu2])
+        print(f"nghbr={nghbr.mean():.1f}\tinter={lambda_interhmlg / 2:.3f}\tnghbr_i={(lambda_nghbr_inter / 2).mean():.3f}\t  μ1={mu1.mean():.1f}\tμ2={mu2.mean():.2f}\tμ1-μ2={mu_diff.mean():.1f}\tdata={data.mean():.1f}\t  obj_i={nll_interhmlg:.2f}\tobj_ni={nll_nghbr_inter:.2f}\tobj_n={nll_nghbr:.3f}\tobj={obj:.3g}", flush=True)
+    return obj
 
 
 def _get_nghbr_ratio_constraint(struct, counts, counts_interchrom_mean, lengths,
@@ -738,6 +739,19 @@ def taylor_approx_ndc(x, beta=1, alpha=-3, order=1):
 
     fx_std = np.sqrt(fx_var)
     return fx_mean, fx_std
+
+
+# def _remove_intermolecule_idx(row, col, lengths, ploidy, multiscale_factor):
+#     """TODO"""
+#     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+
+#     bins = np.tile(lengths_lowres, ploidy).cumsum()
+#     same_bin = np.digitize(row, bins) == np.digitize(col, bins)
+
+#     row = row[same_bin]
+#     col = col[same_bin]
+
+#     return row, col
 
 
 def _neighboring_bead_indices(lengths, ploidy, multiscale_factor, counts=None,
