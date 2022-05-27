@@ -72,7 +72,7 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
 
 
 def _ambiguate_beta(beta, counts, lengths, ploidy):
-    """Sum betas to be consistent with ambiguated counts
+    """Sum betas to be consistent with ambiguated counts.
     """
 
     if beta is None or ploidy == 1:
@@ -87,13 +87,34 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
             "Inconsistent number of betas (%d) and counts matrices (%d)"
             % (len(beta), len(counts)))
 
-    summed_beta = 0.
+    beta_ambig = 0.
     for i in range(len(beta)):
         if counts[i].shape[0] == counts[i].shape[1]:
-            summed_beta += beta[i]
+            beta_ambig += beta[i]
         else:
-            summed_beta += beta[i] * 2
-    return summed_beta
+            beta_ambig += beta[i] * 2
+    return beta_ambig
+
+
+def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
+    """Derive beta for each counts matrix from ambiguated beta.
+    """
+    if beta_ambig is None or ploidy == 1:
+        return [beta_ambig]
+
+    if not isinstance(counts, list):
+        counts = [counts]
+    counts = [c for c in counts if (
+        isinstance(c, np.ndarray) and np.nansum(c) != 0) or c.sum() != 0]
+
+    total_counts = np.sum([c.sum() for c in counts])
+    beta = []
+    for i in range(len(counts)):
+        if counts[i].shape[0] == counts[i].shape[1]:
+            beta.append(beta_ambig * counts[i].sum() / total_counts)
+        else:
+            beta.append(beta_ambig * counts[i].sum() / total_counts / 2)  # TODO double check, make unit tests
+    return beta
 
 
 def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
@@ -382,7 +403,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     if mixture_coefs is not None:
         torm = np.tile(torm, len(mixture_coefs))
 
-    if mods is not None and 'highatlow' in mods and multiscale_factor != 1:
+    if mods is not None and 'highatlow' in mods and multiscale_factor != 1:  # TODO remove
         if 'diag-auto' in mods:
             excluded_counts = int(multiscale_factor - 1)
             print("Including full-res obj at low-res, with intra-chromosomal"
@@ -589,71 +610,55 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
 
 
 def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
-                      multiscale_factor=1, neighboring_beads_only=True):
+                      neighboring_beads_only=True):
     """Estimate compatible betas for each counts matrix."""
 
-    # Set the mean (distance ** alpha)...
-    # ...of either the whole structure or only for distances between beads...
+    # Set the mean (distance ** alpha) of either
+    #   (1) the whole structure, or
+    #   (2) distances between beads (default)
     # ...to be equal to 1
 
-    raise NotImplementedError
+    from .constraints import _neighboring_bead_indices
 
-    # FIXME If I set beta with neighboring_beads_only (or something related to the max counts value), I should do this on the pooled (A+PA+UA) & ambiguated counts to get an "ambiguated_beta", then and then disambiguate it (ie do the opposite of the _ambiguate_beta function)
-     # FIXME should't this be fullres only??..??
+    counts_ambig = ambiguate_counts(
+        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
-    n = lengths.sum()
-    nbeads_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor) * ploidy
+    if neighboring_beads_only:
+        row_nghbr = _neighboring_bead_indices(
+            lengths=lengths, ploidy=1, multiscale_factor=1)  # ambig so ploidy=1
+        if exclude_zeros:
+            mask = np.isin(counts_ambig.row, row_nghbr) & (
+                counts_ambig.col == counts_ambig.row + 1)
+            counts_ambig = sparse.coo_matrix(
+                (counts_ambig.data[mask],
+                    (counts_ambig.row[mask], counts_ambig.col[mask])),
+                shape=counts_ambig.shape)
+        else:
+            counts_diag = np.diagonal(counts_ambig, 1)
+            counts_ambig = np.full_like(counts_ambig, np.nan)
+            counts_ambig[row_nghbr, row_nghbr + 1] = counts_diag[row_nghbr]
 
-    if neighboring_beads_only: # FIXME
-        counts_ambig = ambiguate_counts(
-            counts, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
-
-        if neighboring_beads_only:
-            if exclude_zeros:
-                if isinstance(counts_ambig, np.ndarray):
-                    counts_ambig[np.isnan(counts_ambig)] = 0
-                    counts_ambig = sparse.coo_matrix(counts_ambig)
-                mask = (counts_ambig.row == counts_ambig.col + 1)
-                counts_ambig = sparse.coo_matrix(
-                    (counts_ambig.data[mask],
-                        (counts_ambig.row[mask], counts_ambig.col[mask])),
-                    shape=counts_ambig.shape)
-            else:
-                counts_ambig_diag = counts_ambig.diagonal(k=1)
-                row_nghbr = np.arange(nbeads - 1, dtype=int)
-                col_nghbr = row_nghbr + 1
-                counts_ambig = np.full_like(counts_ambig, np.nan)
-                counts_ambig[row_nghbr, col_nghbr] = counts_ambig_diag
-
-        num_dis_bins = _counts_indices_to_3d_indices(
-            counts_ambig, nbeads_lowres=nbeads_lowres)[0].size
-
-        if bias is None:
-            counts_normed = counts_ambig
+    num_dis_bins = _counts_indices_to_3d_indices(
+        counts_ambig, nbeads_lowres=lengths.sum() * ploidy)[0].size
+    if bias is not None:
+        if exclude_zeros:
+            bias_per_bin = bias[counts_ambig.row] * bias[counts_ambig.col]
+            counts_ambig = sparse.coo_matrix(
+                (counts_ambig.data * bias_per_bin,
+                    (counts_ambig.row, counts_ambig.col)),
+                shape=counts_ambig.shape)
         else:
             bias = bias.reshape(-1, 1)
-            counts_normed = counts_ambig / bias / bias.T
+            counts_ambig = counts_ambig / bias / bias.T
+    if exclude_zeros:
+        beta_ambig = counts_ambig.sum() / num_dis_bins
+    else:
+        beta_ambig = np.nansum(counts_ambig) / num_dis_bins
 
-        beta_ambig = counts_normed.sum() / num_dis_bins
+    beta = _disambiguate_beta(
+        beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias)
 
-    beta = [0] * len(counts)
-    for i in range(len(counts)):
-        counts_ambig_i = ambiguate_counts(
-            counts[i], lengths=lengths, ploidy=ploidy,
-            exclude_zeros=exclude_zeros)
-
-        num_dis_bins = _counts_indices_to_3d_indices(
-            counts_ambig_i, nbeads_lowres=nbeads_lowres)[0].size
-
-        if bias is None:
-            counts_normed_i = counts_ambig_i
-        else:
-            bias = bias.reshape(-1, 1)
-            counts_normed_i = counts_ambig_i / bias / bias.T
-
-        beta[i] = counts_normed_i.sum() / num_dis_bins
-    return beta
+    return beta_ambig, beta
 
 
 def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
@@ -673,7 +678,9 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
                              " as there are datasets (%d). It is of length (%d)"
                              % (len(counts), len(beta)))
     else:
-        raise NotImplementedError
+        _, beta = _set_initial_beta(
+            counts, lengths=lengths, ploidy=ploidy, bias=bias,
+            exclude_zeros=exclude_zeros)
 
     if input_weight is not None:
         if not (isinstance(input_weight, list) or isinstance(input_weight, np.ndarray)):

@@ -41,8 +41,11 @@ def decrease_lengths_res(lengths, multiscale_factor):
         `multiscale_factor`.
     """
 
-    return np.ceil(
-        np.array(lengths).astype(float) / multiscale_factor).astype(int)
+    if multiscale_factor == 1:
+        return np.asarray(lengths)
+    else:
+        return np.ceil(
+            np.asarray(lengths, dtype=float) / multiscale_factor).astype(int)
 
 
 def increase_struct_res_gaussian(struct, current_multiscale_factor,

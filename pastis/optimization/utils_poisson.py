@@ -24,6 +24,12 @@ if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
 
+def _euclidean_distance(struct, row, col):
+    """TODO"""
+    dis_sq = (ag_np.square(struct[row] - struct[col])).sum(axis=1)
+    return ag_np.sqrt(dis_sq)
+
+
 def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
     """Prints a header, for demarcation of output.
     """

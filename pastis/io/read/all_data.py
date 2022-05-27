@@ -48,11 +48,12 @@ def _get_counts(counts, lengths):
             counts_maps = f
         elif f.endswith(".npy"):
             counts_maps = np.load(f)
-        elif f.endswith(".matrix"):
+        elif f.endswith(".matrix") or f.endswith(".matrix.gz"):
             counts_maps = load_hiclib_counts(f, lengths=lengths)
         else:
-            raise ValueError("Counts file must end with .npy (for numpy array)"
-                             " or .matrix (for hiclib / iced format)")
+            raise ValueError(
+                "Counts data must be formatted as a numpy binary file (.npy) or"
+                " hiclib file (.matrix or .matrix.gz).")
         if sparse.issparse(counts_maps):
             counts_maps = counts_maps.toarray()
         counts_maps[np.isnan(counts_maps)] = 0

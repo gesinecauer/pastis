@@ -232,6 +232,6 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
         struct_init = _initialize_struct(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state, init=init,
-            multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
-            std_dev=std_dev, mixture_coefs=mixture_coefs, verbose=verbose)
+            multiscale_factor=multiscale_factor, std_dev=std_dev,
+            mixture_coefs=mixture_coefs, verbose=verbose)
         return struct_init

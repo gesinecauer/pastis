@@ -145,7 +145,7 @@ class Callback(object):
         self.epsilon = None
         self.lengths = lengths  # TODO add to main branch
         self.lengths_lowres = decrease_lengths_res(  # FIXME TODO lengths_lowres, change to main branch
-            lengths, multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor))
+            lengths, multiscale_factor=multiscale_factor)
         self.bias = bias  # TODO add to main branch
         self.counts = counts  # TODO add to main branch
         if counts is None:
@@ -154,7 +154,7 @@ class Callback(object):
         else:
             self.torm = find_beads_to_remove(
                 counts, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor))
+                multiscale_factor=multiscale_factor)
         self.constraints = constraints  # TODO add to main branch
         self.multiscale_reform = multiscale_reform  # TODO add to main branch
         self.multiscale_variances = multiscale_variances  # TODO add to main branch
@@ -185,7 +185,7 @@ class Callback(object):
             struct_true = struct_true.reshape(-1, 3)
             if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
                 self.struct_true = decrease_struct_res(
-                    struct_true, multiscale_factor=(1 if 'highatlow' in mods else multiscale_factor),
+                    struct_true, multiscale_factor=multiscale_factor,
                     lengths=lengths, ploidy=ploidy)
             else:
                 self.struct_true = struct_true
