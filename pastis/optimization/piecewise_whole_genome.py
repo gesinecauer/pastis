@@ -1,14 +1,9 @@
-use_jax = True
-if use_jax:
-    from absl import logging as absl_logging
-    absl_logging.set_verbosity('error')
-    from jax.config import config as jax_config
-    jax_config.update("jax_platform_name", "cpu")
-    jax_config.update("jax_enable_x64", True)
-
-    import jax.numpy as ag_np #import autograd.numpy as ag_np
-else:
-    import autograd.numpy as ag_np
+from absl import logging as absl_logging
+absl_logging.set_verbosity('error')
+from jax.config import config as jax_config
+jax_config.update("jax_platform_name", "cpu")
+jax_config.update("jax_enable_x64", True)
+import jax.numpy as ag_np
 
 import numpy as np
 from sklearn.metrics import euclidean_distances
@@ -413,7 +408,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                     multiscale_rounds=1, use_multiscale_variance=True,
                     max_iter=1e40, factr=10000000., pgtol=1e-05,
                     alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,
-                    hsc_r=None, hsc_min_beads=5, mhs_lambda=0., mhs_k=None,
+                    est_hmlg_sep=None, hsc_min_beads=5, mhs_lambda=0., mhs_k=None,
                     callback_fxns=None, callback_freq=None,
                     piecewise_step=None, piecewise_chrom=None,
                     piecewise_min_beads=5, piecewise_fix_homo=False,
@@ -452,21 +447,21 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
     step2_multiscale = multiscale_rounds > 1 and 2 in piecewise_step
     step3_multiscale = multiscale_rounds > 1 and 3 in piecewise_step and \
         piecewise_step3_multiscale
-    infer_draft_lowres = hsc_lambda > 0 and hsc_r is None
+    infer_draft_lowres = hsc_lambda > 0 and est_hmlg_sep is None
     need_multiscale_var = use_multiscale_variance and (
         step1_multiscale or step2_multiscale or step3_multiscale or
         infer_draft_lowres)
     infer_draft_fullres = need_multiscale_var or alpha is None
 
     if infer_draft_fullres or infer_draft_lowres:
-        struct_draft_fullres, alpha_, beta_, hsc_r, draft_converged = _infer_draft(
+        struct_draft_fullres, alpha_, beta_, est_hmlg_sep, draft_converged = _infer_draft(
             counts_raw, lengths=lengths, ploidy=ploidy, outdir=outdir,
             alpha=alpha, seed=seed, normalize=normalize,
             filter_threshold=filter_threshold, alpha_init=alpha_init,
             max_alpha_loop=max_alpha_loop, beta=beta, multiscale_rounds=2,
             use_multiscale_variance=use_multiscale_variance, init=init,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
-            alpha_factr=alpha_factr, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+            alpha_factr=alpha_factr, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
             hsc_min_beads=hsc_min_beads, callback_freq=callback_freq,
             callback_fxns=callback_fxns, alpha_true=alpha_true,
             struct_true=struct_true, input_weight=input_weight,
@@ -515,7 +510,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
             use_multiscale_variance=use_multiscale_variance,
             init=init, max_iter=max_iter, factr=factr_lowres, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-            hsc_lambda=hsc_lambda, hsc_r=hsc_r, mhs_lambda=mhs_lambda,
+            hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, mhs_lambda=mhs_lambda,
             mhs_k=mhs_k, struct_draft_fullres=struct_draft_fullres,
             callback_fxns=callback_fxns,
             callback_freq=callback_freq,
@@ -533,8 +528,8 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
         return None, infer_var
     alpha_ = infer_var['alpha']
     beta_ = infer_var['beta']
-    if 'hsc_r' in infer_var:
-        hsc_r = infer_var['hsc_r']
+    if 'est_hmlg_sep' in infer_var:
+        est_hmlg_sep = infer_var['est_hmlg_sep']
     if 'mhs_k' in infer_var:
         mhs_k = infer_var['mhs_k']
 
@@ -550,10 +545,10 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
 
         for i in range(len(piecewise_chrom)):
             chrom = piecewise_chrom[i]
-            if hsc_r is not None:
-                hsc_r_chrom = hsc_r[i]
+            if est_hmlg_sep is not None:
+                est_hmlg_sep_chrom = est_hmlg_sep[i]
             else:
-                hsc_r_chrom = None
+                est_hmlg_sep_chrom = None
             if mhs_k is not None and isinstance(mhs_k, np.ndarray):
                 mhs_k_chrom = mhs_k[i]
             else:
@@ -588,7 +583,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                 use_multiscale_variance=use_multiscale_variance,
                 init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
                 alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-                hsc_lambda=hsc_lambda, hsc_r=hsc_r_chrom,
+                hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep_chrom,
                 mhs_lambda=mhs_lambda, mhs_k=mhs_k_chrom,
                 struct_draft_fullres=struct_draft_fullres_chrom,
                 callback_fxns=callback_fxns,
@@ -620,7 +615,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
             use_multiscale_variance=use_multiscale_variance,
             init=struct_fullres_genome_reoriented, max_iter=0, factr=factr,
             pgtol=pgtol, alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-            hsc_lambda=hsc_lambda, hsc_r=hsc_r, mhs_lambda=mhs_lambda,
+            hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, mhs_lambda=mhs_lambda,
             mhs_k=mhs_k, callback_fxns=callback_fxns,
             callback_freq={'print': 0, 'history': callback_freq['history'],
                            'save': 0},
@@ -657,7 +652,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                 use_multiscale_variance=use_multiscale_variance,
                 init=reorient_init, max_iter=max_iter, factr=factr,
                 pgtol=pgtol, alpha_factr=alpha_factr, bcc_lambda=0.,
-                hsc_lambda=hsc_lambda_3, hsc_r=hsc_r, mhs_lambda=mhs_lambda_3,
+                hsc_lambda=hsc_lambda_3, est_hmlg_sep=est_hmlg_sep, mhs_lambda=mhs_lambda_3,
                 mhs_k=mhs_k, excluded_counts='intra',
                 struct_draft_fullres=struct_draft_fullres,
                 callback_fxns=callback_fxns,
@@ -689,7 +684,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
             max_alpha_loop=max_alpha_loop, beta=beta_,
             init=X_all_chrom_oriented, max_iter=max_iter, factr=factr,
             pgtol=pgtol, alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-            hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+            hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
             mhs_lambda=mhs_lambda, mhs_k=mhs_k,
             callback_fxns=callback_fxns, callback_freq=callback_freq,
             alpha_true=alpha_true, struct_true=struct_true,

@@ -2,17 +2,12 @@ import numpy as np
 from scipy import optimize
 import warnings
 
-use_jax = True
-if use_jax:
-    from absl import logging as absl_logging
-    absl_logging.set_verbosity('error')
-    from jax.config import config as jax_config
-    jax_config.update("jax_platform_name", "cpu")
-    jax_config.update("jax_enable_x64", True)
-
-    from jax import grad #from autograd import grad
-else:
-    from autograd import grad
+from absl import logging as absl_logging
+absl_logging.set_verbosity('error')
+from jax.config import config as jax_config
+jax_config.update("jax_platform_name", "cpu")
+jax_config.update("jax_enable_x64", True)
+from jax import grad
 
 from .poisson import objective
 
@@ -40,8 +35,8 @@ def objective_epsilon(X, counts, alpha, lengths, ploidy, structures=None,
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array of float, optional
         Biases computed by ICE normalization.
-    constraints : Constraints instance, optional
-        Object to compute constraints at each iteration.
+    constraints : list of Constraint instances, optional
+        Objects to compute constraints at each iteration.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
@@ -165,8 +160,8 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
-    constraints : Constraints instance, optional
-        Object to compute constraints at each iteration.
+    constraints : list of Constraint instances, optional
+        Objects to compute constraints at each iteration.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.

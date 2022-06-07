@@ -18,6 +18,7 @@ from typing import Any as Array
 import jax.numpy as jnp
 from jax import custom_jvp
 from jax import lax
+import jax.numpy as ag_np
 
 
 if sys.version_info[0] < 3:
@@ -54,7 +55,7 @@ def _load_infer_var(infer_var_file):
         infer_var_file, sep='\t', header=None, index_col=0,
         dtype=str).squeeze("columns"))
 
-    for key in ['beta', 'hsc_r', 'orient', 'epsilon']:
+    for key in ['beta', 'est_hmlg_sep', 'orient', 'epsilon']:
         if key in infer_var:
             infer_var[key] = np.array(infer_var[key].split(), dtype=float)
     convert_type_fxns = {
@@ -169,12 +170,11 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
 
     Returns
     -------
-    torm : array of bool of shape (nbeads,)
+    struct_nan : array of int
         Beads that should be removed (set to NaN) in the structure.
     """
 
     from .multiscale_optimization import decrease_lengths_res
-    from .counts import CountsMatrix
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     nbeads = lengths_lowres.sum() * ploidy
@@ -183,15 +183,8 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
         counts = [counts]
     if len(counts) == 0:
         raise ValueError("Counts is an empty list.")
-    if all([isinstance(c, CountsMatrix) for c in counts]):
-        # If counts are already formatted, they may contain multiple resolutions
-        counts = [c for c in counts if c.multiscale_factor == multiscale_factor]
-    if len(counts) == 0:
-        raise ValueError(
-            "Resolution of counts is not consistent with lengths at"
-            f" multiscale_factor={multiscale_factor}.")
 
-    inverse_torm = np.zeros(int(nbeads))
+    inverse_struct_nan_mask = np.zeros(int(nbeads))
     for c in counts:
         if max(c.shape) not in (nbeads, nbeads / ploidy):
             raise ValueError(
@@ -213,11 +206,11 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
             axis1sum = np.tile(
                 np.array(c.sum(axis=1).flatten()).flatten(),
                 int(nbeads / c.shape[0]))
-        inverse_torm += (axis0sum + axis1sum > threshold).astype(int)
+        inverse_struct_nan_mask += (axis0sum + axis1sum > threshold).astype(int)
 
-    torm = ~ inverse_torm.astype(bool)
-    # TODO it would save memory to return np.where(torm)[0]
-    return torm
+    struct_nan_mask = ~ inverse_struct_nan_mask.astype(bool)
+    struct_nan = np.where(struct_nan_mask)[0]
+    return struct_nan
 
 
 def _struct_replace_nan(struct, lengths, kind='linear', random_state=None):

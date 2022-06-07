@@ -5,16 +5,12 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
 
-use_jax = True
-if use_jax:
-    from absl import logging as absl_logging
-    absl_logging.set_verbosity('error')
-    from jax.config import config as jax_config
-    jax_config.update("jax_platform_name", "cpu")
-    jax_config.update("jax_enable_x64", True)
-    import jax.numpy as ag_np
-else:
-    import autograd.numpy as ag_np
+from absl import logging as absl_logging
+absl_logging.set_verbosity('error')
+from jax.config import config as jax_config
+jax_config.update("jax_platform_name", "cpu")
+jax_config.update("jax_enable_x64", True)
+import jax.numpy as ag_np
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
@@ -200,11 +196,11 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
         end_lowres += np.tile(lengths_lowres, ploidy)[i]
 
         # Beads of struct that are NaN
-        struct_nan = np.isnan(struct[begin_lowres:end_lowres, 0])
+        struct_nan_mask = np.isnan(struct[begin_lowres:end_lowres, 0])
 
         # Get index for this chrom at low & high res
         chrom_indices = idx[:, begin_lowres:end_lowres]
-        chrom_indices[:, struct_nan] = np.nan
+        chrom_indices[:, struct_nan_mask] = np.nan
         chrom_indices_lowres = np.nanmean(chrom_indices, axis=0)
         chrom_indices_highres = chrom_indices.T.flatten()
 
@@ -229,16 +225,16 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
                 max(unknown_beads_at_begin) + 1, int(np.nanmax(chrom_indices_highres)) + 1)
 
         struct_highres[chrom_indices_highres, 0] = interp1d(
-            chrom_indices_lowres[~struct_nan],
-            struct[begin_lowres:end_lowres, 0][~struct_nan],
+            chrom_indices_lowres[~struct_nan_mask],
+            struct[begin_lowres:end_lowres, 0][~struct_nan_mask],
             kind="linear")(chrom_indices_highres)
         struct_highres[chrom_indices_highres, 1] = interp1d(
-            chrom_indices_lowres[~struct_nan],
-            struct[begin_lowres:end_lowres, 1][~struct_nan],
+            chrom_indices_lowres[~struct_nan_mask],
+            struct[begin_lowres:end_lowres, 1][~struct_nan_mask],
             kind="linear")(chrom_indices_highres)
         struct_highres[chrom_indices_highres, 2] = interp1d(
-            chrom_indices_lowres[~struct_nan],
-            struct[begin_lowres:end_lowres, 2][~struct_nan],
+            chrom_indices_lowres[~struct_nan_mask],
+            struct[begin_lowres:end_lowres, 2][~struct_nan_mask],
             kind="linear")(chrom_indices_highres)
 
         # Fill in beads at start
@@ -543,32 +539,8 @@ def _get_struct_index(multiscale_factor, lengths, ploidy):
     return idx, bad_idx
 
 
-def decrease_bias_res(bias, multiscale_factor, lengths, ploidy):
-    """TODO"""
-
-    if bias is None or multiscale_factor == 1:
-        return bias
-
-    idx, bad_idx = _get_struct_index(
-            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
-
-    fullres_torm = (bias == 0)
-    if fullres_torm.sum() != 0:
-        where_torm = np.where(fullres_torm)[0]
-        torm_mask = np.isin(idx, where_torm)
-        bad_idx[torm_mask] = True
-        idx[torm_mask] = 0
-
-    # Apply to bias, and set incorrect idx to np.nan
-    grouped_bias = ag_np.where(
-        bad_idx.flatten(), np.nan, bias[idx.flatten(), :]).reshape(
-        multiscale_factor, -1, 3)
-
-    return np.nanmean(grouped_bias, axis=0)
-
-
 def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
-                          idx=None, fullres_torm=None):
+                          idx=None, fullres_struct_nan=None):
     """Group beads of full-res struct by the low-res bead they correspond to.
 
     Axes of final array:
@@ -584,13 +556,12 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
         idx, bad_idx = _get_struct_index(
             multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
     else:
-        raise NotImplementedError  # FIXME
+        raise NotImplementedError  # TODO
 
-    if fullres_torm is not None and fullres_torm.sum() != 0:
-        where_torm = np.where(fullres_torm)[0]
-        torm_mask = np.isin(idx, where_torm)
-        bad_idx[torm_mask] = True
-        idx[torm_mask] = 0
+    if fullres_struct_nan is not None and fullres_struct_nan.shape != 0:
+        struct_nan_mask = np.isin(idx, fullres_struct_nan)
+        bad_idx[struct_nan_mask] = True
+        idx[struct_nan_mask] = 0
 
     # Apply to struct, and set incorrect idx to np.nan
     grouped_struct = ag_np.where(
@@ -602,7 +573,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
 
 
 def decrease_struct_res(struct, multiscale_factor, lengths, ploidy,
-                        idx=None, fullres_torm=None):
+                        idx=None, fullres_struct_nan=None):
     """Decrease resolution of structure by averaging adjacent beads.
 
     Decrease the resolution of the 3D chromatin structure. Each bead in the
@@ -631,13 +602,13 @@ def decrease_struct_res(struct, multiscale_factor, lengths, ploidy,
 
     grouped_struct = _group_highres_struct(
         struct, multiscale_factor=multiscale_factor, lengths=lengths,
-        ploidy=ploidy, idx=idx, fullres_torm=fullres_torm)
+        ploidy=ploidy, idx=idx, fullres_struct_nan=fullres_struct_nan)
 
     return ag_np.nanmean(grouped_struct, axis=0)
 
 
 def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
-                                   fullres_torm=None):
+                                   fullres_struct_nan=None):
     """Count the number of full-res beads corresponding to each low-res bead.
     """
 
@@ -648,9 +619,8 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
         multiscale_factor=multiscale_factor,
         lengths=lengths, ploidy=ploidy)
 
-    if fullres_torm is not None and fullres_torm.sum() != 0:
-        where_torm = np.where(fullres_torm)[0]
-        bad_idx[np.isin(fullres_idx, where_torm)] = True
+    if fullres_struct_nan is not None and fullres_struct_nan.shape != 0:
+        bad_idx[np.isin(fullres_idx, fullres_struct_nan)] = True
 
     return (~bad_idx).sum(axis=0)
 

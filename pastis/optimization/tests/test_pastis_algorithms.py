@@ -19,7 +19,7 @@ def test_pastis_poisson_haploid():
     seed = 42
     bcc_lambda = 0
     hsc_lambda = 0
-    hsc_r = None
+    est_hmlg_sep = None
     alpha, beta = -3., 1.
 
     random_state = np.random.RandomState(seed=seed)
@@ -35,8 +35,8 @@ def test_pastis_poisson_haploid():
     struct_, infer_var = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, hsc_r=hsc_r, print_freq=None, history_freq=None,
-        save_freq=None)
+        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
+        history_freq=None, save_freq=None)
 
     assert infer_var['converged']
 
@@ -47,7 +47,7 @@ def test_pastis_poisson_diploid_unambig():
     seed = 42
     bcc_lambda = 0
     hsc_lambda = 0
-    hsc_r = None
+    est_hmlg_sep = None
     alpha, beta = -3., 1.
 
     random_state = np.random.RandomState(seed=seed)
@@ -63,8 +63,8 @@ def test_pastis_poisson_diploid_unambig():
     struct_, infer_var = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, hsc_r=hsc_r, print_freq=None, history_freq=None,
-        save_freq=None)
+        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
+        history_freq=None, save_freq=None)
 
     assert infer_var['converged']
 
@@ -75,7 +75,7 @@ def test_pastis_poisson_diploid_ambig():
     seed = 42
     bcc_lambda = 0
     hsc_lambda = 0
-    hsc_r = None
+    est_hmlg_sep = None
     alpha, beta = -3., 1.
 
     random_state = np.random.RandomState(seed=seed)
@@ -92,8 +92,8 @@ def test_pastis_poisson_diploid_ambig():
     struct_, infer_var = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, hsc_r=hsc_r, print_freq=None, history_freq=None,
-        save_freq=None)
+        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
+        history_freq=None, save_freq=None)
 
     assert infer_var['converged']
 
@@ -106,7 +106,7 @@ def test_pastis_poisson_diploid_partially_ambig():
     seed = 42
     bcc_lambda = 0
     hsc_lambda = 0
-    hsc_r = None
+    est_hmlg_sep = None
     alpha, beta = -3., 1.
 
     random_state = np.random.RandomState(seed=seed)
@@ -124,8 +124,8 @@ def test_pastis_poisson_diploid_partially_ambig():
     struct_, infer_var = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, hsc_r=hsc_r, print_freq=None, history_freq=None,
-        save_freq=None)
+        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
+        print_freq=None, history_freq=None, save_freq=None)
 
     assert infer_var['converged']
 
@@ -136,7 +136,7 @@ def test_pastis_poisson_diploid_combo():
     seed = 42
     bcc_lambda = 0
     hsc_lambda = 0
-    hsc_r = None
+    est_hmlg_sep = None
     alpha, beta = -3., 1.
     ratio_ambig, ratio_pa, ratio_ua = 0.2, 0.7, 0.1
 
@@ -171,8 +171,8 @@ def test_pastis_poisson_diploid_combo():
     struct_, infer_var = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, hsc_r=hsc_r, print_freq=None, history_freq=None,
-        save_freq=None)
+        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
+        print_freq=None, history_freq=None, save_freq=None)
 
     assert infer_var['converged']
 
@@ -189,7 +189,7 @@ def test_pastis_poisson_diploid_unambig_bcc_constraint():
     seed = 42
     bcc_lambda = 1  # TODO update
     hsc_lambda = 0
-    hsc_r = None
+    est_hmlg_sep = None
     alpha, beta = -3., 1.
 
     random_state = np.random.RandomState(seed=seed)
@@ -205,8 +205,8 @@ def test_pastis_poisson_diploid_unambig_bcc_constraint():
     struct_, infer_var = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, hsc_r=hsc_r, print_freq=None, history_freq=None,
-        save_freq=None)
+        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
+        print_freq=None, history_freq=None, save_freq=None)
 
     assert infer_var['converged']
 
@@ -218,7 +218,7 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint():
     bcc_lambda = 0
     hsc_lambda = 1e4  # TODO update
     true_interhomo_dis = np.array([15.])
-    hsc_r = None
+    est_hmlg_sep = None
     alpha, beta = -3., 1.
     multiscale_reform = True
     use_multiscale_variance = False
@@ -289,24 +289,24 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint():
     struct_, infer_var = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
-        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         print_freq=None, history_freq=None, save_freq=None,
         struct_true=struct_true, multiscale_reform=multiscale_reform,
         use_multiscale_variance=use_multiscale_variance)
 
     assert infer_var['converged']
 
-    infer_hsc_r = infer_var['hsc_r']
+    infer_est_hmlg_sep = infer_var['est_hmlg_sep']
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 
-    print(f"hmlg sep: true={true_interhomo_dis}, infer={infer_hsc_r}, "
+    print(f"hmlg sep: true={true_interhomo_dis}, infer={infer_est_hmlg_sep}, "
           f"final={interhomo_dis}")
 
-    # Make sure inference of hsc_r yields an acceptable result
-    assert_array_almost_equal(true_interhomo_dis, infer_hsc_r, decimal=0)
+    # Make sure inference of est_hmlg_sep yields an acceptable result
+    assert_array_almost_equal(true_interhomo_dis, infer_est_hmlg_sep, decimal=0)
 
-    # Make sure inferred homologs are separated >= inferred hsc_r
-    assert interhomo_dis >= infer_hsc_r - 1e-6
+    # Make sure inferred homologs are separated >= inferred est_hmlg_sep
+    assert interhomo_dis >= infer_est_hmlg_sep - 1e-6
 
 
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
@@ -318,7 +318,7 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint_multiscale(multiscale_fac
     bcc_lambda = 1  # FIXME !!! set to 0 !!!
     hsc_lambda = 1e4  # TODO update
     true_interhomo_dis = np.array([1])  # FIXME !!! 15 or 5
-    hsc_r = true_interhomo_dis * 0.9  # FIXME
+    est_hmlg_sep = true_interhomo_dis * 0.9  # FIXME
     alpha, beta = -3., 1.
     multiscale_reform = True
     use_multiscale_variance = False
@@ -411,7 +411,7 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint_multiscale(multiscale_fac
     struct_, infer_var = pastis_algorithms.infer(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
-        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         callback_freq=callback_freq, struct_true=struct_true,
         multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform,
@@ -422,10 +422,10 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint_multiscale(multiscale_fac
 
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 
-    print(f"hmlg sep: true={true_interhomo_dis}, hsc_r={hsc_r}, final={interhomo_dis}")
+    print(f"hmlg sep: true={true_interhomo_dis}, est_hmlg_sep={est_hmlg_sep}, final={interhomo_dis}")
 
-    # Make sure inferred homologs are separated >= inferred hsc_r
-    assert interhomo_dis >= hsc_r - 1e-6
+    # Make sure inferred homologs are separated >= inferred est_hmlg_sep
+    assert interhomo_dis >= est_hmlg_sep - 1e-6
 
     # Make sure separation of inferred homologs is roughly accurate
     assert_array_almost_equal(true_interhomo_dis, interhomo_dis, decimal=0)
@@ -440,7 +440,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale(multiscale_facto
     bcc_lambda = 1  # FIXME !!! set to 0 !!!
     hsc_lambda = 0  # TODO update
     true_interhomo_dis = np.array([0.7])  # FIXME !!! 15 or 5
-    hsc_r = true_interhomo_dis * 1  # FIXME
+    est_hmlg_sep = true_interhomo_dis * 1  # FIXME
     alpha, beta = -3., 1.
     multiscale_reform = True
     use_multiscale_variance = False
@@ -518,7 +518,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale(multiscale_facto
     struct_, infer_var = pastis_algorithms.infer(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
-        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         callback_freq=callback_freq, struct_true=struct_true,
         multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform,
@@ -528,10 +528,10 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale(multiscale_facto
 
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 
-    print(f"hmlg sep: true={true_interhomo_dis}, hsc_r={hsc_r}, final={interhomo_dis}")
+    print(f"hmlg sep: true={true_interhomo_dis}, est_hmlg_sep={est_hmlg_sep}, final={interhomo_dis}")
 
-    # Make sure inferred homologs are separated >= inferred hsc_r
-    assert interhomo_dis >= hsc_r - 1e-6
+    # Make sure inferred homologs are separated >= inferred est_hmlg_sep
+    assert interhomo_dis >= est_hmlg_sep - 1e-6
 
     # Make sure separation of inferred homologs is roughly accurate
     assert_array_almost_equal(true_interhomo_dis, interhomo_dis, decimal=0)
@@ -548,7 +548,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale2(multiscale_fact
     bcc_lambda = 1  # FIXME !!! set to 0 !!!
     hsc_lambda = 10  # TODO update
     true_interhomo_dis = np.array([0.7])  # FIXME !!! 15 or 5
-    hsc_r = true_interhomo_dis * 1  # FIXME
+    est_hmlg_sep = true_interhomo_dis * 1  # FIXME
     alpha, beta = -3., 1.
     multiscale_reform = True
     use_multiscale_variance = False
@@ -608,7 +608,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale2(multiscale_fact
     struct_, infer_var = pastis_algorithms.infer(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
-        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         callback_freq=callback_freq, struct_true=struct_true,
         multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform,
@@ -618,10 +618,10 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale2(multiscale_fact
 
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 
-    print(f"hmlg sep: true={true_interhomo_dis}, hsc_r={hsc_r}, final={interhomo_dis}")
+    print(f"hmlg sep: true={true_interhomo_dis}, est_hmlg_sep={est_hmlg_sep}, final={interhomo_dis}")
 
-    # Make sure inferred homologs are separated >= inferred hsc_r
-    assert interhomo_dis >= hsc_r - 1e-6
+    # Make sure inferred homologs are separated >= inferred est_hmlg_sep
+    assert interhomo_dis >= est_hmlg_sep - 1e-6
 
     # Make sure separation of inferred homologs is roughly accurate
     assert_array_almost_equal(true_interhomo_dis, interhomo_dis, decimal=0)

@@ -69,7 +69,7 @@ class Callback(object):
     multiscale_factor : int
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    torm : array of bool
+    struct_nan : array of int
         Beads that should be removed (set to NaN) in the structure.
     frequency : dict
         Frequency of iterations at which operations are performed. Each key
@@ -149,10 +149,9 @@ class Callback(object):
         self.bias = bias  # TODO add to main branch
         self.counts = counts  # TODO add to main branch
         if counts is None:
-            self.torm = np.full(
-                (self.lengths_lowres.sum() * self.ploidy), False)
+            self.struct_nan = np.array([])
         else:
-            self.torm = find_beads_to_remove(
+            self.struct_nan = find_beads_to_remove(
                 counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor)
         self.constraints = constraints  # TODO add to main branch
@@ -218,7 +217,7 @@ class Callback(object):
         self.structures = [struct.copy().reshape(-1, 3)
                            for struct in structures]
         for i in range(len(structures)):
-            self.structures[i][self.torm] = np.nan
+            self.structures[i][self.struct_nan] = np.nan
 
     def _check_frequency(self, frequency, last_iter=False):
         output = False

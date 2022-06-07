@@ -18,7 +18,7 @@ from .counts import preprocess_counts, ambiguate_counts
 from .counts import check_counts
 from .initialization import initialize
 from .callbacks import Callback
-from .constraints import Constraints, distance_between_homologs
+from .constraints import prep_constraints, distance_between_homologs
 from .poisson import PastisPM
 from .multiscale_optimization import get_multiscale_variances_from_struct
 from .multiscale_optimization import get_multiscale_epsilon_from_struct
@@ -57,8 +57,8 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  max_alpha_loop=20, beta=None, multiscale_rounds=1,
                  use_multiscale_variance=True, init='mds', max_iter=30000,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
-                 hsc_lambda=0., hsc_r=None, hsc_min_beads=5,
-                 struct_draft_fullres=None, callback_freq=None,
+                 hsc_lambda=0., hsc_version='2019', est_hmlg_sep=None,
+                 hsc_min_beads=5, struct_draft_fullres=None, callback_freq=None,
                  callback_fxns=None, reorienter=None,
                  multiscale_reform=False, alpha_true=None,
                  struct_true=None, input_weight=None, exclude_zeros=False,
@@ -66,7 +66,8 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
     """Infer draft 3D structures with PASTIS via Poisson model.
     """
 
-    infer_draft_lowres = hsc_lambda > 0 and hsc_r is None
+    infer_draft_lowres = est_hmlg_sep is None and hsc_lambda > 0 and str(
+        hsc_version) == '2019'
     need_multiscale_var = use_multiscale_variance and (
         multiscale_rounds > 1 or infer_draft_lowres) and (not multiscale_reform)
     infer_draft_fullres = struct_draft_fullres is None and (
@@ -124,7 +125,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
             mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
         if not infer_var_fullres['converged']:
-            return struct_draft_fullres, alpha_, beta_, hsc_r, False
+            return struct_draft_fullres, alpha_, beta_, est_hmlg_sep, False
         if alpha is not None:
             alpha_ = infer_var_fullres['alpha']
             if ploidy == 2:  # TODO add this line on the main branch too
@@ -162,7 +163,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
         else:
             if lengths.shape[0] == 1:
                 raise ValueError("Please input more than one chromosome to"
-                                 " estimate hsc_r from ambiguous data.")
+                                 " estimate est_hmlg_sep from ambiguous data.")
             counts_for_lowres = counts_raw
             simple_diploid_for_lowres = True
             beta_for_lowres = beta
@@ -183,8 +184,8 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
             mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
         if not infer_var_lowres['converged']:
-            return struct_draft_fullres, alpha_, beta_, hsc_r, False
-        hsc_r = distance_between_homologs(
+            return struct_draft_fullres, alpha_, beta_, est_hmlg_sep, False
+        est_hmlg_sep = distance_between_homologs(
             structures=struct_draft_lowres,
             lengths=decrease_lengths_res(
                 lengths=lengths,
@@ -193,10 +194,10 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             simple_diploid=simple_diploid_for_lowres)
         if verbose:
             print("Estimated distance between homolog barycenters for each"
-                  " chromosome: %s" % ' '.join(map(str, hsc_r.round(2))),
+                  " chromosome: %s" % ' '.join(map(str, est_hmlg_sep.round(2))),
                   flush=True)
 
-    return struct_draft_fullres, alpha_, beta_, hsc_r, True
+    return struct_draft_fullres, alpha_, beta_, est_hmlg_sep, True
 
 
 def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -206,8 +207,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     final_multiscale_round=False, init='mds', max_iter=30000,
                     factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
                     bcc_lambda=0., hsc_lambda=0., bcc_version='2019',
-                    hsc_version='2019', counts_interchrom=None, hsc_r=None,
-                    hsc_min_beads=5, ndc_lambda=0., excluded_counts=None,
+                    hsc_version='2019', counts_interchrom=None, est_hmlg_sep=None,
+                    hsc_min_beads=5, hsc_perc_diff=None, excluded_counts=None,
                     struct_draft_fullres=None, draft=False, simple_diploid=False,
                     callback_freq=None, callback_fxns=None, reorienter=None,
                     multiscale_reform=False, init_std_dev=None,
@@ -218,19 +219,20 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     """
     # TODO add _prep_inference to main branch; use fxn in unit tests (easier)
 
-    # INFER DRAFT STRUCTURES (for estimation of multiscale_variance & hsc_r)
+    # INFER DRAFT STRUCTURES (for estimation of multiscale_variance & est_hmlg_sep)
     alpha_ = alpha
     beta_ = beta
     if draft and alpha_ is None:
         alpha_ = alpha_init
     if multiscale_factor == 1 and not (draft or simple_diploid):
-        infer_draft_lowres = hsc_lambda > 0 and hsc_r is None
+        infer_draft_lowres = est_hmlg_sep is None and hsc_lambda > 0 and str(
+        hsc_version) == '2019'
         need_multiscale_var = use_multiscale_variance and (
             multiscale_rounds > 1 or infer_draft_lowres) and (
             not multiscale_reform)
         infer_draft_fullres = struct_draft_fullres is None and (
             need_multiscale_var)
-        struct_draft_fullres, alpha_, beta_, hsc_r, draft_converged = _infer_draft(
+        struct_draft_fullres, alpha_, beta_, est_hmlg_sep, draft_converged = _infer_draft(
             counts_raw, lengths=lengths, ploidy=ploidy, outdir=outdir,
             alpha=alpha, seed=seed, normalize=normalize,
             filter_threshold=filter_threshold, alpha_init=alpha_init,
@@ -238,7 +240,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             multiscale_rounds=multiscale_rounds,
             use_multiscale_variance=use_multiscale_variance, init=init,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
-            alpha_factr=alpha_factr, hsc_lambda=hsc_lambda, hsc_r=hsc_r,
+            alpha_factr=alpha_factr, hsc_lambda=hsc_lambda,
+            hsc_version=hsc_version, est_hmlg_sep=est_hmlg_sep,
             hsc_min_beads=hsc_min_beads,
             struct_draft_fullres=struct_draft_fullres,
             callback_freq=callback_freq, callback_fxns=callback_fxns,
@@ -297,7 +300,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             counts=counts_raw, lengths=lengths, ploidy=ploidy,
             exclude_zeros=exclude_zeros)]
         ploidy = 1
-    counts, bias, torm, fullres_torm = preprocess_counts(
+    counts, bias, struct_nan, fullres_struct_nan = preprocess_counts(
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
         normalize=normalize, filter_threshold=filter_threshold,
         multiscale_factor=multiscale_factor, exclude_zeros=exclude_zeros,
@@ -317,12 +320,12 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         raise ValueError("Can not apply homolog-separating constraint to"
                          " haploid data.")
     if hsc_lambda > 0:
-        if hsc_r is not None:
-            hsc_r = np.array(hsc_r, dtype=float).reshape(-1, )
-            if hsc_r.shape[0] == 1 and lengths.shape[0] != 1:
-                hsc_r = np.tile(hsc_r, lengths.shape[0])
-        if hsc_r is None and reorienter is not None and reorienter.reorient:
-            hsc_r = distance_between_homologs(
+        if est_hmlg_sep is not None:
+            est_hmlg_sep = np.array(est_hmlg_sep, dtype=float).reshape(-1, )
+            if est_hmlg_sep.shape[0] == 1 and lengths.shape[0] != 1:
+                est_hmlg_sep = np.tile(est_hmlg_sep, lengths.shape[0])
+        if est_hmlg_sep is None and reorienter is not None and reorienter.reorient:
+            est_hmlg_sep = distance_between_homologs(
                 structures=reorienter.struct_init, lengths=lengths,
                 mixture_coefs=mixture_coefs)
 
@@ -351,13 +354,13 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             epsilon = None
 
         # SETUP CONSTRAINTS
-        constraints = Constraints(
+        constraints = prep_constraints(
             counts=counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, bcc_version=bcc_version,
-            hsc_version=hsc_version, hsc_r=hsc_r,
-            counts_interchrom=counts_interchrom, fullres_torm=fullres_torm,
-            verbose=verbose, mods=mods)
+            hsc_version=hsc_version, counts_interchrom=counts_interchrom,
+            est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=hsc_perc_diff,
+            fullres_struct_nan=fullres_struct_nan, verbose=verbose, mods=mods)
 
         # SETUP CALLBACKS
         # TODO add bug fix (simple_diploid if/else stmt below & struct_true_tmp) to main branch
@@ -387,8 +390,9 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         constraints = None
         callback = None
 
-    return (counts, alpha_, beta_, bias, torm, struct_init, constraints, hsc_r,
-            callback, struct_draft_fullres, multiscale_variances, epsilon)
+    return (counts, alpha_, beta_, bias, struct_nan, struct_init, constraints,
+            est_hmlg_sep, callback, struct_draft_fullres, multiscale_variances,
+            epsilon)
 
 
 def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -398,8 +402,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           final_multiscale_round=False, init='mds', max_iter=30000,
           factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
           bcc_lambda=0., hsc_lambda=0., bcc_version='2019', hsc_version='2019',
-          counts_interchrom=None, hsc_r=None, hsc_min_beads=5,
-          ndc_lambda=0., excluded_counts=None,
+          counts_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
+          hsc_perc_diff=None, excluded_counts=None,
           struct_draft_fullres=None, draft=False, simple_diploid=False,
           callback_freq=None, callback_fxns=None, reorienter=None,
           multiscale_reform=False, epsilon_min=1e-6, epsilon_max=1e6,
@@ -470,17 +474,16 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         constraint.
     counts_interchrom : int or float, optional
         TODO add bcc_version, hsc_version, & counts_interchrom
-    hsc_r : list of float, optional
+    est_hmlg_sep : list of float, optional
         For diploid organisms: hyperparameter of the homolog-separating
         constraint specificying the expected distance between homolog
-        centers of mass for each chromosome. If not supplied, `hsc_r` will
+        centers of mass for each chromosome. If not supplied, `est_hmlg_sep` will
         be inferred from the counts data.
     hsc_min_beads : int, optional
         For diploid organisms: number of beads in the low-resolution
-        structure from which `hsc_r` is estimated.
-    ndc_lambda : float, optional
-        For diploid organisms: lambda of the multiscale-based homolog-
-        separating constraint.
+        structure from which `est_hmlg_sep` is estimated.
+    hsc_perc_diff : float, optional
+        For diploid organisms: TODO
     excluded_counts : {"inter", "intra"}, optional
         Whether to exclude inter- or intra-chromosomal counts from optimization.
     struct_draft_fullres : np.ndarray, optional
@@ -499,7 +502,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         3D structure resulting from the optimization.
     infer_var : dict
         A few of the variables used in inference or generated by inference.
-        Keys: 'alpha', 'beta', 'hsc_r', 'obj', and 'seed'.
+        Keys: 'alpha', 'beta', 'est_hmlg_sep', 'obj', and 'seed'.
     """
 
     if outdir is not None:
@@ -541,8 +544,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         max_iter=max_iter, factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
         hsc_version=hsc_version, counts_interchrom=counts_interchrom,
-        hsc_r=hsc_r, hsc_min_beads=hsc_min_beads, ndc_lambda=ndc_lambda,
-        excluded_counts=excluded_counts,
+        est_hmlg_sep=est_hmlg_sep, hsc_min_beads=hsc_min_beads,
+        hsc_perc_diff=hsc_perc_diff, excluded_counts=excluded_counts,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
         simple_diploid=simple_diploid, callback_freq=callback_freq,
         callback_fxns=callback_fxns, reorienter=reorienter,
@@ -550,7 +553,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
         out_file=out_file, verbose=verbose, mods=mods)
-    (counts, alpha_, beta_, bias, torm, struct_init, constraints, hsc_r,
+    (counts, alpha_, beta_, bias, struct_nan, struct_init, constraints, est_hmlg_sep,
         callback, struct_draft_fullres, multiscale_variances, epsilon) = prepped
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
@@ -570,7 +573,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             null=null, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
         pm.fit()
         struct_ = pm.struct_.reshape(-1, 3)
-        struct_[torm] = np.nan
+        struct_[struct_nan] = np.nan
 
         # If inferred epsilon is near epsilon_max, rerun with higher epsilon_max
         # FIXME not sure about whether to include this
@@ -595,7 +598,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                      'epsilon': pm.epsilon_,
                      'multiscale_variances': multiscale_variances}
         if hsc_lambda > 0:
-            infer_var['hsc_r'] = hsc_r
+            infer_var['est_hmlg_sep'] = est_hmlg_sep
         if reorienter is not None and reorienter.reorient:
             infer_var['orient'] = pm.orientation_.flatten()
 
@@ -652,8 +655,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
                 hsc_lambda=hsc_lambda, bcc_version=bcc_version,
                 hsc_version=hsc_version, counts_interchrom=counts_interchrom,
-                hsc_r=hsc_r, hsc_min_beads=hsc_min_beads,
-                ndc_lambda=ndc_lambda,
+                est_hmlg_sep=est_hmlg_sep, hsc_min_beads=hsc_min_beads,
+                hsc_perc_diff=hsc_perc_diff,
                 struct_draft_fullres=struct_draft_fullres,
                 callback_fxns=callback_fxns,
                 callback_freq=callback_freq, reorienter=reorienter,
@@ -696,8 +699,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    max_iter=30000, factr=10000000., pgtol=1e-05,
                    alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,
                    bcc_version='2019', hsc_version='2019',
-                   counts_interchrom=None, hsc_r=None, hsc_min_beads=5,
-                   ndc_lambda=0., struct_draft_fullres=None,
+                   counts_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
+                   hsc_perc_diff=None, struct_draft_fullres=None,
                    callback_fxns=None, print_freq=100, history_freq=100,
                    save_freq=None, piecewise=False, piecewise_step=None,
                    piecewise_chrom=None, piecewise_min_beads=5,
@@ -768,17 +771,16 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         For diploid organisms: lambda of the homolog-separating
         constraint.
     TODO add bcc_version, hsc_version, & counts_interchrom
-    hsc_r : list of float, optional
+    est_hmlg_sep : list of float, optional
         For diploid organisms: hyperparameter of the homolog-separating
         constraint specificying the expected distance between homolog
-        centers of mass for each chromosome. If not supplied, `hsc_r` will
+        centers of mass for each chromosome. If not supplied, `est_hmlg_sep` will
         be inferred from the counts data.
     hsc_min_beads : int, optional
         For diploid organisms: number of beads in the low-resolution
-        structure from which `hsc_r` is estimated.
-    ndc_lambda : float, optional
-        For diploid organisms: lambda of the multiscale-based homolog-
-        separating constraint.
+        structure from which `est_hmlg_sep` is estimated.
+    hsc_perc_diff : float, optional
+        For diploid organisms: TODO
 
     Returns
     -------
@@ -786,7 +788,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         3D structure resulting from the optimization.
     infer_var : dict
         A few of the variables used in inference or generated by inference.
-        Keys: 'alpha', 'beta', 'hsc_r', 'obj', and 'seed'.
+        Keys: 'alpha', 'beta', 'est_hmlg_sep', 'obj', and 'seed'.
     """
 
     if mods is None:  # TODO remove
@@ -832,7 +834,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, bcc_version=bcc_version,
             hsc_version=hsc_version, counts_interchrom=counts_interchrom,
-            hsc_r=hsc_r, hsc_min_beads=hsc_min_beads, ndc_lambda=ndc_lambda,
+            est_hmlg_sep=est_hmlg_sep, hsc_min_beads=hsc_min_beads, hsc_perc_diff=hsc_perc_diff,
             struct_draft_fullres=struct_draft_fullres,
             callback_fxns=callback_fxns, callback_freq=callback_freq,
             multiscale_reform=multiscale_reform,
@@ -854,7 +856,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
             bcc_version=bcc_version, hsc_version=hsc_version,
             counts_interchrom=counts_interchrom,
-            hsc_r=hsc_r, ndc_lambda=ndc_lambda,
+            est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=hsc_perc_diff,
             struct_draft_fullres=struct_draft_fullres,
             hsc_min_beads=hsc_min_beads, callback_fxns=callback_fxns,
             callback_freq=callback_freq,

@@ -4,22 +4,14 @@ import numpy as np
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
-use_jax = True
-if use_jax:
-    from absl import logging as absl_logging
-    absl_logging.set_verbosity('error')
-    from jax.config import config as jax_config
-    jax_config.update("jax_platform_name", "cpu")
-    jax_config.update("jax_enable_x64", True)
-
-    import jax.numpy as ag_np
-    SequenceBox = list
-    from jax import grad
-    from jax.nn import relu
-else:
-    import autograd.numpy as ag_np
-    from autograd.builtins import SequenceBox
-    from autograd import grad
+from absl import logging as absl_logging
+absl_logging.set_verbosity('error')
+from jax.config import config as jax_config
+jax_config.update("jax_platform_name", "cpu")
+jax_config.update("jax_enable_x64", True)
+import jax.numpy as ag_np
+from jax import grad
+from jax.nn import relu
 
 from scipy import optimize
 import warnings
@@ -28,7 +20,6 @@ from datetime import timedelta
 
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
-from .constraints import Constraints
 from .callbacks import Callback
 from .utils_poisson import _print_code_header, jax_max
 
@@ -336,8 +327,8 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array of float, optional
         Biases computed by ICE normalization.
-    constraints : Constraints instance, optional
-        Object to compute constraints at each iteration.
+    constraints : list of Constraint instances, optional
+        Objects to compute constraints at each iteration.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
@@ -375,7 +366,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         structures = X
 
     # Check format of structures and mixture_coefs
-    if not (isinstance(structures, list) or isinstance(structures, SequenceBox)):
+    if not isinstance(structures, list):
         structures = [structures]
     if mixture_coefs is None:
         mixture_coefs = [1.] * len(structures)
@@ -385,12 +376,15 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     #         f"Expected {nbeads} beads in structure at multiscale_factor="
     #         f"{multiscale_factor}, found {structures[0].shape[0]} beads")
 
-    if constraints is None:
-        obj_constraints = {}
-    else:
-        obj_constraints = constraints.apply(
-            structures, alpha=alpha, epsilon=epsilon, bias=bias,
-            inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs)
+    obj_constraints = {}
+    if constraints is not None:
+        for constraint in constraints:
+            constraint_obj = 0.
+            for struct, mix_coef in zip(structures, mixture_coefs):
+                constraint_obj = constraint_obj + mix_coef * constraint.apply(
+                    struct=struct, alpha=alpha, epsilon=epsilon, counts=counts,
+                    bias=bias, inferring_alpha=inferring_alpha)
+            obj_constraints[constraint.abbrev] = constraint_obj
 
     obj_poisson = {}
     obj_poisson_sum = 0.
@@ -557,8 +551,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
-    constraints : Constraints instance, optional
-        Object to compute constraints at each iteration.
+    constraints : list of Constraint instances, optional
+        Objects to compute constraints at each iteration.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
@@ -729,8 +723,8 @@ class PastisPM(object):
         Initialization for inference.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
-    constraints : Constraints instance, optional
-        Object to compute constraints at each iteration.
+    constraints : list of Constraint instances, optional
+        Objects to compute constraints at each iteration.
     callback : pastis.callbacks.Callback object, optional
         Object to perform callback at each iteration and before and after
         optimization.
@@ -789,10 +783,7 @@ class PastisPM(object):
         lengths = np.array(lengths)
 
         if constraints is None:
-            constraints = Constraints(
-                counts=counts, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor,
-                multiscale_reform=(epsilon is not None))
+            constraints = []
         if callback is None:
             callback = Callback(
                 lengths=lengths, ploidy=ploidy, counts=counts,

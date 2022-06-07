@@ -4,18 +4,15 @@ import numpy as np
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
-use_jax = True
-if use_jax:
-    from absl import logging as absl_logging
-    absl_logging.set_verbosity('error')
-    from jax.config import config as jax_config
-    jax_config.update("jax_platform_name", "cpu")
-    jax_config.update("jax_enable_x64", True)
-    from jax import custom_jvp, lax, grad
-    import jax.numpy as ag_np
-    from jax.nn import relu
-else:
-    import autograd.numpy as ag_np
+from absl import logging as absl_logging
+absl_logging.set_verbosity('error')
+from jax.config import config as jax_config
+jax_config.update("jax_platform_name", "cpu")
+jax_config.update("jax_enable_x64", True)
+from jax import custom_jvp, lax, grad
+import jax.numpy as ag_np
+from jax.nn import relu
+
 from tensorflow_probability.substrates import jax as tfp
 from typing import Any
 from scipy.special import iv, ivp

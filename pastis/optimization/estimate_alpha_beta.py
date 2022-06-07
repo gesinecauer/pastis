@@ -3,21 +3,14 @@ from scipy import optimize
 import warnings
 from sklearn.utils import check_random_state
 
-use_jax = True
-if use_jax:
-    from absl import logging as absl_logging
-    absl_logging.set_verbosity('error')
-    from jax.config import config as jax_config
-    jax_config.update("jax_platform_name", "cpu")
-    jax_config.update("jax_enable_x64", True)
+from absl import logging as absl_logging
+absl_logging.set_verbosity('error')
+from jax.config import config as jax_config
+jax_config.update("jax_platform_name", "cpu")
+jax_config.update("jax_enable_x64", True)
+import jax.numpy as ag_np
+from jax import grad
 
-    import jax.numpy as ag_np #import autograd.numpy as ag_np
-    SequenceBox = list #from autograd.builtins import SequenceBox
-    from jax import grad #from autograd import grad
-else:
-    import autograd.numpy as ag_np
-    from autograd.builtins import SequenceBox
-    from autograd import grad
 
 from .poisson import _format_X, objective
 from .counts import _update_betas_in_counts_matrices
@@ -102,7 +95,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     lengths = np.array(lengths)
     if bias is None:
         bias = np.ones((min([min(c.shape) for c in counts]),))
-    if not (isinstance(structures, list) or isinstance(structures, SequenceBox)):
+    if not isinstance(structures, list):
         structures = [structures]
     if mixture_coefs is None:
         mixture_coefs = [1.] * len(structures)
@@ -161,8 +154,8 @@ def objective_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array of float, optional
         Biases computed by ICE normalization.
-    constraints : Constraints instance, optional
-        Object to compute constraints at each iteration.
+    constraints : list of Constraint instances, optional
+        Objects to compute constraints at each iteration.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
@@ -282,8 +275,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
-    constraints : Constraints instance, optional
-        Object to compute constraints at each iteration.
+    constraints : list of Constraint instances, optional
+        Objects to compute constraints at each iteration.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.

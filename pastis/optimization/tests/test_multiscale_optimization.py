@@ -379,21 +379,20 @@ def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
         counts_raw[:, nan_indices] = 0
     counts_raw = sparse.coo_matrix(counts_raw)
 
-    fullres_torm_correct = np.full(n * ploidy, False)
-    fullres_torm_correct[nan_indices] = True
+    fullres_struct_nan_true = nan_indices
     if ploidy == 2:
-        fullres_torm_correct[nan_indices + n] = True
+        fullres_struct_nan_true = np.concatenate(nan_indices, nan_indices + n)
 
-    counts, _, _, fullres_torm = preprocess_counts(
+    counts, _, _, fullres_struct_nan = preprocess_counts(
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy, normalize=False,
         filter_threshold=0., multiscale_factor=multiscale_factor, beta=1.,
         verbose=False, exclude_zeros=False)
 
-    assert_array_equal(fullres_torm_correct, fullres_torm)
+    assert_array_equal(fullres_struct_nan_true, fullres_struct_nan)
 
     fullres_per_lowres_bead = multiscale_optimization._count_fullres_per_lowres_bead(
         multiscale_factor=multiscale_factor, lengths=lengths,
-        ploidy=ploidy, fullres_torm=fullres_torm)
+        ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
 
     if use_zero_counts:
         if len([c for c in counts if c.sum() == 0]) == 0:
@@ -445,7 +444,7 @@ def test_infer_multiscale_variances_ambig():
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         multiscale_rounds=multiscale_rounds, use_multiscale_variance=True,
-        hsc_lambda=0., hsc_r=None,
+        hsc_lambda=0., est_hmlg_sep=None,
         callback_freq={'print': None, 'history': None, 'save': None})
 
     assert draft_converged
@@ -482,7 +481,7 @@ def test_poisson_objective_multiscale_ambig():
     counts = np.triu(counts, 1)
     counts = sparse.coo_matrix(counts)
 
-    counts, _, torm, _ = preprocess_counts(
+    counts, _, struct_nan, _ = preprocess_counts(
         counts_raw=counts, lengths=lengths, ploidy=ploidy, normalize=False,
         filter_threshold=0., multiscale_factor=multiscale_factor, beta=beta,
         verbose=False)

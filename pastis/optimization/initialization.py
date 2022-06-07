@@ -54,10 +54,10 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
         maxiter=10000, ini=None)
 
     struct = struct.reshape(-1, 3)
-    torm = find_beads_to_remove(
+    struct_nan = find_beads_to_remove(
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
-    struct[torm] = np.nan
+    struct[struct_nan] = np.nan
 
     return struct
 

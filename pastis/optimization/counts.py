@@ -9,7 +9,7 @@ from iced.normalization import ICE_normalization
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _intra_counts, _inter_counts, _counts_near_diag
 
-from .multiscale_optimization import decrease_lengths_res, decrease_bias_res
+from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_counts_res
 from .multiscale_optimization import _group_counts_multiscale
 
@@ -214,10 +214,10 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
                              ",".join(map(str, lengths))))
 
     empty_val = 0
-    torm = np.full((max(counts.shape)), False)
+    struct_nan_mask = np.full((max(counts.shape)), False)
     if not exclude_zeros:
         empty_val = np.nan
-        torm = find_beads_to_remove(
+        struct_nan_mask = find_beads_to_remove(
             counts, lengths=lengths,
             ploidy=int(max(counts.shape) / lengths.sum()))
         counts = counts.astype(float)
@@ -236,8 +236,8 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
             counts[np.tril_indices(counts.shape[0])] = empty_val
         else:
             counts[np.tril_indices(counts.shape[0], -1)] = empty_val
-        counts[torm, :] = empty_val
-        counts[:, torm] = empty_val
+        counts[struct_nan_mask, :] = empty_val
+        counts[:, struct_nan_mask] = empty_val
         if chrom_subset_index is not None:
             counts = counts[chrom_subset_index[:counts.shape[0]], :][
                 :, chrom_subset_index[:counts.shape[1]]]
@@ -251,13 +251,13 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
         if remove_diag:
             np.fill_diagonal(homo1, empty_val)
             np.fill_diagonal(homo2, empty_val)
-        homo1[:, torm[:min(counts.shape)] | torm[
+        homo1[:, struct_nan_mask[:min(counts.shape)] | struct_nan_mask[
             min(counts.shape):]] = empty_val
-        homo2[:, torm[:min(counts.shape)] | torm[
+        homo2[:, struct_nan_mask[:min(counts.shape)] | struct_nan_mask[
             min(counts.shape):]] = empty_val
         # axis=0 is vertical concat
         counts = np.concatenate([homo1, homo2], axis=0)
-        counts[torm, :] = empty_val
+        counts[struct_nan_mask, :] = empty_val
         if chrom_subset_index is not None:
             counts = counts[chrom_subset_index[:counts.shape[0]], :][
                 :, chrom_subset_index[:counts.shape[1]]]
@@ -343,7 +343,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         Preprocessed counts data.
     bias : array of float
         Biases computed by ICE normalization.
-    torm : array of bool of shape (nbeads,)
+    struct_nan : array of int
         Beads that should be removed (set to NaN) in the structure.
     """
 
@@ -353,16 +353,11 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         normalize=normalize, filter_threshold=filter_threshold,
         exclude_zeros=exclude_zeros, verbose=verbose)
 
-    # Reduce resolution of bias (when multiscale_factor > 1)
-    bias = decrease_bias_res(
-        bias=bias, multiscale_factor=multiscale_factor, lengths=lengths,
-        ploidy=ploidy)
-
     # Beads to remove from full-res structure
     if multiscale_factor == 1:
-        fullres_torm = None
+        fullres_struct_nan = None
     else:
-        fullres_torm = find_beads_to_remove(
+        fullres_struct_nan = find_beads_to_remove(
             counts_prepped, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
@@ -397,11 +392,13 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
         multiscale_factor=multiscale_factor)
 
-    torm = find_beads_to_remove(  # TODO recently changed from using counts_prepped to counts (8/13/21)
+    struct_nan = find_beads_to_remove(  # TODO recently changed from using counts_prepped to counts (8/13/21)
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
     if mixture_coefs is not None:
-        torm = np.tile(torm, len(mixture_coefs))
+        struct_nan_mask = np.full(lengths_lowres * ploidy, False)
+        struct_nan_mask[struct_nan] = True
+        struct_nan = np.where(np.tile(struct_nan_mask, len(mixture_coefs)))[0]
 
     if mods is not None and 'highatlow' in mods and multiscale_factor != 1:  # TODO remove
         if 'diag-auto' in mods:
@@ -425,7 +422,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                       " counts", flush=True)
             else:
                 print("Including full-res obj at low-res", flush=True)
-        counts_fullres, _, torm, _ = preprocess_counts(
+        counts_fullres, _, struct_nan, _ = preprocess_counts(
             counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
             normalize=normalize, filter_threshold=filter_threshold,
             multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
@@ -434,16 +431,16 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             mods=mods)
         counts.extend(counts_fullres)
 
-    return counts, bias, torm, fullres_torm
+    return counts, bias, struct_nan, fullres_struct_nan
 
 
 def _percent_nan_beads(counts):
     """Return percent of beads that would be NaN for current counts matrix.
     """
 
-    torm = find_beads_to_remove(
+    struct_nan = find_beads_to_remove(
         counts, lengths=np.array([max(counts.shape)]), ploidy=1)
-    return torm.sum() / max(counts.shape)
+    return struct_nan.shape / max(counts.shape)
 
 
 def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
@@ -503,17 +500,23 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             sparse.coo_matrix(all_counts_ambiguated), sparsity=False,
             percentage=filter_threshold + _percent_nan_beads(
                 all_counts_ambiguated)).tocoo()
-        torm = find_beads_to_remove(
+        struct_nan = find_beads_to_remove(
             all_counts_filtered, lengths=lengths, ploidy=1,
             multiscale_factor=multiscale_factor)
+        struct_nan_mask = np.full(lengths_lowres * ploidy, False)
+        struct_nan_mask[struct_nan] = True
         if verbose:
             print('                      removing %d beads' %
-                  (torm.sum() - initial_zero_beads), flush=True)
+                  (struct_nan_mask.sum() - initial_zero_beads), flush=True)
         for counts_type, counts in counts_dict.items():
             if sparse.issparse(counts):
                 counts = counts.toarray()
-            counts[np.tile(torm, int(counts.shape[0] / torm.shape[0])), :] = 0.
-            counts[:, np.tile(torm, int(counts.shape[1] / torm.shape[0]))] = 0.
+            counts[np.tile(
+                struct_nan_mask,
+                int(counts.shape[0] / struct_nan_mask.shape[0])), :] = 0.
+            counts[:, np.tile(
+                struct_nan_mask,
+                int(counts.shape[1] / struct_nan_mask.shape[0]))] = 0.
             counts = sparse.coo_matrix(counts)
             counts_dict[counts_type] = counts
     elif filter_threshold:
@@ -521,7 +524,7 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
         # counts matrix.
         # For diploid unambiguous or partially ambigous counts, it is possible
         # that a bead will be filtered out on one homolog but not another.
-        individual_counts_torms = np.full((lengths_lowres.sum(),), False)
+        individual_counts_struct_nans = np.full((lengths_lowres.sum(),), False)
         for counts_type, counts in counts_dict.items():
             if verbose:
                 print('FILTERING LOW COUNTS: manually filtering %s counts by %g'
@@ -560,14 +563,17 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                     sparse.coo_matrix(counts), sparsity=False,
                     percentage=filter_threshold + _percent_nan_beads(
                         counts)).tocoo()
-            torm = find_beads_to_remove(
+            struct_nan = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
                 lengths=lengths, ploidy=1,
                 multiscale_factor=multiscale_factor)
+            struct_nan_mask = np.full(lengths_lowres * ploidy, False)
+            struct_nan_mask[struct_nan] = True
             if verbose:
                 print('                      removing %d beads' %
-                      (torm.sum() - initial_zero_beads), flush=True)
-            individual_counts_torms = individual_counts_torms | torm
+                      (struct_nan_mask.sum() - initial_zero_beads), flush=True)
+            individual_counts_struct_nans = (
+                individual_counts_struct_nans | struct_nan_mask)
             counts = sparse.coo_matrix(counts)
             counts_dict[counts_type] = counts
 
@@ -595,12 +601,12 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                                                   bias.shape[0]))] = 0.
             counts = sparse.coo_matrix(counts)
             counts_dict[counts_type] = counts
-            torm = find_beads_to_remove(
+            struct_nan = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
                 lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor)
-            if verbose and torm.sum() - initial_zero_beads > 0:
+            if verbose and struct_nan.shape - initial_zero_beads > 0:
                 print('                removing %d additional beads from %s' %
-                      (torm.sum() - initial_zero_beads, counts_type),
+                      (struct_nan.shape - initial_zero_beads, counts_type),
                       flush=True)
 
     output_counts = check_counts(
@@ -947,7 +953,6 @@ class SparseCountsMatrix(CountsMatrix):
         return self._data
 
     def toarray(self):
-        # TODO add this to main branch...
         # TODO decide what this fxn should actually do (esp wrt reform), and make AtypicalCM match
         return _check_counts_matrix(
             self.tocoo().toarray(), lengths=self.lengths, ploidy=self.ploidy,
@@ -1073,7 +1078,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
 
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (lengths.sum() * ploidy)]
-        self.name = '%s0' % self.ambiguity
+        self.name = '{self.ambiguity}0'
         self.beta = beta
         self.weight = (1. if weight is None else weight)
         if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
