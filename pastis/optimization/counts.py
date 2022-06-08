@@ -1078,7 +1078,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
 
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (lengths.sum() * ploidy)]
-        self.name = '{self.ambiguity}0'
+        self.name = f'{self.ambiguity}0'
         self.beta = beta
         self.weight = (1. if weight is None else weight)
         if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:

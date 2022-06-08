@@ -384,7 +384,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
                 constraint_obj = constraint_obj + mix_coef * constraint.apply(
                     struct=struct, alpha=alpha, epsilon=epsilon, counts=counts,
                     bias=bias, inferring_alpha=inferring_alpha)
-            obj_constraints[constraint.abbrev] = constraint_obj
+            obj_constraints[f"obj_{constraint.abbrev}"] = constraint_obj
 
     obj_poisson = {}
     obj_poisson_sum = 0.
