@@ -461,13 +461,13 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
 
     # Determine ambiguity
     nbeads = lengths.sum() * ploidy
-    counts_dict = [('haploid' if ploidy == 1 else {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-                    sum(c.shape) / nbeads], c) for c in counts_list]
+    counts_dict = [('haploid' if ploidy == 1 else {
+        1: 'ambig', 1.5: 'pa', 2: 'ua'}[
+        sum(c.shape) / nbeads], c) for c in counts_list]
     if len(counts_dict) != len(dict(counts_dict)):
         raise ValueError("Can't input multiple counts matrices of the same"
-                         " type. Inputs (%d) = %s"
-                         % (len(counts_dict),
-                            ', '.join([x[0] for x in counts_dict])))
+                         f" type. Inputs ({len(counts_dict)}) = "
+                         f"{', '.join([x[0] for x in counts_dict])}")
     counts_dict = dict(counts_dict)
 
     # Reduce resolution

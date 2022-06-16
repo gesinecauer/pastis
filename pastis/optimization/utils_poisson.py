@@ -105,6 +105,8 @@ def _format_structures(structures, lengths=None, ploidy=None,
     """Reformats and checks shape of structures.
     """
 
+    # TODO this function was written by an idiot
+
     from .poisson import _format_X
 
     if isinstance(structures, list):
@@ -461,23 +463,23 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     return lengths_subset, chrom_subset, counts, structures
 
 
-def _intra_counts_mask(counts, lengths_counts):
-    """Return mask of sparse COO data for intra-chromosomal counts.
+def _intra_matrix_mask(matrix, lengths_matrix):
+    """Return mask of sparse COO data for intra-chromosomal data matrix.
     """
 
-    if isinstance(counts, np.ndarray):
-        counts = sparse.coo_matrix(counts)
-    elif not sparse.issparse(counts):
-        counts = counts.tocoo()
+    if isinstance(matrix, np.ndarray):
+        matrix = sparse.coo_matrix(matrix)
+    elif not sparse.issparse(matrix):
+        matrix = matrix.tocoo()
     bins_for_row = np.tile(
-        lengths_counts, int(counts.shape[0] / lengths_counts.sum())).cumsum()
+        lengths_matrix, int(matrix.shape[0] / lengths_matrix.sum())).cumsum()
     bins_for_col = np.tile(
-        lengths_counts, int(counts.shape[1] / lengths_counts.sum())).cumsum()
-    row_binned = np.digitize(counts.row, bins_for_row)
-    col_binned = np.digitize(counts.col, bins_for_col)
+        lengths_matrix, int(matrix.shape[1] / lengths_matrix.sum())).cumsum()
+    row_binned = np.digitize(matrix.row, bins_for_row)
+    col_binned = np.digitize(matrix.col, bins_for_col)
 
-    if counts.shape[0] != counts.shape[1]:
-        nchrom = lengths_counts.shape[0]
+    if matrix.shape[0] != matrix.shape[1]:
+        nchrom = lengths_matrix.shape[0]
         row_binned[row_binned >= nchrom] -= nchrom
         col_binned[col_binned >= nchrom] -= nchrom
 
@@ -500,7 +502,7 @@ def _intra_counts(counts, lengths_counts, ploidy, exclude_zeros=False):
     counts = _check_counts_matrix(
         counts, lengths=lengths_counts, ploidy=ploidy, exclude_zeros=True)
 
-    mask = _intra_counts_mask(counts=counts, lengths_counts=lengths_counts)
+    mask = _intra_matrix_mask(counts, lengths_counts)
     counts_new = sparse.coo_matrix(
         (counts.data[mask], (counts.row[mask], counts.col[mask])),
         shape=counts.shape)
@@ -529,7 +531,7 @@ def _inter_counts(counts, lengths_counts, ploidy, exclude_zeros=False):
     counts = _check_counts_matrix(
         counts, lengths=lengths_counts, ploidy=ploidy, exclude_zeros=True)
 
-    mask = ~_intra_counts_mask(counts=counts, lengths_counts=lengths_counts)
+    mask = ~_intra_matrix_mask(counts, lengths_counts)
     counts_new = sparse.coo_matrix(
         (counts.data[mask], (counts.row[mask], counts.col[mask])),
         shape=counts.shape)
@@ -558,7 +560,7 @@ def _counts_near_diag(counts, lengths_counts, ploidy, nbins, exclude_zeros=False
     counts = _check_counts_matrix(
         counts, lengths=lengths_counts, ploidy=ploidy, exclude_zeros=True)
 
-    mask_intra = _intra_counts_mask(counts=counts, lengths_counts=lengths_counts)
+    mask_intra = _intra_matrix_mask(counts, lengths_counts)
 
     row = counts.row.copy()
     col = counts.col.copy()

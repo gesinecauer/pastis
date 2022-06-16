@@ -457,9 +457,6 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
     counts_lowres : list of array or coo_matrix
         Counts data at reduced resolution, as specified by the given
         `multiscale_factor`.
-    lengths_lowres : array of int
-        Number of beads per homolog of each chromosome at the given
-        `multiscale_factor`.
     """
 
     # TODO refactor this fxn & _convert_indices_to_full_res to be similar to new _get_struct_index

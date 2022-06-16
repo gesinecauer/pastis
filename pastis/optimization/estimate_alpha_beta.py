@@ -82,8 +82,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
 
     structures, epsilon, mixture_coefs = _format_X(
         X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs)
+        multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs)
 
     if reorienter is not None and reorienter.reorient:
         structures = reorienter.translate_and_rotate(X)

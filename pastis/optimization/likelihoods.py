@@ -9,7 +9,7 @@ absl_logging.set_verbosity('error')
 from jax.config import config as jax_config
 jax_config.update("jax_platform_name", "cpu")
 jax_config.update("jax_enable_x64", True)
-from jax import custom_jvp, lax, grad
+from jax import custom_jvp, lax
 import jax.numpy as ag_np
 from jax.nn import relu
 
@@ -55,25 +55,33 @@ def relu_min(x1, x2):
     return - (relu((-x1) - (-x2)) + (-x2))
 
 
-def multires_negbinom_nll(theta, k, data, mask, num_fullres_per_lowres_bins):
+def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
+                      mask=None, mods=[]):
+    if num_fullres_per_lowres_bins is None:
+        num_fullres_per_lowres_bins = data.shape[1]
+
     log1p_theta = ag_np.log1p(theta)
     obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
-
     if data.sum() == 0:
-        return obj_tmp1
+        obj = obj_tmp1
+    else:
+        k_plus_1 = k + 1
+        obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k_plus_1)
+        obj_tmp3 = _masksum(_stirling(
+            data + k_plus_1), mask=mask, axis=0)
+        obj_tmp4 = _masksum(data, mask=mask, axis=0) * (
+            ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1)
+        obj_tmp5 = _masksum((data + k + 0.5) * ag_np.log1p(
+            data / k_plus_1), mask=mask, axis=0)
+        obj_tmp6 = -_masksum(
+            ag_np.log1p(data / k), mask=mask, axis=0)
+        obj = (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
 
-    k_plus_1 = k + 1
-    obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k_plus_1)
-    obj_tmp3 = _masksum(_stirling(
-        data + k_plus_1), mask=mask, axis=0)
-    obj_tmp4 = _masksum(data, mask=mask, axis=0) * (
-        ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1)
-    obj_tmp5 = _masksum((data + k + 0.5) * ag_np.log1p(
-        data / k_plus_1), mask=mask, axis=0)
-    obj_tmp6 = -_masksum(
-        ag_np.log1p(data / k), mask=mask, axis=0)
+    if 'ij_sum' not in mods:
+        obj = obj / num_fullres_per_lowres_bins
 
-    return (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
+    obj = ag_np.mean(obj)
+    return obj
 
 
 @custom_jvp
@@ -126,7 +134,7 @@ log_modified_bessel_1st_kind.defjvps(  # FIXME check this
 #     lambda g2, ans, v, z: grad_mean_log_bessel_ive(z, v=v) * g2)
 
 
-def skellam_nll(mu1, mu2, data, mods=[]):
+def skellam_nll(data, mu1, mu2, mods=[]):
     if 'tfp' in mods:
         z = 2 * ag_np.sqrt(mu1 * mu2)
         log_mod_bessel1 = tfp.math.log_bessel_ive(data, z) + ag_np.abs(z)
@@ -152,25 +160,22 @@ def skellam_nll(mu1, mu2, data, mods=[]):
         #     # 360.69380971291554 353.3475608389218
         log_mod_bessel1_mean = ag_np.mean(log_mod_bessel1)
 
-
     obj = ag_np.mean(mu1) + ag_np.mean(mu2) - log_mod_bessel1_mean
     if np.any(data != 0):
         obj = obj - ag_np.mean(data / 2 * (ag_np.log(mu1) - ag_np.log(mu2)))
     return obj
 
 
-def poisson_nll(lambda_pois, data, mask=None, num_fullres_per_lowres_bins=1):
+def poisson_nll(data, lambda_pois, mask=None, num_fullres_per_lowres_bins=1):
     lambda_pois = ag_np.asarray(lambda_pois)
-    data = np.asarray(data)
+    data = ag_np.asarray(data)
 
     obj = ag_np.mean(lambda_pois * num_fullres_per_lowres_bins)
     non0 = (data != 0)
     if np.any(non0):
-        if data.size > lambda_pois.size:
+        if data.ndim > lambda_pois.ndim:
             data = _masksum(data, mask=mask, axis=0)
             # non0 = (data != 0)
         # obj = obj - ag_np.mean(data[non0] * ag_np.log(lambda_pois[non0])) # TODO implement
         obj = obj - ag_np.mean(data * ag_np.log(lambda_pois))
     return obj
-
-

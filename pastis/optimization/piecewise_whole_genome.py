@@ -22,15 +22,15 @@ class ChromReorienter(object):
     """
 
     def __init__(self, lengths, ploidy, struct_init=None, translate=False,
-                 rotate=False, fix_homo=True, mixture_coefs=None):
+                 rotate=False, static_hmlg=True, mixture_coefs=None):
         self.lengths_fullres = lengths
         self.ploidy = ploidy
         self.reorient = translate or rotate
         self.translate = translate
         self.rotate = rotate
-        self.fix_homo = fix_homo
-        self.nchrom = lengths.shape[0]
-        if not fix_homo:
+        self.static_hmlg = static_hmlg
+        self.nchrom = lengths.size
+        if not static_hmlg:
             self.nchrom *= self.ploidy
         if self.reorient:
             if lengths is None:
@@ -56,7 +56,7 @@ class ChromReorienter(object):
             self.struct_init = [decrease_struct_res(
                 s, multiscale_factor=multiscale_factor,
                 lengths=self.lengths_fullres,
-                ploidy=ploidy) for s in self.struct_init_fullres]
+                ploidy=self.ploidy) for s in self.struct_init_fullres]
 
     def check_X(self, X):
         """
@@ -104,7 +104,7 @@ class ChromReorienter(object):
                 raise ValueError("Must translate or rotate.")
 
             lengths_tiled = np.tile(self.lengths, self.ploidy)
-            if self.fix_homo:
+            if self.static_hmlg:
                 translations = ag_np.tile(translations, (self.ploidy, 1))
                 rotations = ag_np.tile(rotations, (self.ploidy, 1))
 
@@ -157,15 +157,21 @@ def _quat_to_rotation_matrix(q):
     elif abs(n - 1.0) < np.finfo(np.float).eps:
         # Input q is basically normalized
         return ag_np.array([
-            [1 - 2 * (y ** 2 + z ** 2),   2 * (x * y - z * w),         2 * (x * z + y * w)],
-            [2 * (x * y + z * w),         1 - 2 * (x ** 2 + z ** 2),   2 * (y * z - x * w)],
-            [2 * (x * z - y * w),         2 * (y * z + x * w),         1 - 2 * (x ** 2 + y ** 2)]])
+            [1 - 2 * (y ** 2 + z ** 2), 2 * (x * y - z * w),
+                2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x ** 2 + z ** 2),
+                2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w),
+                1 - 2 * (x ** 2 + y ** 2)]])
     else:
         # Input q is not normalized
         return ag_np.array([
-            [1 - 2 * (y ** 2 + z ** 2) / n,   2 * (x * y - z * w) / n,         2 * (x * z + y * w) / n],
-            [2 * (x * y + z * w) / n,         1 - 2 * (x ** 2 + z ** 2) / n,   2 * (y * z - x * w) / n],
-            [2 * (x * z - y * w) / n,         2 * (y * z + x * w) / n,         1 - 2 * (x ** 2 + y ** 2) / n]])
+            [1 - 2 * (y ** 2 + z ** 2) / n, 2 * (x * y - z * w) / n,
+                2 * (x * z + y * w) / n],
+            [2 * (x * y + z * w) / n, 1 - 2 * (x ** 2 + z ** 2) / n,
+                2 * (y * z - x * w) / n],
+            [2 * (x * z - y * w) / n, 2 * (y * z + x * w) / n,
+                1 - 2 * (x ** 2 + y ** 2) / n]])
 
 
 def _realignment_error(X, Y, use_disterror=False):
@@ -277,7 +283,7 @@ def _realign_structures(X, Y, rescale=False, copy=True, verbose=False,
 
 def _orient_single_fullres_chrom(struct_genome_lowres, struct_chrom_fullres,
                                  ploidy, lengths, chromosomes, chrom,
-                                 piecewise_factor, piecewise_fix_homo):
+                                 piecewise_factor, piecewise_static_hmlg):
     """
     """
 
@@ -296,7 +302,7 @@ def _orient_single_fullres_chrom(struct_genome_lowres, struct_chrom_fullres,
         lengths=chrom_lengths, ploidy=ploidy)
 
     # For diploid, optionally find separate orientations per homolog
-    if ploidy == 2 and not piecewise_fix_homo:
+    if ploidy == 2 and not piecewise_static_hmlg:
         n_lowres = chrom_lengths_lowres.sum()
         struct_lowres_genome2chrom = [struct_lowres_genome2chrom[:n_lowres],
                                       struct_lowres_genome2chrom[n_lowres:]]
@@ -310,13 +316,13 @@ def _orient_single_fullres_chrom(struct_genome_lowres, struct_chrom_fullres,
         struct_chrom_fullres = [struct_chrom_fullres]
 
     # Find ideal translation, rotation & mirroring
-    homo_struct = zip(
+    hmlg_struct = zip(
         struct_lowres_genome2chrom, struct_chrom_fullres2lowres,
         struct_chrom_fullres)
     trans = []
     rot = []
     fullres_chrom_mirrored = []
-    for lowres_genome2chrom, chrom_fullres2lowres, chrom_fullres in homo_struct:
+    for lowres_genome2chrom, chrom_fullres2lowres, chrom_fullres in hmlg_struct:
         trans.append(np.nanmean(lowres_genome2chrom, axis=0) - np.nanmean(
             chrom_fullres2lowres, axis=0))
         _, _, mirror, rotation_matrix = _realign_structures(
@@ -338,7 +344,7 @@ def _orient_single_fullres_chrom(struct_genome_lowres, struct_chrom_fullres,
 def _orient_fullres_chroms_via_lowres_genome(outdir, seed, chromosomes,
                                              lengths, alpha, ploidy,
                                              piecewise_factor,
-                                             piecewise_fix_homo=True,
+                                             piecewise_static_hmlg=True,
                                              mixture_coefs=None):
     """
     """
@@ -352,10 +358,10 @@ def _orient_fullres_chroms_via_lowres_genome(outdir, seed, chromosomes,
         outdir_lowres, 'struct_inferred.%03d.coords' % seed))
 
     struct_fullres_genome_init = []
-    rotations_homo1 = []
-    translations_homo1 = []
-    rotations_homo2 = []
-    translations_homo2 = []
+    rotations_hmlg1 = []
+    translations_hmlg1 = []
+    rotations_hmlg2 = []
+    translations_hmlg2 = []
     for chrom in chromosomes:
         struct_chrom_fullres = np.loadtxt(os.path.join(
             outdir_chrom, chrom, 'struct_inferred.%03d.coords' % seed))
@@ -364,15 +370,15 @@ def _orient_fullres_chroms_via_lowres_genome(outdir, seed, chromosomes,
             struct_chrom_fullres=struct_chrom_fullres, ploidy=ploidy,
             lengths=lengths, chromosomes=chromosomes, chrom=chrom,
             piecewise_factor=piecewise_factor,
-            piecewise_fix_homo=piecewise_fix_homo)
+            piecewise_static_hmlg=piecewise_static_hmlg)
         struct_fullres_genome_init.extend(fullres_chrom_mirrored)
-        translations_homo1.extend(trans[0])
-        rotations_homo1.extend(rot[0])
+        translations_hmlg1.extend(trans[0])
+        rotations_hmlg1.extend(rot[0])
         if len(trans) > 1:
-            translations_homo2.extend(trans[1])
-            rotations_homo2.extend(rot[1])
-    translations = translations_homo1 + translations_homo2
-    rotations = rotations_homo1 + rotations_homo2
+            translations_hmlg2.extend(trans[1])
+            rotations_hmlg2.extend(rot[1])
+    translations = translations_hmlg1 + translations_hmlg2
+    rotations = rotations_hmlg1 + rotations_hmlg2
 
     struct_fullres_genome_init = np.concatenate(struct_fullres_genome_init)
     reorient_init = np.concatenate(
@@ -381,7 +387,7 @@ def _orient_fullres_chroms_via_lowres_genome(outdir, seed, chromosomes,
 
     reorienter = ChromReorienter(
         lengths=lengths, ploidy=ploidy, struct_init=struct_fullres_genome_init,
-        translate=True, rotate=True, fix_homo=piecewise_fix_homo,
+        translate=True, rotate=True, static_hmlg=piecewise_static_hmlg,
         mixture_coefs=mixture_coefs)
     struct_fullres_genome_reoriented = reorienter.translate_and_rotate(
         reorient_init)[0].reshape(-1, 3)
@@ -411,7 +417,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                     est_hmlg_sep=None, hsc_min_beads=5, mhs_lambda=0., mhs_k=None,
                     callback_fxns=None, callback_freq=None,
                     piecewise_step=None, piecewise_chrom=None,
-                    piecewise_min_beads=5, piecewise_fix_homo=False,
+                    piecewise_min_beads=5, piecewise_static_hmlg=False,
                     piecewise_opt_orient=True, piecewise_step3_multiscale=False,
                     piecewise_step1_accuracy=1, multiscale_reform=False,
                     alpha_true=None, struct_true=None, init='msd',
@@ -604,7 +610,7 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
             outdir=outdir, seed=seed, chromosomes=chromosomes,
             lengths=lengths, alpha=alpha, ploidy=ploidy,
             piecewise_factor=piecewise_factor,
-            piecewise_fix_homo=piecewise_fix_homo, mixture_coefs=mixture_coefs)
+            piecewise_static_hmlg=piecewise_static_hmlg, mixture_coefs=mixture_coefs)
         outdir_orient_init = os.path.join(outdir_orient, 'via_step1')
         infer(
             counts_raw=counts_raw, outdir=outdir_orient_init,
@@ -628,10 +634,10 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
             reorienter = ChromReorienter(
                 lengths=lengths, ploidy=ploidy,
                 struct_init=struct_fullres_genome_init, translate=True,
-                rotate=True, fix_homo=piecewise_fix_homo,
+                rotate=True, static_hmlg=piecewise_static_hmlg,
                 mixture_coefs=mixture_coefs)
 
-            if piecewise_fix_homo:
+            if piecewise_static_hmlg:
                 hsc_lambda_3 = 0.
                 mhs_lambda_3 = 0.
             else:

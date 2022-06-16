@@ -18,7 +18,7 @@ import warnings
 from timeit import default_timer as timer
 from datetime import timedelta
 
-from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
+from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .callbacks import Callback
 from .utils_poisson import _print_code_header, jax_max
@@ -139,7 +139,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         k = k + mix_coef * k_tmp
         # mu = mu + mix_coef * counts.beta * gamma_mean  # Not needed
 
-    # Calculate objective  # TODO use multires_negbinom from likelihoods.py
+    # Calculate objective  # TODO use gamma_poisson_nll from likelihoods.py
     log1p_theta = ag_np.log1p(theta)
     obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
     if counts.type == 'zero':
@@ -354,13 +354,15 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
                              for counts_maps in counts]),))
 
     # Format X
-    X, epsilon, mixture_coefs = _format_X(
-        X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, multiscale_reform=multiscale_reform,
-        epsilon=epsilon, mixture_coefs=mixture_coefs, mods=mods)
+    if reorienter is None or (not reorienter.reorient):
+        X, epsilon, mixture_coefs = _format_X(
+            X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+            multiscale_reform=multiscale_reform, epsilon=epsilon,
+            mixture_coefs=mixture_coefs, mods=mods)
 
     # Optionally translate & rotate structures
     if reorienter is not None and reorienter.reorient:
+        reorienter.check_X(X)
         structures = reorienter.translate_and_rotate(X)
     else:
         structures = X
@@ -418,8 +420,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
 
 
 def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
-              reorienter=None, multiscale_reform=False, epsilon=None,
-              mixture_coefs=None, mods=[]):
+              multiscale_reform=False, epsilon=None, mixture_coefs=None, mods=[]):
     """Reformat and check X.
     """
     # FIXME epsilon shouldn't be inputted to here unless inferring struct/eps separately
@@ -451,25 +452,22 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
         #epsilon = None  # FIXME epsilon
         pass
 
-    if reorienter is not None and reorienter.reorient:
-        reorienter.check_X(X)
-    else:
-        try:
-            X = X.reshape(-1, 3)
-        except ValueError:
-            raise ValueError("X should contain k 3D structures, X.shape ="
-                             f" ({', '.join(map(str, X.shape))})")
+    try:
+        X = X.reshape(-1, 3)
+    except ValueError:
+        raise ValueError("X should contain k 3D structures, X.shape ="
+                         f" ({', '.join(map(str, X.shape))})")
 
-        k = len(mixture_coefs)
-        n = int(X.shape[0] / k)
-        if n != X.shape[0] / k:
-            raise ValueError("X.shape[0] should be divisible by the length of"
-                             f" mixture_coefs, {k}. X.shape ="
-                             f" ({', '.join(map(str, X.shape))})")
-        if nbeads is not None and n != nbeads:
-            raise ValueError(f"Structures must be of length {nbeads}. They are"
-                             f" of length {n}.")
-        X = [X[i * n:(i + 1) * n] for i in range(k)]
+    k = len(mixture_coefs)
+    n = int(X.shape[0] / k)
+    if n != X.shape[0] / k:
+        raise ValueError("X.shape[0] should be divisible by the length of"
+                         f" mixture_coefs, {k}. X.shape ="
+                         f" ({', '.join(map(str, X.shape))})")
+    if nbeads is not None and n != nbeads:
+        raise ValueError(f"Structures must be of length {nbeads}. They are"
+                         f" of length {n}.")
+    X = [X[i * n:(i + 1) * n] for i in range(k)]
 
     return X, epsilon, mixture_coefs
 
