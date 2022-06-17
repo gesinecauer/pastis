@@ -372,9 +372,9 @@ class BeadChainConnectivity2021(Constraint):
             multiscale_factor=self.multiscale_factor)
 
         counts = [c for c in counts if c.sum() != 0]
-        beta_ambig = _ambiguate_beta(
-            [c.beta for c in counts], counts=counts, lengths=self.lengths,
-            ploidy=self.ploidy)
+        beta = _ambiguate_beta(
+            [c.beta for c in counts if c.sum() != 0], counts=counts,
+            lengths=self.lengths, ploidy=self.ploidy)
         counts_ambig = ambiguate_counts(
             counts=counts, lengths=self.lengths, ploidy=self.ploidy,
             exclude_zeros=True)
@@ -397,8 +397,7 @@ class BeadChainConnectivity2021(Constraint):
             raise NotImplementedError("Implement for multiscale")  # TODO
 
         var = {
-            'row_nghbr': row_nghbr, 'beta_ambig': beta_ambig,
-            'nghbr_counts': nghbr_counts}
+            'row_nghbr': row_nghbr, 'beta': beta, 'nghbr_counts': nghbr_counts}
         if not self._lowmem:
             self._var = var
             self._fullres_struct_nan = None  # No longer needed unless lowmem
@@ -414,14 +413,12 @@ class BeadChainConnectivity2021(Constraint):
         var = self._setup(counts=counts, bias=bias)
 
         if (var['nghbr_counts'] == 0).sum() == 0:
-            nghbr_dis = np.power(
-                var['nghbr_counts'] / var['beta_ambig'], 1 / alpha)
+            nghbr_dis = np.power(var['nghbr_counts'] / var['beta'], 1 / alpha)
             mu = nghbr_dis.mean()
             sigma_max = nghbr_dis.std()
         else:
             mu, sigma_max = taylor_approx_ndc(
-                var['nghbr_counts'], beta=var['beta_ambig'], alpha=alpha,
-                order=1)
+                var['nghbr_counts'], beta=var['beta'], alpha=alpha, order=1)
 
         nghbr_dis = _euclidean_distance(
             struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
@@ -503,7 +500,7 @@ class BeadChainConnectivity2022(Constraint):
 
         beta = _ambiguate_beta(
             [c.beta for c in counts if c.sum() != 0], counts=counts,
-            lengths=self.lengths, ploidy=2)
+            lengths=self.lengths, ploidy=self.ploidy)
         counts = [c for c in counts if c.sum() != 0]
         counts_ambig = ambiguate_counts(
             counts=counts, lengths=self.lengths, ploidy=2, exclude_zeros=False)
@@ -564,8 +561,7 @@ class HomologSeparating2022(Constraint):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.hparams = hparams
-        # self._fullres_struct_nan = None  # Not necessary for this constraint
-        self._fullres_struct_nan = fullres_struct_nan  # For self._setup() only
+        self._fullres_struct_nan = None  # Not necessary for this constraint
         self._lowmem = lowmem
         self._var = None
         self.mods = mods  # TODO remove
@@ -591,13 +587,9 @@ class HomologSeparating2022(Constraint):
 
         beta = _ambiguate_beta(
             [c.beta for c in counts if c.sum() != 0], counts=counts,
-            lengths=self.lengths, ploidy=2)
+            lengths=self.lengths, ploidy=self.ploidy)
 
-        fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-            multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-            ploidy=self.ploidy, fullres_struct_nan=self._fullres_struct_nan)
-
-        var = {'beta': beta, 'fullres_per_lowres_bead': fullres_per_lowres_bead}
+        var = {'beta': beta}
         if not self._lowmem:
             self._var = var
         return var
@@ -637,20 +629,15 @@ class HomologSeparating2022(Constraint):
             lambda_interhmlg = 4 * var['beta'] * (
                 bias_interhmlg * dis_alpha_interhmlg)
 
-        if self.multiscale_factor != 1:
-            raise NotImplementedError
-            lambda_interhmlg = lambda_interhmlg / var['fullres_per_lowres_bead']
-
-        if 'no_mean' not in self.mods:
-            # FIXME would have to apply to each pair of molecules separately
+        if 'mean' in self.mods:
+            # TODO would have to apply to each pair of molecules separately
             lambda_interhmlg = ag_np.mean(lambda_interhmlg)
 
-        if 'nbinom' not in self.mods:
-            obj = poisson_nll(
-                self.hparams['counts_interchrom'], lambda_pois=lambda_interhmlg)
-        else:
+        if 'nbinom' in self.mods:
             gamma_mean = lambda_interhmlg
-            gamma_var = None  # FIXME
+            gamma_var = np.mean([
+                self.hparams['counts_interchrom'].mean(),
+                self.hparams['counts_interchrom'].var()])  # TODO check
             theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
 
@@ -658,6 +645,10 @@ class HomologSeparating2022(Constraint):
                 theta=theta, k=k,
                 data=(self.hparams['counts_interchrom']).reshape(1, -1))
             raise NotImplementedError
+        else:
+            obj = poisson_nll(
+                self.hparams['counts_interchrom'], lambda_pois=lambda_interhmlg)
+
         # print((self.hparams['counts_interchrom'], lambda_interhmlg, obj), flush=True)
 
         # num_nghbr_hmlg = int(var['row_nghbr'].size / 2)
@@ -701,12 +692,12 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
         hsc_version = '2019'
     hsc_version = str(hsc_version)
 
-    if if counts_interchrom is None and ((
+    if counts_interchrom is None and ((
             bcc_lambda != 0 and bcc_version == '2022') or (
             hsc_lambda != 0 and hsc_version == '2022')):
-        counts_interchrom = get_mean_counts_interchrom(
+        counts_interchrom = get_fullres_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor)
+            multiscale_factor=multiscale_factor, mods=mods)
 
     bcc_class = {
         '2019': BeadChainConnectivity2019, '2021': BeadChainConnectivity2021,
@@ -734,29 +725,28 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
             hparams=hsc_hparams[hsc_version],
             fullres_struct_nan=fullres_struct_nan, lowmem=False, mods=mods))
 
+    # TODO have var=None input to Constraint._setup = share var dict for all (only add to var if not already found)
+    # TODO if NOT lowmem, run Constraint._setup method here = share var dict for all
+
+    # TODO have var=None input to Constraint.apply = share var dict for all during opt if lowmem
+    # TODO if lowmem, run Constraint._setup before .apply during opt = share var dict for all during opt if lowmem
+
     return constraints
 
 
-def get_mean_counts_interchrom(counts, lengths, ploidy, multiscale_factor):
+def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[]):
     if lengths.size == 1:
         raise ValueError(
             "Must input counts_interchrom if inferring single chromosome.")
-
-    # lengths_lowres = decrease_lengths_res(
-    #     lengths, multiscale_factor=multiscale_factor)
     counts_ambig = ambiguate_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
     counts_interchrom = _inter_counts(
         counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
-    # counts_interchrom = _inter_counts(
-    #     counts_ambig, lengths_lowres, ploidy=ploidy, exclude_zeros=False)
-
-    # counts_interchrom = decrease_counts_res(
-    #     counts_interchrom, multiscale_factor=multiscale_factor,
-    #     lengths=lengths, ploidy=ploidy)
-
     counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
-    return counts_interchrom.mean()
+    if 'nbinom' in mods:
+        return counts_interchrom
+    else:
+        return counts_interchrom.mean()
 
 
 def taylor_approx_ndc(x, beta=1, alpha=-3, order=1):
