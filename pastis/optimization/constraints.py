@@ -532,14 +532,10 @@ class BeadChainConnectivity2022(Constraint):
             struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
         lambda_nghbr = var['beta'] * var['bias_nghbr'] * ag_np.power(
             nghbr_dis, alpha)
-        if 'lenient' in self.mods:
-            obj = poisson_nll(
-                var['counts_nghbr'],
-                lambda_pois=2 * (lambda_nghbr + lambda_nghbr_inter))
-        else:
-            data = np.maximum(
-                0, var['counts_nghbr'] - self.hparams['counts_interchrom'] / 2)
-            obj = poisson_nll(np.tile(data, 2), lambda_pois=2 * lambda_nghbr)
+
+        data = np.maximum(
+            0, var['counts_nghbr'] - self.hparams['counts_interchrom'] / 2)
+        obj = poisson_nll(np.tile(data, 2), lambda_pois=2 * lambda_nghbr)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
@@ -604,14 +600,7 @@ class HomologSeparating2022(Constraint):
         var = self._setup(counts=counts, bias=bias)
 
         n = int(struct.shape[0] / 2)
-        # TODO should I exclude NaN beads?
         row, col = (x.flatten() for x in np.indices((n, n)))
-        # if 'trim_inter' in self.mods:
-        #     mask_inter_nghbr = ((col == row + 1) & np.isin(
-        #         row, row_nghbr_h1)) | ((col + 1 == row) & np.isin(
-        #         col, row_nghbr_h1))
-        #     row = row[~mask_inter_nghbr]
-        #     col = col[~mask_inter_nghbr]
         dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
         if bias is None or np.all(bias == 1):
             bias_interhmlg = 1
@@ -648,22 +637,7 @@ class HomologSeparating2022(Constraint):
         else:
             obj = poisson_nll(
                 self.hparams['counts_interchrom'], lambda_pois=lambda_interhmlg)
-
         # print((self.hparams['counts_interchrom'], lambda_interhmlg, obj), flush=True)
-
-        # num_nghbr_hmlg = int(var['row_nghbr'].size / 2)
-        # row_nghbr_h1 = var['row_nghbr'][:num_nghbr_hmlg]
-        # row_nghbr_h2 = var['row_nghbr'][num_nghbr_hmlg:]
-        # dis_nghbr_h1h2 = _euclidean_distance(
-        #     struct, row=row_nghbr_h1, col=row_nghbr_h2 + 1)
-        # dis_nghbr_h2h1 = _euclidean_distance(
-        #     struct, row=row_nghbr_h2, col=row_nghbr_h1 + 1)
-        # lambda_nghbr_inter = var['beta'] * var['bias_nghbr'] * (
-        #     ag_np.power(dis_nghbr_h1h2, alpha) + ag_np.power(
-        #         dis_nghbr_h2h1, alpha))
-        # obj_nghbr_inter = poisson_nll(
-        #     self.hparams['counts_interchrom'],
-        #     lambda_pois=2 * ag_np.mean(lambda_nghbr_inter))
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
