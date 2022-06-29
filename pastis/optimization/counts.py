@@ -34,7 +34,7 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
         Aggregated and ambiguated contact counts matrix.
     """
 
-    lengths = np.array(lengths)
+    lengths = np.asarray(lengths)
     n = lengths.sum()
 
     if not isinstance(counts, list):
@@ -48,6 +48,10 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
     output = np.zeros((n, n))
     for c in counts:
         if isinstance(c, ZeroCountsMatrix):
+            continue
+        counts_sum = c.sum()
+        counts_sum = counts_sum if not np.isnan(counts_sum) else np.nansum(c)
+        if np.isnan(counts_sum) or counts_sum == 0:
             continue
         if not isinstance(c, np.ndarray):
             c = c.toarray()
@@ -911,7 +915,6 @@ class SparseCountsMatrix(CountsMatrix):
 
     def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
                  weight=1):
-        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
         _counts = counts.copy()
         if sparse.issparse(_counts):
             _counts = _counts.toarray()
@@ -932,7 +935,6 @@ class SparseCountsMatrix(CountsMatrix):
             raise ValueError(f"Counts weight may not be {self.weight}.")
         self.type = 'sparse'
         self.null = False
-        # TODO add self.lengths, self.ploidy, self.multiscale_factor to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -1063,17 +1065,17 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
 
     def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
                  weight=1):
-        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        counts = counts.copy()
+        # counts = counts.copy()
         if sparse.issparse(counts):
             # FIXME I think this should be _check_counts_matrix with exclude_zeros=False, right?
             # because you don't want beads that are all zero to be included - they should be nan
-            # TODO if so add to main branch
             counts = counts.toarray()
         self.input_sum = np.nansum(counts)
-        counts[counts != 0] = np.nan
-        dummy_counts = counts.copy() + 1
-        dummy_counts[np.isnan(dummy_counts)] = 0
+        mask_non0 = (counts != 0)
+        # counts[counts != 0] = np.nan
+        dummy_counts = counts + 1
+        # dummy_counts[np.isnan(dummy_counts)] = 0
+        dummy_counts[mask_non0] = 0
         dummy_counts = sparse.coo_matrix(dummy_counts)
 
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
@@ -1085,7 +1087,6 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             raise ValueError(f"Counts weight may not be {self.weight}.")
         self.type = 'zero'
         self.null = False
-        # TODO add self.lengths, self.ploidy, self.multiscale_factor to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -1093,7 +1094,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, dummy=True,
-            exclude_each_highres_empty=True)
+            exclude_each_fullres_zero=True)
         data_grouped, indices, indices3d, self.shape, self.mask = tmp
         self._data_grouped_shape = data_grouped.shape
         self.row, self.col = indices
@@ -1127,7 +1128,6 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         self.weight = 0.
         self.type = 'null'
         self.null = True
-        # TODO add self.lengths, self.ploidy, self.multiscale_factor to main branch...
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor

@@ -15,8 +15,9 @@ from jax.nn import relu
 
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
+from .multiscale_optimization import _group_counts_multiscale
 from .utils_poisson import find_beads_to_remove
-from .utils_poisson import _euclidean_distance, _inter_counts
+from .utils_poisson import _euclidean_distance, _inter_counts, _counts_near_diag
 from .counts import ambiguate_counts, _ambiguate_beta
 from .likelihoods import poisson_nll, gamma_poisson_nll
 from .poisson import relu_min  # TODO temporary (for NDC)
@@ -371,7 +372,6 @@ class BeadChainConnectivity2021(Constraint):
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
 
-        counts = [c for c in counts if c.sum() != 0]
         beta = _ambiguate_beta(
             [c.beta for c in counts if c.sum() != 0], counts=counts,
             lengths=self.lengths, ploidy=self.ploidy)
@@ -487,30 +487,46 @@ class BeadChainConnectivity2022(Constraint):
             return
         if self._var is not None:
             return self._var
-        row_nghbr = _neighboring_bead_indices(
-            lengths=self.lengths, ploidy=self.ploidy,
-            multiscale_factor=self.multiscale_factor)
-
-        if self.multiscale_factor > 1:
-            raise NotImplementedError("or maybe it is implemented. who am i to say??")
-
-        row_nghbr = _neighboring_bead_indices(
-            lengths=self.lengths, ploidy=1,
-            multiscale_factor=self.multiscale_factor)
 
         beta = _ambiguate_beta(
             [c.beta for c in counts if c.sum() != 0], counts=counts,
             lengths=self.lengths, ploidy=self.ploidy)
-        counts = [c for c in counts if c.sum() != 0]
-        counts_ambig = ambiguate_counts(
-            counts=counts, lengths=self.lengths, ploidy=2, exclude_zeros=False)
-        counts_nghbr = counts_ambig[row_nghbr, row_nghbr + 1]
-        counts_nghbr[np.isnan(counts_nghbr)] = np.nanmean(counts_nghbr)
 
+        # Get indices of neighboring beads
+        row_nghbr = _neighboring_bead_indices(
+            lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor)
+
+        # Get bias corresponding to neighboring beads
+        row_nghbr_ambig = _neighboring_bead_indices(
+            lengths=self.lengths, ploidy=1,
+            multiscale_factor=self.multiscale_factor)
         if bias is None or np.all(bias == 1):
             bias_nghbr = 1
         else:
-            bias_nghbr = bias.ravel()[row_nghbr] * bias.ravel()[row_nghbr + 1]
+            bias_nghbr = bias.ravel()[row_nghbr_ambig] * bias.ravel()[
+                row_nghbr_ambig + 1]
+
+        # Get counts corresponding to neighboring beads
+        counts = [c for c in counts if c.sum() != 0]
+        counts_ambig = ambiguate_counts(
+            counts=counts, lengths=self.lengths, ploidy=self.ploidy,
+            exclude_zeros=False)
+        if self.multiscale_factor == 1:
+            counts_nghbr = counts_ambig[row_nghbr_ambig, row_nghbr_ambig + 1]
+            counts_nghbr[np.isnan(counts_nghbr)] = np.nanmean(counts_nghbr)
+        else:
+            raise NotImplementedError
+
+            counts_nghbr = _counts_near_diag(
+                counts_ambig, self.lengths, ploidy=self.ploidy, nbins=1,
+                exclude_zeros=False)
+
+            tmp = _group_counts_multiscale(
+                counts_nghbr, lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor)
+            counts_nghbr, indices, indices3d, counts_shape, counts_mask = tmp
+
 
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
@@ -533,6 +549,7 @@ class BeadChainConnectivity2022(Constraint):
         lambda_nghbr = var['beta'] * var['bias_nghbr'] * ag_np.power(
             nghbr_dis, alpha)
 
+        # TODO technically not poisson - continuous.... gamma?
         data = np.maximum(
             0, var['counts_nghbr'] - self.hparams['counts_interchrom'] / 2)
         obj = poisson_nll(np.tile(data, 2), lambda_pois=2 * lambda_nghbr)
@@ -633,7 +650,6 @@ class HomologSeparating2022(Constraint):
             obj = gamma_poisson_nll(
                 theta=theta, k=k,
                 data=(self.hparams['counts_interchrom']).reshape(1, -1))
-            raise NotImplementedError
         else:
             obj = poisson_nll(
                 self.hparams['counts_interchrom'], lambda_pois=lambda_interhmlg)
