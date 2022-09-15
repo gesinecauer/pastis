@@ -312,7 +312,7 @@ def eval_h(x, lagrange, obj_factor, flag, user_data=None):
     return False
 
 
-def _estimate_beta(counts, X, alpha=-3, bias=None):
+def _estimate_beta(counts, X, alpha=-1, bias=None):
     m, n = X.shape
     if bias is None:
         bias = np.ones((counts.shape[0], 1))

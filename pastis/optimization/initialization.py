@@ -32,15 +32,18 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     if ua_beta is not None:
         ua_beta *= multiscale_factor ** 2
 
+    if alpha is None:
+        raise ValueError("Must supply alpha for MDS initialization.")
+
     struct = estimate_X(
         ua_counts._counts.astype(float),
-        alpha=-3. if alpha is None else alpha, beta=ua_beta, verbose=False,
-        use_zero_entries=False, precompute_distances='auto',
+        alpha=alpha, beta=ua_beta, verbose=False, use_zero_entries=False,
+        precompute_distances='auto',
         bias=(np.tile(bias, ploidy) if bias is not None else bias),
         random_state=random_state, type="MDS2", factr=1e12, maxiter=10000,
         ini=None)
 
-    struct = struct.reshape(-1, 3)
+    struct = struct.reshape(-1, 2)
     torm = find_beads_to_remove(counts, struct.shape[0])
     struct[torm] = np.nan
 
@@ -69,17 +72,20 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         if verbose:
             print('INITIALIZATION: 3D structure', flush=True)
         structures = _format_structures(init, mixture_coefs=mixture_coefs)
-    elif isinstance(init, str) and (init.lower() in ("mds", "mds2")) and len(ua_index) != 0:
+    elif isinstance(init, str) and (init.lower() in ("mds", "mds2")) and len(
+            ua_index) != 0:
         struct = _initialize_struct_mds(
             counts=counts, lengths=lengths_lowres, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state,
             multiscale_factor=multiscale_factor, verbose=verbose)
         structures = [struct] * len(mixture_coefs)
-    elif isinstance(init, str) and (init.lower() in ("random", "rand", "mds", "mds2")):
+    elif isinstance(init, str) and (init.lower() in (
+            "random", "rand", "mds", "mds2")):
         if verbose:
             print('INITIALIZATION: random points', flush=True)
         structures = [(1 - 2 * random_state.rand(int(
-            lengths_lowres.sum() * ploidy * 3))).reshape(-1, 3) for coef in mixture_coefs]
+            lengths_lowres.sum() * ploidy * 2))).reshape(
+            -1, 2) for coef in mixture_coefs]
     elif isinstance(init, str) and os.path.exists(init):
         if verbose:
             print('INITIALIZATION: 3D structure, %s' % init, flush=True)
@@ -132,7 +138,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     return np.concatenate(structures)
 
 
-def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
+def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-1.,
                bias=None, multiscale_factor=1, reorienter=None,
                mixture_coefs=None, verbose=False):
     """Initialize optimization.
@@ -146,11 +152,6 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
         Preprocessed counts data.
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
-    random_state : int or RandomState instance
-        If int, random_state is the seed used by the random number generator;
-        If RandomState instance, random_state is the random number generator;
-        If None, the random number generator is the RandomState instance used
-        by `np.random`.
     init : str or array_like of float
         If array of float, this will be used for initialization. Structures
         will be re-sized to the appropriate resolution, and NaN beads will be
@@ -158,6 +159,11 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
         random ("random" or "rand") or MDS2 ("mds2" or "mds").
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
+    random_state : int or RandomState instance
+        If int, random_state is the seed used by the random number generator;
+        If RandomState instance, random_state is the random number generator;
+        If None, the random number generator is the RandomState instance used
+        by `np.random`.
     alpha : float, optional
         Biophysical parameter of the transfer function used in converting
         counts to wish distances.

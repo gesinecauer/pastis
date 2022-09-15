@@ -112,7 +112,7 @@ class Constraints(object):
                     bead_weights[n:][begin:end])
                 begin = end
             self.bead_weights = np.repeat(
-                bead_weights.reshape(-1, 1), 3, axis=1)
+                bead_weights.reshape(-1, 1), 2, axis=1)
 
         self.subtracted = None
         if self.lambdas["mhs"]:
@@ -439,7 +439,7 @@ def _inter_homolog_dis(struct, lengths):
     """Computes distance between homologs for a normal diploid structure.
     """
 
-    struct = struct.copy().reshape(-1, 3)
+    struct = struct.copy().reshape(-1, 2)
 
     n = int(struct.shape[0] / 2)
     homo1 = struct[:n, :]
@@ -470,7 +470,7 @@ def _inter_homolog_dis_via_simple_diploid(struct, lengths):
 
     from sklearn.metrics import euclidean_distances
 
-    struct = struct.copy().reshape(-1, 3)
+    struct = struct.copy().reshape(-1, 2)
 
     chrom_barycenters = []
     begin = end = 0
@@ -478,7 +478,7 @@ def _inter_homolog_dis_via_simple_diploid(struct, lengths):
         end += l
         if np.isnan(struct[begin:end, 0]).sum() < l:
             chrom_barycenters.append(
-                np.nanmean(struct[begin:end, :], axis=0).reshape(1, 3))
+                np.nanmean(struct[begin:end, :], axis=0).reshape(1, 2))
         begin = end
 
     chrom_barycenters = np.concatenate(chrom_barycenters)

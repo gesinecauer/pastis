@@ -30,7 +30,7 @@ def eval_f(x, user_data=None):
                                  use_zero_counts=use_zero_counts)
 
 
-def negative_binomial_gradient(X, counts, alpha=-3, beta=1, bias=None,
+def negative_binomial_gradient(X, counts, alpha=-1, beta=1, bias=None,
                                dispersion=None,
                                lengths=None,
                                use_zero_counts=False,
@@ -57,7 +57,7 @@ def negative_binomial_gradient(X, counts, alpha=-3, beta=1, bias=None,
             infer_beta=infer_beta)
 
 
-def _negative_binomial_gradient_dense(X, counts, alpha=-3, beta=1,
+def _negative_binomial_gradient_dense(X, counts, alpha=-1, beta=1,
                                       dispersion=None,
                                       bias=None,
                                       lengths=None,
@@ -98,7 +98,7 @@ def _negative_binomial_gradient_dense(X, counts, alpha=-3, beta=1,
     return grad
 
 
-def _negative_binomial_gradient_alpha_dense(X, counts, alpha=-3, beta=1,
+def _negative_binomial_gradient_alpha_dense(X, counts, alpha=-1, beta=1,
                                             dispersion=None, bias=None,
                                             lengths=None,
                                             use_zero_counts=False):
@@ -132,7 +132,7 @@ def _negative_binomial_gradient_alpha_dense(X, counts, alpha=-3, beta=1,
     return grad
 
 
-def _negative_binomial_gradient_sparse(X, counts, alpha=-3, beta=1.,
+def _negative_binomial_gradient_sparse(X, counts, alpha=-1, beta=1.,
                                        dispersion=None,
                                        bias=None,
                                        lengths=None,
@@ -225,7 +225,7 @@ def estimate_alpha_beta(counts, X, ini=None, dispersion=None, bias=None,
 
     random_state = check_random_state(random_state)
     if ini is None:
-        ini = np.array([-3, 1.])
+        ini = np.array([-1, 1.])
 
     if use_zero_entries and sparse.issparse(counts):
         counts = counts.toarray()

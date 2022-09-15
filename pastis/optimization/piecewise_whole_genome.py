@@ -85,10 +85,10 @@ class ChromReorienter(object):
             return X
         else:
             if self.translate and self.rotate:
-                translations = X[:self.nchrom * 3].reshape(-1, 3)
+                translations = X[:self.nchrom * 3].reshape(-1, 2)
                 rotations = X[self.nchrom * 3:].reshape(-1, 4)
             elif self.translate:
-                translations = X.reshape(-1, 3)
+                translations = X.reshape(-1, 2)
                 rotations = ag_np.zeros((self.nchrom, 4))
             elif self.rotate:
                 rotations = X.reshape(-1, 4)
@@ -378,7 +378,7 @@ def _orient_fullres_chroms_via_lowres_genome(outdir, seed, chromosomes,
         translate=True, rotate=True, fix_homo=piecewise_fix_homo,
         mixture_coefs=mixture_coefs)
     struct_fullres_genome_reoriented = reorienter.translate_and_rotate(
-        reorient_init)[0].reshape(-1, 3)
+        reorient_init)[0].reshape(-1, 2)
 
     try:
         os.makedirs(outdir_orient_init)
@@ -398,7 +398,7 @@ def _orient_fullres_chroms_via_lowres_genome(outdir, seed, chromosomes,
 
 def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                     seed=0, normalize=True, filter_threshold=0.04,
-                    alpha_init=-3., max_alpha_loop=20, beta=None,
+                    alpha_init=-1., max_alpha_loop=20, beta=None,
                     multiscale_rounds=1, use_multiscale_variance=True,
                     max_iter=1e40, factr=10000000., pgtol=1e-05,
                     alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,

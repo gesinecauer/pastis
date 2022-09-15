@@ -17,7 +17,7 @@ def MDS_obj(X, distances):
 
 
 def MDS_obj_dense(X, distances):
-    X = X.reshape(-1, 3)
+    X = X.reshape(-1, 2)
     dis = euclidean_distances(X)
     X = X.flatten()
     with warnings.catch_warnings():
@@ -27,7 +27,7 @@ def MDS_obj_dense(X, distances):
 
 
 def MDS_obj_sparse(X, distances):
-    X = X.reshape(-1, 3)
+    X = X.reshape(-1, 2)
     dis = np.sqrt(((X[distances.row] - X[distances.col])**2).sum(axis=1))
     return ((dis - distances.data)**2 / distances.data**2).sum()
 
@@ -40,7 +40,7 @@ def MDS_gradient(X, distances):
 
 
 def MDS_gradient_dense(X, distances):
-    X = X.reshape(-1, 3)
+    X = X.reshape(-1, 2)
     m, n = X.shape
     tmp = X.repeat(m, axis=0).reshape((m, m, n))
     dif = tmp - tmp.transpose(1, 0, 2)
@@ -55,7 +55,7 @@ def MDS_gradient_dense(X, distances):
 
 
 def MDS_gradient_sparse(X, distances):
-    X = X.reshape(-1, 3)
+    X = X.reshape(-1, 2)
     dis = np.sqrt(((X[distances.row] - X[distances.col])**2).sum(axis=1))
 
     grad = 2 * ((dis - distances.data) / dis /
@@ -71,7 +71,7 @@ def MDS_gradient_sparse(X, distances):
     return grad_.flatten()
 
 
-def estimate_X(counts, alpha=-3., beta=1., ini=None,
+def estimate_X(counts, alpha=-1., beta=1., ini=None,
                verbose=0,
                use_zero_entries=False,
                precompute_distances=False,
@@ -131,7 +131,7 @@ def estimate_X(counts, alpha=-3., beta=1., ini=None,
 
     random_state = check_random_state(random_state)
     if ini is None or ini == "random":
-        ini = 1 - 2 * random_state.rand(n * 3)
+        ini = 1 - 2 * random_state.rand(n * 2)
     if not precompute_distances or precompute_distances == "auto":
         distances = compute_wish_distances(counts, alpha=alpha, beta=beta,
                                            bias=bias)
@@ -147,13 +147,13 @@ def estimate_X(counts, alpha=-3., beta=1., ini=None,
         iprint=verbose,
         factr=factr,
         maxiter=maxiter)
-    return results[0].reshape(-1, 3)
+    return results[0].reshape(-1, 2)
 
 
 class MDS(object):
     """
     """
-    def __init__(self, alpha=-3., beta=1.,
+    def __init__(self, alpha=-1., beta=1.,
                  max_iter=5000, random_state=None, n_init=1, n_jobs=1,
                  precompute_distances="auto", bias=None,
                  init=None, verbose=False, factr=1e12):
@@ -194,7 +194,7 @@ class MDS(object):
 class NMDS(object):
     """
     """
-    def __init__(self, alpha=-3., beta=1.,
+    def __init__(self, alpha=-1., beta=1.,
                  max_iter=5000, random_state=None, n_init=1, n_jobs=1,
                  precompute_distances="auto", bias=None,
                  init=None, verbose=False, max_iter_outer=5, factr=1e12):

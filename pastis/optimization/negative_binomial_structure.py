@@ -9,7 +9,7 @@ from .utils import ConstantDispersion
 _niter = 0
 
 
-def negative_binomial_obj(X, counts, alpha=-3., beta=1., bias=None,
+def negative_binomial_obj(X, counts, alpha=-1., beta=1., bias=None,
                           dispersion=None,
                           use_zero_counts=False, lengths=None):
     """
@@ -24,7 +24,7 @@ def negative_binomial_obj(X, counts, alpha=-3., beta=1., bias=None,
     counts : ndarray (n, n)
         the contact count matrix
 
-    alpha : float, optional, default: -3
+    alpha : float, optional, default: -1
         the count to distance coefficient
 
     beta : float, optional, default: 1
@@ -57,7 +57,7 @@ def negative_binomial_obj(X, counts, alpha=-3., beta=1., bias=None,
             use_zero_counts=use_zero_counts)
 
 
-def _negative_binomial_obj_dense(X, counts, alpha=-3, beta=1, dispersion=None,
+def _negative_binomial_obj_dense(X, counts, alpha=-1, beta=1, dispersion=None,
                                  bias=None,
                                  lengths=None,
                                  use_zero_counts=False):
@@ -91,7 +91,7 @@ def _negative_binomial_obj_dense(X, counts, alpha=-3, beta=1, dispersion=None,
         return obj
 
 
-def _negative_binomial_obj_sparse(X, counts, alpha=-3, beta=1., bias=None,
+def _negative_binomial_obj_sparse(X, counts, alpha=-1, beta=1., bias=None,
                                   dispersion=None,
                                   use_zero_counts=False, lengths=None):
     if use_zero_counts:
@@ -117,7 +117,7 @@ def _negative_binomial_obj_sparse(X, counts, alpha=-3, beta=1., bias=None,
     return obj
 
 
-def negative_binomial_gradient(X, counts, alpha=-3, beta=1, bias=None,
+def negative_binomial_gradient(X, counts, alpha=-1, beta=1, bias=None,
                                dispersion=None,
                                lengths=None,
                                use_zero_counts=False):
@@ -141,7 +141,7 @@ def negative_binomial_gradient(X, counts, alpha=-3, beta=1, bias=None,
             use_zero_counts=use_zero_counts)
 
 
-def _negative_binomial_gradient_dense(X, counts, alpha=-3, beta=1,
+def _negative_binomial_gradient_dense(X, counts, alpha=-1, beta=1,
                                       dispersion=None,
                                       lengths=None,
                                       bias=None,
@@ -183,7 +183,7 @@ def _negative_binomial_gradient_dense(X, counts, alpha=-3, beta=1,
     return grad
 
 
-def _negative_binomial_gradient_sparse(X, counts, alpha=-3, beta=1.,
+def _negative_binomial_gradient_sparse(X, counts, alpha=-1, beta=1.,
                                        dispersion=None,
                                        lengths=None,
                                        bias=None,

@@ -90,7 +90,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
             raise ValueError("Individual structures must use numpy.ndarray"
                              "format.")
         try:
-            structures = [struct.reshape(-1, 3) for struct in structures]
+            structures = [struct.reshape(-1, 2) for struct in structures]
         except ValueError:
             raise ValueError("Structures should be composed of 3D coordinates")
     else:
@@ -98,7 +98,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
             raise ValueError("Structures must be numpy.ndarray or list of"
                              "numpy.ndarrays.")
         try:
-            structures = structures.reshape(-1, 3)
+            structures = structures.reshape(-1, 2)
         except ValueError:
             raise ValueError("Structure should be composed of 3D coordinates")
         structures, _ = _format_X(structures, mixture_coefs=mixture_coefs)
@@ -114,9 +114,9 @@ def _format_structures(structures, lengths=None, ploidy=None,
     if lengths is not None and ploidy is not None:
         nbeads = lengths.sum() * ploidy
         for struct in structures:
-            if struct.shape != (nbeads, 3):
+            if struct.shape != (nbeads, 2):
                 raise ValueError("Structure is of unexpected shape. Expected"
-                                 " shape of (%d, 3), structure is (%s)."
+                                 " shape of (%d, 2), structure is (%s)."
                                  % (nbeads,
                                     ', '.join([str(x) for x in struct.shape])))
 
@@ -182,7 +182,7 @@ def _struct_replace_nan(struct, lengths, kind='linear', random_state=None):
         struct = np.loadtxt(struct)
     else:
         struct = struct.copy()
-    struct = struct.reshape(-1, 3)
+    struct = struct.reshape(-1, 2)
     lengths = np.array(lengths).astype(int)
 
     ploidy = 1
@@ -201,7 +201,7 @@ def _struct_replace_nan(struct, lengths, kind='linear', random_state=None):
             to_rm = mask[begin:end]
             if to_rm.sum() <= 1:
                 interpolated_chr = (
-                    1 - 2 * random_state.rand(length * 3)).reshape(-1, 3)
+                    1 - 2 * random_state.rand(length * 3)).reshape(-1, 2)
                 if ploidy == 1:
                     nan_chroms.append(str(j + 1))
                 else:

@@ -63,7 +63,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
         return struct
     if isinstance(struct, str):
         struct = np.loadtxt(struct)
-    struct = struct.reshape(-1, 3)
+    struct = struct.reshape(-1, 2)
     if isinstance(lengths, str):
         lengths = load_lengths(lengths)
     lengths = np.array(lengths).astype(int)
@@ -72,7 +72,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     if ploidy != 1 and ploidy != 2:
         raise ValueError("Not consistent with haploid or diploid... struct is"
                          " %d beads (and 3 cols), sum of lengths is %d" %
-                         (struct.reshape(-1, 3).shape[0], lengths_lowres.sum()))
+                         (struct.reshape(-1, 2).shape[0], lengths_lowres.sum()))
     ploidy = int(ploidy)
 
     indices = _get_struct_indices(ploidy, multiscale_factor,
@@ -328,11 +328,11 @@ def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask
 
     lengths = np.array(lengths).astype(int)
 
-    ploidy = struct.reshape(-1, 3).shape[0] / lengths.sum()
+    ploidy = struct.reshape(-1, 2).shape[0] / lengths.sum()
     if ploidy != 1 and ploidy != 2:
         raise ValueError("Not consistent with haploid or diploid... struct is"
                          " %d beads (and 3 cols), sum of lengths is %d" % (
-                             struct.reshape(-1, 3).shape[0], lengths.sum()))
+                             struct.reshape(-1, 2).shape[0], lengths.sum()))
     ploidy = int(ploidy)
 
     if indices is None:
@@ -353,11 +353,13 @@ def _group_highres_struct(struct, multiscale_factor, lengths, indices=None, mask
             mask)).astype(bool).astype(int)
 
     # Apply to struct, and set incorrect indices to np.nan
-    return np.where(np.repeat(incorrect_indices.reshape(-1, 1), 3, axis=1), np.nan,
-                    struct.reshape(-1, 3)[indices, :]).reshape(multiscale_factor, -1, 3)
+    return np.where(
+        np.repeat(incorrect_indices.reshape(-1, 1), 2, axis=1), np.nan,
+        struct.reshape(-1, 2)[indices, :]).reshape(multiscale_factor, -1, 2)
 
 
-def decrease_struct_res(struct, multiscale_factor, lengths, indices=None, mask=None):
+def decrease_struct_res(struct, multiscale_factor, lengths, indices=None,
+                        mask=None):
     """Decrease resolution of structure by averaging adjacent beads.
 
     Decrease the resolution of the 3D chromatin structure. Each bead in the

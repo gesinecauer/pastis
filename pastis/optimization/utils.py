@@ -136,7 +136,7 @@ def compute_adjacent_distances(X, lengths):
     return np.sqrt(dis)
 
 
-def compute_wish_distances(counts, alpha=-3., beta=1., bias=None):
+def compute_wish_distances(counts, alpha=-1., beta=1., bias=None):
     """
     Computes wish distances from a counts matrix
 
@@ -145,7 +145,7 @@ def compute_wish_distances(counts, alpha=-3., beta=1., bias=None):
     counts : ndarray
         Interaction counts matrix
 
-    alpha : float, optional, default: -3
+    alpha : float, optional, default: -1
         Coefficient of the power law
 
     beta : float, optional, default: 1

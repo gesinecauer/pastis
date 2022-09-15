@@ -161,7 +161,7 @@ def _format_X(X, reorienter=None, mixture_coefs=None):
         reorienter.check_X(X)
     else:
         try:
-            X = X.reshape(-1, 3)
+            X = X.reshape(-1, 2)
         except ValueError:
             raise ValueError("X should contain k 3D structures")
         k = len(mixture_coefs)
@@ -423,7 +423,7 @@ class PastisPM(object):
 
     def __init__(self, counts, lengths, ploidy, alpha, init, bias=None,
                  constraints=None, callback=None, multiscale_factor=1,
-                 multiscale_variances=None, alpha_init=-3., max_alpha_loop=20,
+                 multiscale_variances=None, alpha_init=-1., max_alpha_loop=20,
                  max_iter=30000, factr=10000000., pgtol=1e-05,
                  alpha_factr=1000000000000., reorienter=None, null=False,
                  mixture_coefs=None, verbose=True):
@@ -627,8 +627,8 @@ class PastisPM(object):
         if self.reorienter.reorient:
             self.orientation_ = self.X_
             self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
-                0].reshape(-1, 3)
+                0].reshape(-1, 2)
         else:
-            self.struct_ = self.X_.reshape(-1, 3)
+            self.struct_ = self.X_.reshape(-1, 2)
 
         return self

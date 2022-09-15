@@ -19,7 +19,7 @@ def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
     if multiscale_factor == 1:
         return struct
 
-    struct = struct.copy().reshape(-1, 3)
+    struct = struct.copy().reshape(-1, 2)
     lengths = np.array(lengths).astype(int)
 
     struct_lowres = []
@@ -30,13 +30,13 @@ def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
         remainder = struct_chrom.shape[0] % multiscale_factor
         struct_chrom_reduced = np.nanmean(
             struct_chrom[:struct_chrom.shape[0] - remainder, :].reshape(
-                -1, multiscale_factor, 3), axis=1)
+                -1, multiscale_factor, 2), axis=1)
         if remainder == 0:
             struct_lowres.append(struct_chrom_reduced)
         else:
             struct_chrom_overhang = np.nanmean(
                 struct_chrom[struct_chrom.shape[0] - remainder:, :],
-                axis=0).reshape(-1, 3)
+                axis=0).reshape(-1, 2)
             struct_lowres.extend([struct_chrom_reduced, struct_chrom_overhang])
         begin = end
 

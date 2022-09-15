@@ -179,7 +179,7 @@ class Callback(object):
         self.time_start = None
 
     def _set_structures(self, structures):
-        self.structures = [struct.copy().reshape(-1, 3)
+        self.structures = [struct.copy().reshape(-1, 2)
                            for struct in structures]
         for i in range(len(structures)):
             self.structures[i][self.torm] = np.nan

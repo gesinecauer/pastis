@@ -50,7 +50,7 @@ def _adjust_beta_simple_diploid(beta, counts, lengths):
 
 
 def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
-                 normalize=True, filter_threshold=0.04, alpha_init=-3.,
+                 normalize=True, filter_threshold=0.04, alpha_init=-1.,
                  max_alpha_loop=20, beta=None, multiscale_rounds=1,
                  use_multiscale_variance=True, init='mds', max_iter=30000,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
@@ -195,7 +195,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
 
 
 def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
-          normalize=True, filter_threshold=0.04, alpha_init=-3.,
+          normalize=True, filter_threshold=0.04, alpha_init=-1.,
           max_alpha_loop=20, beta=None, multiscale_factor=1,
           multiscale_rounds=1, use_multiscale_variance=True,
           final_multiscale_round=False, init='mds', max_iter=30000,
@@ -506,7 +506,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                       alpha_factr=alpha_factr, reorienter=reorienter, null=null,
                       mixture_coefs=mixture_coefs, verbose=verbose)
         pm.fit()
-        struct_ = pm.struct_.reshape(-1, 3)
+        struct_ = pm.struct_.reshape(-1, 2)
         struct_[torm] = np.nan
 
         # SAVE RESULTS
@@ -591,7 +591,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
 def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    chrom_subset=None, alpha=None, seed=0, normalize=True,
-                   filter_threshold=0.04, alpha_init=-3., max_alpha_loop=20,
+                   filter_threshold=0.04, alpha_init=-1., max_alpha_loop=20,
                    beta=None, multiscale_rounds=1, use_multiscale_variance=True,
                    max_iter=30000, factr=10000000., pgtol=1e-05,
                    alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,

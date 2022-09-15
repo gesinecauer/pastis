@@ -108,7 +108,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     counts = _get_counts(counts, lengths_full)
 
     if struct_true is not None and isinstance(struct_true, str):
-        struct_true = np.loadtxt(struct_true)
+        struct_true = np.loadtxt(struct_true)[:, :2]
 
     lengths_subset, chrom_subset, counts, struct_true = subset_chrom(
         counts=counts, ploidy=ploidy, lengths_full=lengths_full,

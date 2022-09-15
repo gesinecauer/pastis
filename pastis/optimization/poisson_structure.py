@@ -7,7 +7,7 @@ from . import poisson_model
 from . import mds
 
 
-def poisson_obj(X, counts, alpha=-3., beta=1., bias=None,
+def poisson_obj(X, counts, alpha=-1., beta=1., bias=None,
                 use_zero_counts=False, cst=0):
     if bias is None:
         bias = np.ones((counts.shape[0], 1))
@@ -22,7 +22,7 @@ def poisson_obj(X, counts, alpha=-3., beta=1., bias=None,
             "Poisson model is not implemented for dense")
 
 
-def _poisson_obj_sparse(X, counts, alpha=-3., beta=1., bias=None,
+def _poisson_obj_sparse(X, counts, alpha=-1., beta=1., bias=None,
                         use_zero_counts=False, cst=0):
 
     if bias is None:
@@ -37,7 +37,7 @@ def _poisson_obj_sparse(X, counts, alpha=-3., beta=1., bias=None,
     return obj
 
 
-def poisson_gradient(X, counts, alpha=-3, beta=1, bias=None,
+def poisson_gradient(X, counts, alpha=-1, beta=1, bias=None,
                      use_zero_counts=False):
     if bias is None:
         bias = np.ones((counts.shape[0], 1))
@@ -51,7 +51,7 @@ def poisson_gradient(X, counts, alpha=-3, beta=1, bias=None,
             "Poisson model is not implemented for dense")
 
 
-def _poisson_gradient_sparse(X, counts, alpha=-3, beta=1, bias=None):
+def _poisson_gradient_sparse(X, counts, alpha=-1, beta=1, bias=None):
     if bias is None:
         bias = np.ones((counts.shape[0], 1))
 
@@ -90,7 +90,7 @@ def eval_grad_f(x, user_data=None):
     return grad.flatten()
 
 
-def estimate_X(counts, alpha=-3., beta=1.,
+def estimate_X(counts, alpha=-1., beta=1.,
                ini=None, bias=None,
                random_state=None, maxiter=10000, verbose=0):
     """
@@ -100,7 +100,7 @@ def estimate_X(counts, alpha=-3., beta=1.,
     ----------
     counts : sparse scipy matrix (n, n)
 
-    alpha : float, optional, default: -3
+    alpha : float, optional, default: -1
         counts-to-distances mapping coefficient
 
     beta : float, optional, default: 1
@@ -158,7 +158,7 @@ def estimate_X(counts, alpha=-3., beta=1.,
 class PM1(object):
     """
     """
-    def __init__(self, alpha=-3., beta=1.,
+    def __init__(self, alpha=-1., beta=1.,
                  max_iter=5000, random_state=None, n_init=1, n_jobs=1,
                  init="MDS2", verbose=False, bias=None):
         self.max_iter = max_iter
@@ -204,7 +204,7 @@ class PM1(object):
 class PM2(object):
     """
     """
-    def __init__(self, alpha=-3., beta=1.,
+    def __init__(self, alpha=-1., beta=1.,
                  max_iter=5000, max_iter_outer_loop=5,
                  random_state=None, n_init=1, n_jobs=1,
                  bias=None,
