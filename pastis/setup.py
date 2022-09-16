@@ -16,6 +16,7 @@ def configuration(parent_package='', top_path=None):
     config.add_subpackage("io")
     config.add_subpackage("dispersion")
     config.add_subpackage("validation")
+    config.add_subpackage("simulation")
     return config
 
 
