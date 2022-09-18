@@ -18,13 +18,13 @@ def get_new_beads(rng, nbeads, circle_radius=5, center=(0, 0)):
     return beads
 
 
-def remove_overlaps(beads, overlap_radius=0.2):
+def remove_overlaps(beads, overlap_dist=0.2):
     """Ensure distance between beads is greater than a given radius"""
     dis = euclidean_distances(beads)
     np.fill_diagonal(dis, np.nan)
 
     for i in range(beads.shape[0]):
-        if np.nanmin(dis[i]) < overlap_radius:
+        if np.nanmin(dis[i]) < overlap_dist:
             dis[i, :] = np.nan
             dis[:, i] = np.nan
             beads[i] = np.nan
@@ -33,7 +33,7 @@ def remove_overlaps(beads, overlap_radius=0.2):
     return beads
 
 
-def get_struct_2d(rng, nbeads, circle_radius=5, overlap_radius=0.2,
+def get_struct_2d(rng, nbeads, circle_radius=5, overlap_dist=0.2,
                   center=(0, 0), extra_bead_factor=2, beads=None, attempt=1,
                   verbose=False):
     """Get non-overlapping beads within a circle"""
@@ -56,7 +56,7 @@ def get_struct_2d(rng, nbeads, circle_radius=5, overlap_radius=0.2,
         beads_new = np.concatenate([beads, beads_new])
 
     # Remove overlaps between beads
-    beads_new = remove_overlaps(beads_new, overlap_radius=overlap_radius)
+    beads_new = remove_overlaps(beads_new, overlap_dist=overlap_dist)
     if beads is None or beads_new.shape[0] > beads.shape[0]:
         beads = beads_new
 
@@ -64,7 +64,7 @@ def get_struct_2d(rng, nbeads, circle_radius=5, overlap_radius=0.2,
     if beads.shape[0] < nbeads:
         return get_struct_2d(
             rng=rng, nbeads=nbeads, circle_radius=circle_radius,
-            overlap_radius=overlap_radius, center=center,
+            overlap_dist=overlap_dist, center=center,
             extra_bead_factor=extra_bead_factor, beads=beads,
             attempt=attempt + 1, verbose=verbose)
     else:
@@ -108,17 +108,17 @@ def get_counts(rng, struct, nreads, alpha=-1, distrib='poisson'):
 
 
 def sim_dataset(nreads, nbeads, seed=0, directory='', alpha=-1, circle_radius=5,
-                overlap_radius=0.2, distrib='poisson', redo=False,
+                overlap_dist=0.2, distrib='poisson', redo=False,
                 verbose=False):
     """"""
 
     # Define output directory & files
-    sim_directory = (f"sim_spatial_rnaseq.nbeads{nbeads}_alpha{alpha}"
-                     f"_circle{circle_radius}_overlap{overlap_radius}")
+    sim_directory = (f"sim_spatial_rnaseq.nbeads{nbeads:g}_alpha{alpha}"
+                     f"_circle{circle_radius}_overlap{overlap_dist}")
     if distrib is None or distrib.lower() == 'none':
         sim_directory += '_raw-dis-alpha'
     else:
-        sim_directory += f'_{distrib.lower()}_nreads{nreads}'
+        sim_directory += f'_{distrib.lower()}_nreads{nreads:g}'
     outdir = os.path.join(directory, sim_directory, f'{seed:03d}')
     lengths_file = os.path.join(outdir, "counts.bed")
     struct_true_file = os.path.join(outdir, "struct_true.coords")
@@ -137,7 +137,7 @@ def sim_dataset(nreads, nbeads, seed=0, directory='', alpha=-1, circle_radius=5,
     # Make non-overlapping beads within a circle
     struct_true = get_struct_2d(
         rng=rng, nbeads=nbeads, circle_radius=circle_radius,
-        overlap_radius=overlap_radius, verbose=max(0, verbose - 1))
+        overlap_dist=overlap_dist, verbose=max(0, verbose - 1))
 
     # Get counts and beta (structure size scaling factor)
     counts, beta = get_counts(
@@ -146,10 +146,9 @@ def sim_dataset(nreads, nbeads, seed=0, directory='', alpha=-1, circle_radius=5,
 
     # Save data
     os.makedirs(outdir, exist_ok=True)
-    lengths = np.array([nbeads])
-    write_lengths(lengths_file, lengths)
     np.savetxt(struct_true_file, struct_true)
-    write_counts(counts_file, counts)
+    write_counts(counts_file, counts, base=0)
+    write_lengths(lengths_file, np.array([nbeads]))
 
     # Save metadata
     counts_eq_0 = (counts[np.triu_indices(nbeads, 1)] == 0).sum()
@@ -160,7 +159,7 @@ def sim_dataset(nreads, nbeads, seed=0, directory='', alpha=-1, circle_radius=5,
             f'beta\t{beta:g}', f'beta.ua\t{beta:g}'
             f"perc_zero.ua\t{perc_zero_bins:g}",
             f'circle_radius\t{circle_radius:g}',
-            f'overlap_radius\t{overlap_radius:g}', f'distrib\t{distrib}']
+            f'overlap_dist\t{overlap_dist:g}', f'distrib\t{distrib}']
     with open(metadata_file, 'w') as f:
         f.write('\n'.join(info))
 
@@ -168,16 +167,52 @@ def sim_dataset(nreads, nbeads, seed=0, directory='', alpha=-1, circle_radius=5,
 
 
 def sim_spatial_rnaseq(nreads, nbeads, num_struct=1, seed=0, directory='',
-                       alpha=-1, circle_radius=5, overlap_radius=0.2,
+                       alpha=-1, circle_radius=5, overlap_dist=0.2,
                        distrib='poisson', redo=False, verbose=False):
-    """"""
+    """Gets error between 3D structures.
+
+    Gets error between two 3D structures.
+
+    Parameters
+    ----------
+    nreads : int
+        Number of counts/reads to simulate.
+    nbeads : int
+        Number of beads to simulate.
+    num_struct : int, optional
+        Number of unique datasets to generate (starting with specified seed).
+    seed : int, optional
+        Random seed.
+    directory : str, optional
+        Where to create directory with the simulation output.
+    alpha : float, optional
+        Biophysical parameter of the transfer function used in converting
+        structure to counts.
+    circle_radius : float, optional
+        All beads are created within a circle of the given radius.
+    overlap_dist : float, optional
+        Prevents overlap: beads may not be within the given distance of
+        eachother.
+    distrib : 'poisson', 'negbinom', 'none', None}, optional
+        Counts will be drawn from the given distribution. If distribution is
+        None, returned counts will be equal to raw values of distance ** alpha.
+    redo : bool, optional
+        Whether to overwrite if simulation files already exist.
+    verbose : bool, optional
+        Verbosity
+
+    Returns
+    -------
+    error_scores : pd.Series
+        Computed error scores.
+    """
 
     outdirs = []
     for x in range(seed, seed + num_struct):
-        outdirs.append(sim_spatial_rnaseq(
+        outdirs.append(sim_dataset(
             nreads=nreads, nbeads=nbeads, seed=x, directory=directory,
             alpha=alpha, circle_radius=circle_radius,
-            overlap_radius=overlap_radius, distrib=distrib, redo=redo,
+            overlap_dist=overlap_dist, distrib=distrib, redo=redo,
             verbose=verbose))
     return outdirs
 
@@ -186,24 +221,43 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--nreads", default=1e3, type=float)
-    parser.add_argument("--nbeads", default=500, type=int)
-    parser.add_argument("--num_struct", default=1, type=int)
-    parser.add_argument("--seed", default=0, type=int)
-    parser.add_argument("--directory", default='')
-    parser.add_argument("--alpha", default=-1, type=float)
-    parser.add_argument("--circle_radius", default=5, type=float)
-    parser.add_argument("--overlap_radius", default=0.2, type=float)
+    parser.add_argument("--nreads", default=1e5, type=float,
+                        help="Number of counts/reads to simulate.")
+    parser.add_argument("--nbeads", default=500, type=int,
+                        help="Number of beads to simulate.")
+    parser.add_argument("--num_struct", default=1, type=int,
+                        help="Number of unique datasets to generate (starting"
+                             " with specified seed).")
+    parser.add_argument("--seed", default=0, type=int,
+                        help="Random seed.")
+    parser.add_argument("--directory", default='',
+                        help="Where to create directory with the simulation"
+                             " output.")
+    parser.add_argument("--alpha", default=-1, type=float,
+                        help="Biophysical parameter of the transfer function"
+                             " used in converting structure to counts.")
+    parser.add_argument("--circle_radius", default=5, type=float,
+                        help="All beads are created within a circle of the"
+                             " given radius.")
+    parser.add_argument("--overlap_dist", default=0.2, type=float,
+                        help="Prevents overlap: beads may not be within the"
+                             " given distance of eachother.")
     parser.add_argument("--distrib", default='poisson', type=str,
-                        choices=['poisson', 'negbinom', 'none'])
-    parser.add_argument('--redo', default=False, action='store_true')
-    parser.add_argument('--verbose', default=False, action='store_true')
+                        choices=['poisson', 'negbinom', 'none'],
+                        help="Counts will be drawn from the given distribution."
+                             " If distribution is None, created counts will be"
+                             " equal to raw values of distance ** alpha.")
+    parser.add_argument('--redo', default=False, action='store_true',
+                        help="Whether to overwrite if simulation files already"
+                             " exist.")
+    parser.add_argument('--verbose', default=False, action='store_true',
+                        help="Verbosity")
     args = parser.parse_args()
 
     sim_spatial_rnaseq(
         nreads=args.nreads, nbeads=args.nbeads, num_struct=args.num_struct,
         seed=args.seed, directory=args.directory, alpha=args.alpha,
-        circle_radius=args.circle_radius, overlap_radius=args.overlap_radius,
+        circle_radius=args.circle_radius, overlap_dist=args.overlap_dist,
         distrib=args.distrib, redo=args.redo, verbose=args.verbose)
 
 

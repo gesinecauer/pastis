@@ -233,6 +233,31 @@ def run_infer_vs_null(idx, struct_infer, struct_null, rescale=False,
 
 def get_error_scores(struct_true=None, struct_infer=None, struct_null=None,
                      rescale=False, infer_vs_infer=False, verbose=True):
+    """Gets error between 3D structures.
+
+    Gets error between two 3D structures.
+
+    Parameters
+    ----------
+    struct_true : str or array of float
+        Simulated true structure.
+    struct_infer : str or array of float
+        Inferred structure(s).
+    struct_null : str or array of float
+        Inferred NULL structure(s) - inferred without counts data.
+    rescale : bool, optional
+        Whether to optimally rescale structures.
+    infer_vs_infer : bool, optional
+        If inputting multiple inferred structures, also compare among inferred
+        structures
+    verbose : bool, optional
+        Verbosity
+
+    Returns
+    -------
+    results : dict of pd.Series
+        Computed error scores.
+    """
 
     # Parse structures
     if struct_true is None and struct_infer is None:
@@ -321,12 +346,13 @@ def main():
     parser.add_argument("--infer", type=str, nargs='+',
                         help="Inferred structure file(s)")
     parser.add_argument("--null", type=str, nargs='+',
-                        help="Inferred NULL structure file(s)")
+                        help="Inferred NULL structure file(s) - inferred"
+                             " without counts data.")
+    parser.add_argument('--rescale', default=False, action='store_true',
+                        help="Whether to optimally rescale structures")
     parser.add_argument('--infer_vs_infer', default=False, action='store_true',
                         help="If inputting multiple inferred structures, also"
                              "compare among inferred structures")
-    parser.add_argument('--rescale', default=False, action='store_true',
-                        help="Whether to optimally rescale structures")
     parser.add_argument('--verbose', default=False, action='store_true',
                         help="Verbosity")
 
@@ -334,7 +360,7 @@ def main():
 
     get_error_scores(
         struct_true=args.true, struct_infer=args.infer, struct_null=args.null,
-        infer_vs_infer=args.infer_vs_infer, rescale=args.rescale,
+        rescale=args.rescale, infer_vs_infer=args.infer_vs_infer,
         verbose=args.verbose)
 
 
