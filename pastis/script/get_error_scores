@@ -1,0 +1,32 @@
+#! /usr/bin/env python3
+
+import argparse
+import warnings
+with warnings.catch_warnings():
+    warnings.filterwarnings('ignore', message='', category=UserWarning)
+    warnings.filterwarnings('ignore', message='', category=FutureWarning)
+    from pastis.validation.error_scores import get_error_scores
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--true", type=str,
+                    help="Simulated true structure file")
+parser.add_argument("--infer", type=str, nargs='+',
+                    help="Inferred structure file(s)")
+parser.add_argument("--null", type=str, nargs='+',
+                    help="Inferred NULL structure file(s) - inferred"
+                         " without counts data.")
+parser.add_argument('--rescale', default=False, action='store_true',
+                    help="Whether to optimally rescale structures")
+parser.add_argument('--infer_vs_infer', default=False, action='store_true',
+                    help="If inputting multiple inferred structures, also"
+                         "compare among inferred structures")
+parser.add_argument('--verbose', default=False, action='store_true',
+                    help="Verbosity")
+
+args = parser.parse_args()
+
+get_error_scores(
+    struct_true=args.true, struct_infer=args.infer, struct_null=args.null,
+    rescale=args.rescale, infer_vs_infer=args.infer_vs_infer,
+    verbose=args.verbose)

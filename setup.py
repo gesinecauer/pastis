@@ -85,7 +85,9 @@ def setup_package():
                  'pastis/script/pastis-nmds',
                  "pastis/script/pastis-pm1",
                  "pastis/script/pastis-pm2",
-                 "pastis/script/pastis-poisson"],
+                 "pastis/script/pastis-poisson",
+                 "pastis/script/sim_spatial_rnaseq",
+                 "pastis/script/get_error_scores"],
         classifiers=[
             'Intended Audience :: Science/Research',
             'Intended Audience :: Developers',

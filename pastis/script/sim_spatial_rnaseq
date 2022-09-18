@@ -1,0 +1,49 @@
+#! /usr/bin/env python3
+
+import argparse
+import warnings
+with warnings.catch_warnings():
+    warnings.filterwarnings('ignore', message='', category=UserWarning)
+    warnings.filterwarnings('ignore', message='', category=FutureWarning)
+    from pastis.simulation.spatial_rnaseq import sim_spatial_rnaseq
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--nreads", default=1e5, type=float,
+                    help="Number of counts/reads to simulate.")
+parser.add_argument("--nbeads", default=500, type=int,
+                    help="Number of beads to simulate.")
+parser.add_argument("--num_struct", default=1, type=int,
+                    help="Number of unique datasets to generate (starting"
+                         " with specified seed).")
+parser.add_argument("--seed", default=0, type=int,
+                    help="Random seed.")
+parser.add_argument("--directory", default='',
+                    help="Where to create directory with the simulation"
+                         " output.")
+parser.add_argument("--alpha", default=-1, type=float,
+                    help="Biophysical parameter of the transfer function"
+                         " used in converting structure to counts.")
+parser.add_argument("--circle_radius", default=5, type=float,
+                    help="All beads are created within a circle of the"
+                         " given radius.")
+parser.add_argument("--overlap_dist", default=0.2, type=float,
+                    help="Prevents overlap: beads may not be within the"
+                         " given distance of eachother.")
+parser.add_argument("--distrib", default='poisson', type=str,
+                    choices=['poisson', 'negbinom', 'none'],
+                    help="Counts will be drawn from the given distribution."
+                         " If distribution is None, created counts will be"
+                         " equal to raw values of distance ** alpha.")
+parser.add_argument('--redo', default=False, action='store_true',
+                    help="Whether to overwrite if simulation files already"
+                         " exist.")
+parser.add_argument('--verbose', default=False, action='store_true',
+                    help="Verbosity")
+args = parser.parse_args()
+
+sim_spatial_rnaseq(
+    nreads=args.nreads, nbeads=args.nbeads, num_struct=args.num_struct,
+    seed=args.seed, directory=args.directory, alpha=args.alpha,
+    circle_radius=args.circle_radius, overlap_dist=args.overlap_dist,
+    distrib=args.distrib, redo=args.redo, verbose=args.verbose)
