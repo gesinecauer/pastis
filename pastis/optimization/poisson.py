@@ -88,7 +88,7 @@ def objective(X, counts, alpha, lengths, bias=None, constraints=None,
         Biophysical parameter of the transfer function used in converting
         counts to wish distances.
     lengths : array of int
-        Number of beads per homolog of each chromosome.
+        Number of beads.
     bias : array of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -188,7 +188,8 @@ def objective_wrapper(X, counts, alpha, lengths, bias=None, constraints=None,
         return_extras=True)
 
     if callback is not None:
-        callback.on_epoch_end(obj_logs, structures, alpha, X)
+        callback.on_epoch_end(
+            obj_logs=obj_logs, structures=structures, alpha=alpha, Xi=X)
 
     return new_obj
 
@@ -238,9 +239,11 @@ def estimate_X(counts, init_X, alpha, lengths, bias=None, constraints=None,
     alpha : float, optional
         Biophysical parameter of the transfer function used in converting
         counts to wish distances. If alpha is not specified, it will be
-        inferred.
+        inferred jointly alongside the structure via a coordinate descent
+        approach (first inferring a structure with fixed alpha, then alpha with
+        fixed structure, etc).
     lengths : array_like of int
-        Number of beads per homolog of each chromosome.
+        Number of beads.
     bias : array_like of float, optional
         Biases computed by ICE normalization.
     constraints : Constraints instance, optional
@@ -366,7 +369,7 @@ class PastisPM(object):
     counts : list of CountsMatrix subclass instances
         Preprocessed counts data.
     lengths : array_like of int
-        Number of beads per homolog of each chromosome.
+        Number of beads.
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     alpha : float
@@ -390,9 +393,12 @@ class PastisPM(object):
         group of full-resolution beads corresponding to a single low-resolution
         bead.
     alpha_init : float, optional
-        For PM2, the initial value of alpha to use.
+        When inferring alpha, this is the initial value of alpha to use.
+        (default = -1).
     max_alpha_loop : int, optional
-        For PM2, Number of times alpha and structure are inferred.
+        When inferring alpha, this is the maximum number of cycles in which
+        PASTIS will infer the alpha (with a fixed structure) and then the
+        structure (with a fixed alpha).
     max_iter : int, optional
         Maximum number of iterations per optimization.
     factr : float, optional
@@ -430,8 +436,7 @@ class PastisPM(object):
 
         from .piecewise_whole_genome import ChromReorienter
 
-        print('%s\n%s 3D STRUCTURAL INFERENCE' %
-              ('=' * 30, {2: 'DIPLOID', 1: 'HAPLOID'}[ploidy]), flush=True)
+        print(f"{'=' * 30}\n2D STRUCTURAL INFERENCE", flush=True)
 
         lengths = np.array(lengths)
 
@@ -500,7 +505,7 @@ class PastisPM(object):
         """Fit structure to counts data, given current alpha.
         """
 
-        self.X_, self.obj_, self.converged_, history_ = estimate_X(
+        self.X_, self.obj_, self.converged_, self.history_ = estimate_X(
             counts=self.counts,
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
@@ -518,20 +523,13 @@ class PastisPM(object):
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose)
 
-        if len(history_) > 1:
-            if self.history_ is None:
-                self.history_ = history_
-            else:
-                for k, v in history_.items():
-                    self.history_[k].extend(v)
-
     def _fit_alpha(self, alpha_loop=None):
         """Fit alpha to counts data, given current structure.
         """
 
         from .estimate_alpha_beta import estimate_alpha
 
-        self.alpha_, self.alpha_obj_, self.converged_, history_ = estimate_alpha(
+        self.alpha_, self.alpha_obj_, self.converged_, self.history_ = estimate_alpha(
             counts=self.counts,
             X=self.X_.flatten(),
             alpha_init=self.alpha_,
@@ -549,13 +547,6 @@ class PastisPM(object):
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose)
-
-        if len(history_) > 1:
-            if self.history_ is None:
-                self.history_ = history_
-            else:
-                for k, v in history_.items():
-                    self.history_[k].extend(v)
 
     def fit(self):
         """Fit structure to counts data, optionally estimate alpha.

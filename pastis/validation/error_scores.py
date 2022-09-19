@@ -2,17 +2,15 @@ import os
 import re
 import numpy as np
 import pandas as pd
-from rmsd import kabsch
 from sklearn.metrics import euclidean_distances
 import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings('ignore', message='', category=UserWarning)
     warnings.filterwarnings('ignore', message='', category=FutureWarning)
-    from _realignment import realign_structures
+    from ._realignment import realign_structures, error_score
 
 
-def get_distance_error(structX, structY, rescale_X_to_Y=False,
-                       return_diff=False):
+def get_distance_error(structX, structY, rescale_X_to_Y=False):
     """Get MSE of distance matrices"""
 
     # Check input
@@ -20,10 +18,6 @@ def get_distance_error(structX, structY, rescale_X_to_Y=False,
         raise ValueError("Shapes of the two structures need to be the same.")
 
     mask = np.isfinite(structX[:, 0]) & np.isfinite(structY[:, 0])
-    if mask.sum() == 0 or (
-            all(np.unique(structX) == [0]) and all(np.unique(structY) == [0])):
-        warnings.warn('Skipping blank struct, all values are nan, inf, or 0.')
-        return None
 
     # Optionally rescale structures (no need to realign or check mirror image)
     if rescale_X_to_Y:
@@ -31,13 +25,8 @@ def get_distance_error(structX, structY, rescale_X_to_Y=False,
             structX, structY, rescale_X_to_Y=rescale_X_to_Y,
             error_type='disterror')[0]
 
-    dis_diff_all = euclidean_distances(structX[mask]) - euclidean_distances(
-        structY[mask])
-    disterror = np.sqrt(np.mean(np.square(dis_diff_all)))
-    if return_diff:
-        return disterror, dis_diff_all.mean()
-    else:
-        return disterror
+    disterror = error_score(X=structX, Y=structY, error_type='disterror')
+    return disterror
 
 
 def get_rmsd(structX, structY, rescale_X_to_Y=False):
@@ -48,20 +37,12 @@ def get_rmsd(structX, structY, rescale_X_to_Y=False):
         raise ValueError("Shapes of the two structures need to be the same.")
 
     mask = np.isfinite(structX[:, 0]) & np.isfinite(structY[:, 0])
-    if mask.sum() == 0 or (
-            all(np.unique(structX) == [0]) and all(np.unique(structY) == [0])):
-        warnings.warn('Skipping blank struct, all values are nan, inf, or 0.')
-        return None
 
     # Realign, check reflection (mirror image) of structures, optionally rescale
-    structX = structX - np.nanmean(structX, axis=0)
-    structY = structY - np.nanmean(structY, axis=0)
-    structX = realign_structures(
-        structX, structY, rescale_X_to_Y=rescale_X_to_Y, error_type='rmsd')[0]
-    structX[mask] = np.dot(structX[mask], kabsch(structX[mask], structY[mask]))
+    structX, rmsd = realign_structures(
+        structX, structY, rescale_X_to_Y=rescale_X_to_Y, error_type='rmsd')
 
-    rmsd_sq = np.mean(np.square(structX[mask] - structY[mask]))
-    return np.sqrt(rmsd_sq)
+    return rmsd
 
 
 def compare_btwn_struct(structX, structY, rescale_X_to_Y=True, outfile=None,
@@ -120,11 +101,11 @@ def compare_btwn_struct(structX, structY, rescale_X_to_Y=True, outfile=None,
                          f"({dims_structX}) and ({dims_structY}).")
 
     # Compute error scores
-    error = pd.Series()
+    error = pd.Series(dtype=float)
     error['rmsd'] = get_rmsd(
         structX, structY, rescale_X_to_Y=rescale_X_to_Y)
-    error['rmse_distance'], error['mean_err_distance'] = get_distance_error(
-        structX, structY, rescale_X_to_Y=rescale_X_to_Y, return_diff=True)
+    error['disterror'] = get_distance_error(
+        structX, structY, rescale_X_to_Y=rescale_X_to_Y)
 
     if verbose:
         print(error.map('{:.3g}'.format), flush=True)

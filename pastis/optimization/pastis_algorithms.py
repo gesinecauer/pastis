@@ -50,7 +50,7 @@ def _adjust_beta_simple_diploid(beta, counts, lengths):
 
 
 def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
-                 normalize=True, filter_threshold=0.04, alpha_init=-1.,
+                 normalize=False, filter_threshold=0, alpha_init=-1.,
                  max_alpha_loop=20, beta=None, multiscale_rounds=1,
                  use_multiscale_variance=True, init='mds', max_iter=30000,
                  factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
@@ -194,8 +194,8 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
     return struct_draft_fullres, alpha_, beta_, hsc_r, True
 
 
-def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
-          normalize=True, filter_threshold=0.04, alpha_init=-1.,
+def infer(counts_raw, lengths, ploidy=1, outdir='', alpha=None, seed=0,
+          normalize=False, filter_threshold=0, alpha_init=-1.,
           max_alpha_loop=20, beta=None, multiscale_factor=1,
           multiscale_rounds=1, use_multiscale_variance=True,
           final_multiscale_round=False, init='mds', max_iter=30000,
@@ -216,15 +216,15 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     counts_raw : list of array or coo_matrix
         Counts data without normalization or filtering.
     lengths : array_like of int
-        Number of beads per homolog of each chromosome.
-    ploidy : {1, 2}
-        Ploidy, 1 indicates haploid, 2 indicates diploid.
+        Number of beads.
     outdir : str, optional
         Directory in which to save results.
     alpha : float, optional
         Biophysical parameter of the transfer function used in converting
         counts to wish distances. If alpha is not specified, it will be
-        inferred.
+        inferred jointly alongside the structure via a coordinate descent
+        approach (first inferring a structure with fixed alpha, then alpha with
+        fixed structure, etc).
     seed : int, optional
         Random seed used when generating the starting point in the
         optimization.
@@ -235,13 +235,16 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         Ratio of non-zero beads to be filtered out. Filtering is
         reccomended.
     alpha_init : float, optional
-        For PM2, the initial value of alpha to use.
+        When inferring alpha, this is the initial value of alpha to use.
+        (default = -1).
     max_alpha_loop : int, optional
-        For PM2, Number of times alpha and structure are inferred.
+        When inferring alpha, this is the maximum number of cycles in which
+        PASTIS will infer the alpha (with a fixed structure) and then the
+        structure (with a fixed alpha). (default=20)
     beta : array_like of float, optional
         Scaling parameter that determines the size of the structure, relative to
-        each counts matrix. There should be one beta per counts matrix. If None,
-        the optimal beta will be estimated.
+        the read depth of the counts matrix. If None, an arbitrary beta will be
+        chosen.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
@@ -589,9 +592,9 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         return struct_, infer_var
 
 
-def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
-                   chrom_subset=None, alpha=None, seed=0, normalize=True,
-                   filter_threshold=0.04, alpha_init=-1., max_alpha_loop=20,
+def pastis_poisson(counts, lengths, ploidy=1, outdir='', chromosomes=None,
+                   chrom_subset=None, alpha=None, seed=0, normalize=False,
+                   filter_threshold=0, alpha_init=-1., max_alpha_loop=20,
                    beta=None, multiscale_rounds=1, use_multiscale_variance=True,
                    max_iter=30000, factr=10000000., pgtol=1e-05,
                    alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,
@@ -616,21 +619,15 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
     counts : list of str
         Counts data files in the hiclib format or as numpy ndarrays.
     lengths : str or list
-        Number of beads per homolog of each chromosome, or hiclib .bed file with
-        lengths data.
-    ploidy : {1, 2}
-        Ploidy, 1 indicates haploid, 2 indicates diploid.
+        Number of beads.
     outdir : str, optional
         Directory in which to save results.
-    chromosomes : list of str, optional
-        Label for each chromosome in the data, or file with chromosome labels
-        (one label per line).
-    chrom_subset : list of str, optional
-        Labels of chromosomes for which inference should be performed.
     alpha : float, optional
         Biophysical parameter of the transfer function used in converting
         counts to wish distances. If alpha is not specified, it will be
-        inferred.
+        inferred jointly alongside the structure via a coordinate descent
+        approach (first inferring a structure with fixed alpha, then alpha with
+        fixed structure, etc).
     seed : int, optional
         Random seed used when generating the starting point in the
         optimization.
@@ -641,17 +638,16 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         Ratio of non-zero beads to be filtered out. Filtering is
         reccomended.
     alpha_init : float, optional
-        For PM2, the initial value of alpha to use.
+        When inferring alpha, this is the initial value of alpha to use.
+        (default = -1).
     max_alpha_loop : int, optional
-        For PM2, Number of times alpha and structure are inferred.
+        When inferring alpha, this is the maximum number of cycles in which
+        PASTIS will infer the alpha (with a fixed structure) and then the
+        structure (with a fixed alpha). (default=20)
     beta : array_like of float, optional
         Scaling parameter that determines the size of the structure, relative to
-        each counts matrix. There should be one beta per counts matrix. If None,
-        the optimal beta will be estimated.
-    multiscale_rounds : int, optional
-        The number of resolutions at which a structure should be inferred
-        during multiscale optimization. Values of 1 or 0 disable multiscale
-        optimization.
+        the read depth of the counts matrix. If None, an arbitrary beta will be
+        chosen.
     max_iter : int, optional
         Maximum number of iterations per optimization.
     factr : float, optional
@@ -660,27 +656,6 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         pgtol for scipy's L-BFGS-B, alters convergence criteria.
     alpha_factr : float, optional
         factr for convergence criteria of joint alpha/structure inference.
-    bcc_lambda : float, optional
-        Lambda of the bead chain connectivity constraint.
-    hsc_lambda : float, optional
-        For diploid organisms: lambda of the homolog-separating
-        constraint.
-    hsc_r : list of float, optional
-        For diploid organisms: hyperparameter of the homolog-separating
-        constraint specificying the expected distance between homolog
-        centers of mass for each chromosome. If not supplied, `hsc_r` will
-        be inferred from the counts data.
-    hsc_min_beads : int, optional
-        For diploid organisms: number of beads in the low-resolution
-        structure from which `hsc_r` is estimated.
-    mhs_lambda : float, optional
-        For diploid organisms: lambda of the multiscale-based homolog-
-        separating constraint.
-    mhs_k : list of float, optional
-        For diploid organisms: hyperparameter of the multiscale-based
-        homolog-separating constraint specificying the expected mean inter-
-        homolog count for each chromosome, scaled by beta and biases. If
-        not supplied, `mhs_k` will be estimated from the counts data.
 
     Returns
     -------

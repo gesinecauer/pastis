@@ -28,7 +28,7 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
     counts : list of array or coo_matrix or CountsMatrix instances
         Counts data.
     lengths : array_like of int
-        Number of beads per homolog of each chromosome.
+        Number of beads.
 
     Returns
     -------
@@ -276,7 +276,7 @@ def check_counts(counts, lengths, ploidy, exclude_zeros=False,
     counts : list of array or coo_matrix
         Counts data.
     lengths : array_like of int
-        Number of beads per homolog of each chromosome.
+        Number of beads.
 
     Returns
     -------
@@ -307,7 +307,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor, normalize,
     counts_raw : list of array or coo_matrix
         Counts data without normalization or filtering.
     lengths : array_like of int
-        Number of beads per homolog of each chromosome.
+        Number of beads.
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     multiscale_factor : int, optional
@@ -321,8 +321,8 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor, normalize,
         reccomended.
     beta : array_like of float, optional
         Scaling parameter that determines the size of the structure, relative to
-        each counts matrix. There should be one beta per counts matrix. If None,
-        the optimal beta will be estimated.
+        the read depth of the counts matrix. If None, an arbitrary beta will be
+        chosen.
     fullres_torm : list of array of bool, optional
         For multiscale optimization, this indicates which beads of the full-
         resolution structure do not correspond to any counts data, and should
@@ -388,7 +388,7 @@ def _percent_nan_beads(counts):
 
 
 def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
-                 normalize=True, filter_threshold=0.04, exclude_zeros=True,
+                 normalize=False, filter_threshold=0, exclude_zeros=True,
                  verbose=True):
     """Copy counts, check matrix, reduce resolution, filter, and compute bias.
     """
@@ -673,7 +673,7 @@ class CountsMatrix(object):
     counts : list of CountsMatrix subclass instances
         Preprocessed counts data.
     lengths : array_like of int
-        Number of beads per homolog of each chromosome.
+        Number of beads.
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     multiscale_factor : int, optional
@@ -681,7 +681,7 @@ class CountsMatrix(object):
         resolution. A value of 1 indicates full resolution.
     beta : float, optional
         Scaling parameter that determines the size of the structure, relative to
-        each counts matrix.
+        the read depth of the counts matrix.
     fullres_torm : array of bool, optional
         For multiscale optimization, this indicates which beads of the full-
         resolution structure do not correspond to any counts data, and should

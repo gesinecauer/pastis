@@ -35,7 +35,7 @@ def remove_overlaps(beads, overlap_dist=0.2):
 
 def get_struct_2d(rng, nbeads, circle_radius=5, overlap_dist=0.2,
                   center=(0, 0), extra_bead_factor=2, beads=None, attempt=1,
-                  verbose=False):
+                  max_attempts=200, verbose=False):
     """Get non-overlapping beads within a circle"""
 
     if verbose:
@@ -62,11 +62,17 @@ def get_struct_2d(rng, nbeads, circle_radius=5, overlap_dist=0.2,
 
     # Add extra beads if necessary
     if beads.shape[0] < nbeads:
+        if attempt > max_attempts:
+            raise ValueError(
+                f"Unable to fit {nbeads} non-overlapping beads within a circle"
+                f" of radius {circle_radius} within {max_attempts} attempts."
+                " Try increasing circle_radius or decreasing overlap_dist or"
+                " nbeads.")
         return get_struct_2d(
             rng=rng, nbeads=nbeads, circle_radius=circle_radius,
             overlap_dist=overlap_dist, center=center,
             extra_bead_factor=extra_bead_factor, beads=beads,
-            attempt=attempt + 1, verbose=verbose)
+            attempt=attempt + 1, max_attempts=max_attempts, verbose=verbose)
     else:
         return beads[:nbeads]
 
@@ -113,8 +119,8 @@ def sim_dataset(nreads, nbeads, seed=0, directory='', alpha=-1, circle_radius=5,
     """"""
 
     # Define output directory & files
-    sim_directory = (f"sim_spatial_rnaseq.nbeads{nbeads:g}_alpha{alpha}"
-                     f"_circle{circle_radius}_overlap{overlap_dist}")
+    sim_directory = (f"sim_spatial_rnaseq.nbeads{nbeads:g}_alpha{alpha:g}"
+                     f"_circle{circle_radius:g}_overlap{overlap_dist:g}")
     if distrib is None or distrib.lower() == 'none':
         sim_directory += '_raw-dis-alpha'
     else:
@@ -156,7 +162,7 @@ def sim_dataset(nreads, nbeads, seed=0, directory='', alpha=-1, circle_radius=5,
     perc_zero_bins = counts_eq_0 / total_counts_bins * 100
     info = ['ploidy\t1', f'alpha\t{alpha:g}', f'seed\t{seed}',
             f'nreads\t{nreads:g}', 'ua\t1', 'pa\t0', f'lengths\t{nbeads}',
-            f'beta\t{beta:g}', f'beta.ua\t{beta:g}'
+            f'beta\t{beta:g}', f'beta.ua\t{beta:g}',
             f"perc_zero.ua\t{perc_zero_bins:g}",
             f'circle_radius\t{circle_radius:g}',
             f'overlap_dist\t{overlap_dist:g}', f'distrib\t{distrib}']
