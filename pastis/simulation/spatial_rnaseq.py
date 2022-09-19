@@ -19,7 +19,7 @@ def get_new_beads(rng, nbeads, circle_radius=5, center=(0, 0)):
 
 
 def remove_overlaps(beads, overlap_dist=0.2):
-    """Ensure distance between beads is greater than a given radius"""
+    """Ensure distance between beads is greater than the given value"""
     dis = euclidean_distances(beads)
     np.fill_diagonal(dis, np.nan)
 
@@ -35,7 +35,7 @@ def remove_overlaps(beads, overlap_dist=0.2):
 
 def get_struct_2d(rng, nbeads, circle_radius=5, overlap_dist=0.2,
                   center=(0, 0), extra_bead_factor=2, beads=None, attempt=1,
-                  max_attempts=200, verbose=False):
+                  max_attempts=500, verbose=False):
     """Get non-overlapping beads within a circle"""
 
     if verbose:
@@ -98,6 +98,10 @@ def get_counts(rng, struct, nreads, alpha=-1, distrib='poisson'):
     if distrib is not None and distrib.lower() not in (
             'poisson', 'negbinom', 'none'):
         raise ValueError(f"Distribution not recognized: {distrib}")
+
+    if alpha >= 0:
+        raise ValueError("Alpha must be < 0, since there should be more"
+                         "counts between beads that are closer together.")
 
     dis_alpha, beta = get_dis_alpha(struct, nreads=nreads, alpha=alpha)
 
