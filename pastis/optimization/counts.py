@@ -72,6 +72,33 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
         output, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
 
+def _ambiguate_beta(beta, counts, lengths, ploidy):
+    """Sum betas to be consistent with ambiguated counts.
+    """
+
+    if beta is None:
+        return beta
+    if ploidy == 1:
+        return beta[0]
+
+    if not isinstance(counts, list):
+        counts = [counts]
+    counts = [c for c in counts if (
+        isinstance(c, np.ndarray) and np.nansum(c) != 0) or c.sum() != 0]
+    if len(counts) != len(beta):
+        raise ValueError(
+            "Inconsistent number of betas (%d) and counts matrices (%d)"
+            % (len(beta), len(counts)))
+
+    beta_ambig = 0.
+    for i in range(len(beta)):
+        if counts[i].shape[0] == counts[i].shape[1]:
+            beta_ambig += beta[i]
+        else:
+            beta_ambig += beta[i] * 2
+    return beta_ambig
+
+
 def _create_dummy_counts(counts, lengths, ploidy):
     """Create sparse matrix of 1's with same row and col as input counts.
     """

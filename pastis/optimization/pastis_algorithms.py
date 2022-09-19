@@ -12,7 +12,7 @@ from sklearn.utils import check_random_state
 
 from .utils_poisson import _print_code_header, _load_infer_var
 from .utils_poisson import _output_subdir
-from .counts import preprocess_counts, ambiguate_counts
+from .counts import preprocess_counts, ambiguate_counts, _ambiguate_beta
 from .counts import check_counts
 from .initialization import initialize
 from .callbacks import Callback
@@ -499,6 +499,7 @@ def infer(counts_raw, lengths, ploidy=1, outdir='', alpha=None, seed=0,
                             struct_true=struct_true, alpha_true=alpha_true)
 
         # INFER STRUCTURE
+        original_counts_beta = [c.beta for c in counts if c.sum() != 0]
         pm = PastisPM(counts=counts, lengths=lengths, ploidy=ploidy,
                       alpha=alpha_, init=struct_init, bias=bias,
                       constraints=constraints, callback=callback,
@@ -511,6 +512,17 @@ def infer(counts_raw, lengths, ploidy=1, outdir='', alpha=None, seed=0,
         pm.fit()
         struct_ = pm.struct_.reshape(-1, 2)
         struct_[torm] = np.nan
+
+        # RE-SCALE STRUCTURE TO MATCH ORIGINAL BETA
+        if alpha_ is None and (
+                multiscale_rounds <= 1 or final_multiscale_round):
+            original_beta = _ambiguate_beta(
+                original_counts_beta, counts=counts, lengths=lengths,
+                ploidy=ploidy)
+            final_beta = _ambiguate_beta(
+                pm.beta_, counts=counts, lengths=lengths, ploidy=ploidy)
+            struct_ *= (original_beta / final_beta)
+            pm.beta_ = original_counts_beta
 
         # SAVE RESULTS
         infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
