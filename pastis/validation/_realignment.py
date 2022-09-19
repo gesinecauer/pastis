@@ -21,7 +21,6 @@ def error_score(X, Y, error_type, ndim=None):
                          " 'rmsd' or 'disterror'.")
 
 
-
 def realign_structures(X, Y, rescale_X_to_Y=False, copy=True, error_type='rmsd',
                        verbose=False):
     """
@@ -51,6 +50,10 @@ def realign_structures(X, Y, rescale_X_to_Y=False, copy=True, error_type='rmsd',
     error : float
         The error between structures
     """
+
+    # Check input
+    if X.shape != Y.shape:
+        raise ValueError("Shapes of the two structures need to be the same.")
 
     ndim = X.shape[1]
     if X.shape[1] < 3:
