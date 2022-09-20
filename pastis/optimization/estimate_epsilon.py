@@ -196,9 +196,8 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
     lengths = np.array(lengths)
-    lengths_counts = lengths
     if bias is None:
-        bias = np.ones((lengths_counts.sum(),))
+        bias = np.ones((lengths.sum(),))
     bias = np.array(bias)
 
     if structures is None and epsilon is None:

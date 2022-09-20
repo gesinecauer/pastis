@@ -37,11 +37,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
     elif mixture_coefs is None:
         mixture_coefs = [1.]
 
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    if multiscale_reform:
-        lengths_counts = lengths
-    else:
-        lengths_counts = lengths_lowres
+    # lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
 
     if multiscale_variances is not None:
         if isinstance(multiscale_variances, np.ndarray):
@@ -93,7 +89,11 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
         lengths = np.array([min([min(c.shape) for c in counts])])
     lengths = np.array(lengths)
     if bias is None:
-        bias = np.ones((min([min(c.shape) for c in counts]),))
+        if multiscale_reform:
+            bias = np.ones((lengths.sum(),))
+        else:
+            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+            bias = np.ones((lengths_lowres.sum(),))
     if not isinstance(structures, list):
         structures = [structures]
     if mixture_coefs is None:
@@ -316,7 +316,11 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     counts = (counts if isinstance(counts, list) else [counts])
     lengths = np.array(lengths)
     if bias is None:
-        bias = np.ones((min([min(counts_maps.shape) for counts_maps in counts]),))
+        if multiscale_reform:
+            bias = np.ones((lengths.sum(),))
+        else:
+            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+            bias = np.ones((lengths_lowres.sum(),))
 
     # Initialize alpha if necessary
     if random_state is None:

@@ -376,16 +376,16 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             excluded_counts = int(excluded_counts)
         if isinstance(excluded_counts, int):
             counts_prepped = [_counts_near_diag(
-                c, lengths_counts=lengths, ploidy=ploidy, nbins=excluded_counts,
+                c, lengths_at_res=lengths, ploidy=ploidy, nbins=excluded_counts,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
             # print(((counts_prepped[0] != 0) & ~np.isnan(counts_prepped[0])).astype(int)[:20, :20])
         elif excluded_counts.lower() == 'intra':
             counts_prepped = [_inter_counts(
-                c, lengths_counts=lengths, ploidy=ploidy,
+                c, lengths_at_res=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         elif excluded_counts.lower() == 'inter':
             counts_prepped = [_intra_counts(
-                c, lengths_counts=lengths, ploidy=ploidy,
+                c, lengths_at_res=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         else:
             raise ValueError(

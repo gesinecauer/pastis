@@ -350,8 +350,11 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
                                  for counts_maps in counts])])
     lengths = np.asarray(lengths)
     if bias is None:
-        bias = np.ones((min([min(counts_maps.shape)
-                             for counts_maps in counts]),))
+        if multiscale_reform:
+            bias = np.ones((lengths.sum(),))
+        else:
+            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+            bias = np.ones((lengths_lowres.sum(),))
 
     # Format X
     if reorienter is None or (not reorienter.reorient):
@@ -594,12 +597,11 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
     counts = (counts if isinstance(counts, list) else [counts])
     lengths = np.array(lengths)
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    if multiscale_reform:
-        lengths_counts = lengths
-    else:
-        lengths_counts = lengths_lowres
     if bias is None:
-        bias = np.ones((lengths_counts.sum(),))
+        if multiscale_reform:
+            bias = np.ones((lengths.sum(),))
+        else:
+            bias = np.ones((lengths_lowres.sum(),))
     bias = np.array(bias)
 
     if (multiscale_factor != 1 and multiscale_reform):
