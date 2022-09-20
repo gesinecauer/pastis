@@ -16,8 +16,8 @@ from jax.nn import relu
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .multiscale_optimization import _group_counts_multiscale
-from .utils_poisson import find_beads_to_remove
-from .utils_poisson import _euclidean_distance, _inter_counts, _counts_near_diag
+from .utils_poisson import find_beads_to_remove, _euclidean_distance
+from .utils_poisson import _inter_counts, _counts_near_diag, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta
 from .likelihoods import poisson_nll, gamma_poisson_nll
 from .poisson import relu_min  # TODO temporary (for NDC)
@@ -527,7 +527,6 @@ class BeadChainConnectivity2022(Constraint):
                 multiscale_factor=self.multiscale_factor)
             counts_nghbr, indices, indices3d, counts_shape, counts_mask = tmp
 
-
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
             'bias_nghbr': bias_nghbr, 'beta': beta}
@@ -551,7 +550,8 @@ class BeadChainConnectivity2022(Constraint):
 
         # TODO technically not poisson - continuous.... gamma?
         data = np.maximum(
-            0, var['counts_nghbr'] - self.hparams['counts_interchrom'] / 2)
+            0, var['counts_nghbr'] - np.mean(
+                self.hparams['counts_interchrom']) / 2)
         obj = poisson_nll(np.tile(data, 2), lambda_pois=2 * lambda_nghbr)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
@@ -602,7 +602,16 @@ class HomologSeparating2022(Constraint):
             [c.beta for c in counts if c.sum() != 0], counts=counts,
             lengths=self.lengths, ploidy=self.ploidy)
 
-        var = {'beta': beta}
+        if 'nbinom' in self.mods and self.lengths_lowres.shape > 1:
+            n = self.lengths_lowres.sum()
+            row, col = (x.flatten() for x in np.indices((n, n)))
+            mask_interchrom = _intra_mask(
+                (n, n), lengths_at_res=self.lengths_lowres)
+            mask_interchrom = (col > row) & mask_interchrom
+        else:
+            mask_interchrom = None
+
+        var = {'beta': beta, 'mask_interchrom': mask_interchrom}
         if not self._lowmem:
             self._var = var
         return var
@@ -638,12 +647,27 @@ class HomologSeparating2022(Constraint):
         if 'mean' in self.mods:
             # TODO would have to apply to each pair of molecules separately
             lambda_interhmlg = ag_np.mean(lambda_interhmlg)
-
+            # dis_intra1 = _euclidean_distance(struct, row=row, col=col)
+            # dis_intra2 = _euclidean_distance(struct, row=row + n, col=col + n)
         if 'nbinom' in self.mods:
             gamma_mean = lambda_interhmlg
-            gamma_var = np.mean([
-                self.hparams['counts_interchrom'].mean(),
-                self.hparams['counts_interchrom'].var()])  # TODO check
+            mean_counts_interchrom = self.hparams['counts_interchrom'].mean()
+
+            if self.lengths_lowres.size > 1:
+                row_interchrom = row[var['mask_interchrom']]
+                col_interchrom = col[var['mask_interchrom']]
+                dis_interchrom_h1 = _euclidean_distance(
+                    struct, row=row_interchrom, col=col_interchrom)
+                dis_interchrom_h2 = _euclidean_distance(
+                    struct, row=row_interchrom + n, col=col_interchrom + n)
+
+                raise NotImplementedError  # FIXME
+            else:
+                gamma_var = np.mean([
+                    mean_counts_interchrom,
+                    self.hparams['counts_interchrom'].var()])  # TODO check
+            gamma_var = np.maximum(mean_counts_interchrom, gamma_var)
+
             theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
 
