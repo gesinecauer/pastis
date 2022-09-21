@@ -320,13 +320,13 @@ class HomologSeparating2019(Constraint):
             homo_sep_diff = relu(homo_sep_diff)
             raise ValueError("I thought we weren't doing RELU for HSC anymore")
         else:
-            hsc_cutoff = self.hparams['perc_diff'] * self.hparams[
-                "est_hmlg_sep"]
+            hsc_cutoff = ag_np.array(self.hparams['perc_diff'] * self.hparams[
+                "est_hmlg_sep"])
             gt0 = homo_sep_diff > 0
             homo_sep_diff = homo_sep_diff.at[gt0].set(relu(
-                homo_sep_diff[gt0] - hsc_cutoff))
+                homo_sep_diff[gt0] - hsc_cutoff[gt0]))
             homo_sep_diff = homo_sep_diff.at[~gt0].set(-relu(
-                -(homo_sep_diff[~gt0] + hsc_cutoff)))
+                -(homo_sep_diff[~gt0] + hsc_cutoff[~gt0])))
         homo_sep_diff_sq = ag_np.square(homo_sep_diff)
         obj = ag_np.mean(homo_sep_diff_sq)
 
@@ -660,13 +660,13 @@ class HomologSeparating2022(Constraint):
                     struct, row=row_interchrom, col=col_interchrom)
                 dis_interchrom_h2 = _euclidean_distance(
                     struct, row=row_interchrom + n, col=col_interchrom + n)
-
-                raise NotImplementedError  # FIXME
+                gamma_var = ag_np.var(ag_np.concatenate(
+                    [dis_interchrom_h1, dis_interchrom_h2]))
             else:
                 gamma_var = np.mean([
                     mean_counts_interchrom,
                     self.hparams['counts_interchrom'].var()])  # TODO check
-            gamma_var = np.maximum(mean_counts_interchrom, gamma_var)
+            gamma_var = np.maximum(mean_counts_interchrom, gamma_var)  # TODO you sure you want this??
 
             theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
@@ -676,7 +676,8 @@ class HomologSeparating2022(Constraint):
                 data=(self.hparams['counts_interchrom']).reshape(1, -1))
         else:
             obj = poisson_nll(
-                self.hparams['counts_interchrom'], lambda_pois=lambda_interhmlg)
+                np.mean(self.hparams['counts_interchrom']),
+                lambda_pois=lambda_interhmlg)
         # print((self.hparams['counts_interchrom'], lambda_interhmlg, obj), flush=True)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
