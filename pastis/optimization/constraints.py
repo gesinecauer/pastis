@@ -602,7 +602,7 @@ class HomologSeparating2022(Constraint):
             [c.beta for c in counts if c.sum() != 0], counts=counts,
             lengths=self.lengths, ploidy=self.ploidy)
 
-        if 'nbinom' in self.mods and self.lengths_lowres.shape > 1:
+        if 'nbinom' in self.mods and self.lengths_lowres.size > 1:
             n = self.lengths_lowres.sum()
             row, col = (x.flatten() for x in np.indices((n, n)))
             mask_interchrom = _intra_mask(
@@ -654,19 +654,35 @@ class HomologSeparating2022(Constraint):
             mean_counts_interchrom = self.hparams['counts_interchrom'].mean()
 
             if self.lengths_lowres.size > 1:
+                # Estimate variance of intra-chrom inter-hmlg (β d_ij^α) from
+                # the variance of inter-chrom intra-hmlg (β d_ij^α)
                 row_interchrom = row[var['mask_interchrom']]
                 col_interchrom = col[var['mask_interchrom']]
                 dis_interchrom_h1 = _euclidean_distance(
                     struct, row=row_interchrom, col=col_interchrom)
                 dis_interchrom_h2 = _euclidean_distance(
                     struct, row=row_interchrom + n, col=col_interchrom + n)
-                gamma_var = ag_np.var(ag_np.concatenate(
-                    [dis_interchrom_h1, dis_interchrom_h2]))
+                dis_interchrom = ag_np.concatenate(
+                    [dis_interchrom_h1, dis_interchrom_h2])
+                if bias is None or np.all(bias == 1):
+                    bias_interchrom = 1
+                else:
+                    bias_interchrom = bias.ravel()[row_interchrom] * (
+                        bias.ravel()[col_interchrom])
+                lambda_interchrom = bias_interchrom * var['beta'] * ag_np.power(
+                    dis_interchrom, alpha)
+                gamma_var = ag_np.var(lambda_interchrom)
             else:
                 gamma_var = np.mean([
                     mean_counts_interchrom,
                     self.hparams['counts_interchrom'].var()])  # TODO check
-            gamma_var = np.maximum(mean_counts_interchrom, gamma_var)  # TODO you sure you want this??
+            if type(gamma_var).__name__ in ('DeviceArray', 'ndarray'):
+                print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={self.hparams['counts_interchrom'].var():.3g}")
+
+            # TODO you sure you want the below??
+            gamma_var = ag_np.maximum(mean_counts_interchrom, gamma_var)
+            gamma_var = ag_np.minimum(
+                self.hparams['counts_interchrom'].var(), gamma_var)
 
             theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
@@ -707,12 +723,17 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
         hsc_version = '2019'
     hsc_version = str(hsc_version)
 
-    if counts_interchrom is None and ((
-            bcc_lambda != 0 and bcc_version == '2022') or (
-            hsc_lambda != 0 and hsc_version == '2022')):
-        counts_interchrom = get_fullres_counts_interchrom(
-            counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, mods=mods)
+    if (bcc_lambda != 0 and bcc_version == '2022') or (
+            hsc_lambda != 0 and hsc_version == '2022'):
+        if counts_interchrom is None:
+            counts_interchrom = get_fullres_counts_interchrom(
+                counts, lengths=lengths, ploidy=ploidy,
+                multiscale_factor=multiscale_factor, mods=mods)
+        elif isinstance(counts_interchrom, str):
+            try:
+                counts_interchrom = float(counts_interchrom)
+            except ValueError:
+                counts_interchrom = np.loadtxt(counts_interchrom)
 
     bcc_class = {
         '2019': BeadChainConnectivity2019, '2021': BeadChainConnectivity2021,

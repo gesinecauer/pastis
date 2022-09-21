@@ -467,7 +467,7 @@ def _intra_mask(data, lengths_at_res):
     """Return mask of intra-chromosomal rows/cols for given counts/dis data.  # TODO move to counts.py??
     """
 
-    if (isinstance(data, tuple, list) and len(data) == 2) or (
+    if (isinstance(data, (tuple, list)) and len(data) == 2) or (
             isinstance(data, np.ndarray) and data.size == 2):
         shape = data
         row, col = (x.flatten() for x in np.indices(shape))
