@@ -675,7 +675,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         if multiscale_reform:
             _, final_epsilon, _ = _format_X(
                 X, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor, reorienter=reorienter,
+                multiscale_factor=multiscale_factor,
                 multiscale_reform=multiscale_reform,
                 mixture_coefs=mixture_coefs, mods=mods)
             print(f'INIT EPSILON: {np.asarray(epsilon).mean():.3g},'
