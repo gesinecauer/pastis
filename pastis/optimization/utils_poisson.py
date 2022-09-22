@@ -473,7 +473,9 @@ def _intra_mask(data, lengths_at_res):
         row, col = (x.flatten() for x in np.indices(shape))
     else:
         if isinstance(data, np.ndarray):
-            data = sparse.coo_data(data)
+            data = data.copy()
+            data[np.isnan(data)] = 0
+            data = sparse.coo_matrix(data)
         elif not sparse.issparse(data):
             data = data.tocoo()
         row = data.row
@@ -493,6 +495,19 @@ def _intra_mask(data, lengths_at_res):
         col_binned[col_binned >= nchrom] -= nchrom
 
     return np.equal(row_binned, col_binned)
+
+
+def mask_counts(counts, idx_mask, lengths_at_res, ploidy, exclude_zeros=False):
+    """Return masked counts.  # TODO move to counts.py
+    """
+
+    from .counts import _check_counts_matrix
+
+    counts = _check_counts_matrix(
+        counts, lengths=lengths_at_res, ploidy=ploidy,
+        exclude_zeros=exclude_zeros)
+
+    
 
 
 def _intra_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
@@ -519,6 +534,7 @@ def _intra_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
     if exclude_zeros:
         return counts_new
     else:
+        # FIXME this is wrong
         counts_array = np.full(counts_new.shape, np.nan)
         counts_array[counts_new.row, counts_new.col] = counts_new.data
         return counts_array
@@ -537,8 +553,8 @@ def _inter_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
     elif not sparse.issparse(counts):
         counts = counts.tocoo()
 
-    counts = _check_counts_matrix(
-        counts, lengths=lengths_at_res, ploidy=ploidy, exclude_zeros=True)
+    # counts = _check_counts_matrix(
+    #     counts, lengths=lengths_at_res, ploidy=ploidy, exclude_zeros=True) # FIXME uncomment
 
     mask = ~_intra_mask(counts, lengths_at_res)
     counts_new = sparse.coo_matrix(
@@ -548,6 +564,7 @@ def _inter_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
     if exclude_zeros:
         return counts_new
     else:
+        # FIXME this is wrong
         counts_array = np.full(counts_new.shape, np.nan)
         counts_array[counts_new.row, counts_new.col] = counts_new.data
         return counts_array
@@ -562,6 +579,7 @@ def _counts_near_diag(counts, lengths_at_res, ploidy, nbins,
 
     if isinstance(counts, np.ndarray):
         counts = counts.copy()
+        # counts[counts == 0] = np.inf
         counts[np.isnan(counts)] = 0
         counts = sparse.coo_matrix(counts)
     elif not sparse.issparse(counts):
@@ -591,6 +609,7 @@ def _counts_near_diag(counts, lengths_at_res, ploidy, nbins,
     if exclude_zeros:
         return counts_new
     else:
+        # FIXME this is wrong
         counts_array = np.full(counts_new.shape, np.nan)
         counts_array[counts_new.row, counts_new.col] = counts_new.data
         return counts_array
