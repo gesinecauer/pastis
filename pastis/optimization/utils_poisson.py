@@ -466,20 +466,14 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
 def _intra_mask(data, lengths_at_res):
     """Return mask of intra-chromosomal rows/cols for given counts/dis data.  # TODO move to counts.py??
     """
+    from .counts import _row_and_col
 
     if (isinstance(data, (tuple, list)) and len(data) == 2) or (
             isinstance(data, np.ndarray) and data.size == 2):
         shape = data
         row, col = (x.flatten() for x in np.indices(shape))
     else:
-        if isinstance(data, np.ndarray):
-            data = data.copy()
-            data[np.isnan(data)] = 0
-            data = sparse.coo_matrix(data)
-        elif not sparse.issparse(data):
-            data = data.tocoo()
-        row = data.row
-        col = data.col
+        row, col = _row_and_col(data)
         shape = data.shape
 
     bins_for_row = np.tile(
@@ -497,119 +491,71 @@ def _intra_mask(data, lengths_at_res):
     return np.equal(row_binned, col_binned)
 
 
-def mask_counts(counts, idx_mask, lengths_at_res, ploidy, exclude_zeros=False):
+def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
+                         nbins=None, exclude_zeros=False):
     """Return masked counts.  # TODO move to counts.py
     """
+    from .counts import _check_counts_matrix, _row_and_col
 
-    from .counts import _check_counts_matrix
+    sections = sections.lower()
+    if sections not in ('inter', 'intra', 'near diag'):
+        raise ValueError("Must choose between: 'inter', 'intra', 'near diag'.")
+    if sections == 'near diag' and nbins is None:
+        raise ValueError("Must input nbins to mask counts near diag")
 
     counts = _check_counts_matrix(
         counts, lengths=lengths_at_res, ploidy=ploidy,
         exclude_zeros=exclude_zeros)
 
-    
+    mask_intra = _intra_mask(counts, lengths_at_res)
+    if sections == 'intra':
+        mask = mask_intra
+    elif sections == 'inter':
+        mask = ~mask_intra
+    elif sections == 'near diag':
+        row, col = _row_and_col(counts)
+        if counts.shape[0] != counts.shape[1]:
+            row = row.copy()
+            col = col.copy()
+            n = lengths_at_res.sum()
+            row[row >= n] -= n
+            col[col >= n] -= n
+        mask_near_diag = np.abs(row - col) <= nbins
+        mask = mask_intra & mask_near_diag
+
+    if exclude_zeros:
+        return sparse.coo_matrix(
+            (counts.data[mask], (counts.row[mask], counts.col[mask])),
+            shape=counts.shape)
+    else:
+        row, col = _row_and_col(counts)
+        row = row[mask]
+        col = col[mask]
+        counts_new = np.full_like(counts, np.nan)
+        counts_new[row, col] = counts[row, col]
+        return counts_new
 
 
 def _intra_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
     """Return intra-chromosomal counts.  # TODO move to counts.py
     """
-
-    from .counts import _check_counts_matrix
-
-    if isinstance(counts, np.ndarray):
-        counts = counts.copy()
-        counts[np.isnan(counts)] = 0
-        counts = sparse.coo_matrix(counts)
-    elif not sparse.issparse(counts):
-        counts = counts.tocoo()
-
-    counts = _check_counts_matrix(
-        counts, lengths=lengths_at_res, ploidy=ploidy, exclude_zeros=True)
-
-    mask = _intra_mask(counts, lengths_at_res)
-    counts_new = sparse.coo_matrix(
-        (counts.data[mask], (counts.row[mask], counts.col[mask])),
-        shape=counts.shape)
-
-    if exclude_zeros:
-        return counts_new
-    else:
-        # FIXME this is wrong
-        counts_array = np.full(counts_new.shape, np.nan)
-        counts_array[counts_new.row, counts_new.col] = counts_new.data
-        return counts_array
+    return _get_counts_sections(
+        counts=counts, sections='inter', lengths_at_res=lengths_at_res,
+        ploidy=ploidy, exclude_zeros=exclude_zeros)
 
 
 def _inter_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
     """Return inter-chromosomal counts.  # TODO move to counts.py
     """
-
-    from .counts import _check_counts_matrix
-
-    if isinstance(counts, np.ndarray):
-        counts = counts.copy()
-        counts[np.isnan(counts)] = 0
-        counts = sparse.coo_matrix(counts)
-    elif not sparse.issparse(counts):
-        counts = counts.tocoo()
-
-    # counts = _check_counts_matrix(
-    #     counts, lengths=lengths_at_res, ploidy=ploidy, exclude_zeros=True) # FIXME uncomment
-
-    mask = ~_intra_mask(counts, lengths_at_res)
-    counts_new = sparse.coo_matrix(
-        (counts.data[mask], (counts.row[mask], counts.col[mask])),
-        shape=counts.shape)
-
-    if exclude_zeros:
-        return counts_new
-    else:
-        # FIXME this is wrong
-        counts_array = np.full(counts_new.shape, np.nan)
-        counts_array[counts_new.row, counts_new.col] = counts_new.data
-        return counts_array
+    return _get_counts_sections(
+        counts=counts, sections='inter', lengths_at_res=lengths_at_res,
+        ploidy=ploidy, exclude_zeros=exclude_zeros)
 
 
 def _counts_near_diag(counts, lengths_at_res, ploidy, nbins,
                       exclude_zeros=False):
     """Return intra-chromosomal counts within `nbins` of diagonal.  # TODO move to counts.py
     """
-
-    from .counts import _check_counts_matrix
-
-    if isinstance(counts, np.ndarray):
-        counts = counts.copy()
-        # counts[counts == 0] = np.inf
-        counts[np.isnan(counts)] = 0
-        counts = sparse.coo_matrix(counts)
-    elif not sparse.issparse(counts):
-        counts = counts.tocoo()
-
-    counts = _check_counts_matrix(
-        counts, lengths=lengths_at_res, ploidy=ploidy, exclude_zeros=True)
-
-    mask_intra = _intra_mask(counts, lengths_at_res)
-
-    row = counts.row
-    col = counts.col
-    if counts.shape[0] != counts.shape[1]:
-        row = row.copy()
-        col = col.copy()
-        n = lengths_at_res.sum()
-        row[row >= n] -= n
-        col[col >= n] -= n
-    mask_near_diag = np.abs(row - col) <= nbins
-
-    mask = mask_intra & mask_near_diag
-
-    counts_new = sparse.coo_matrix(
-        (counts.data[mask], (counts.row[mask], counts.col[mask])),
-        shape=counts.shape)
-
-    if exclude_zeros:
-        return counts_new
-    else:
-        # FIXME this is wrong
-        counts_array = np.full(counts_new.shape, np.nan)
-        counts_array[counts_new.row, counts_new.col] = counts_new.data
-        return counts_array
+    return _get_counts_sections(
+        counts=counts, sections='near diag', lengths_at_res=lengths_at_res,
+        ploidy=ploidy, nbins=nbins, exclude_zeros=exclude_zeros)
