@@ -652,6 +652,7 @@ class HomologSeparating2022(Constraint):
         if 'nbinom' in self.mods:
             gamma_mean = lambda_interhmlg
             mean_counts_interchrom = self.hparams['counts_interchrom'].mean()
+            var_counts_interchrom = self.hparams['counts_interchrom'].var()
 
             if self.lengths_lowres.size > 1:
                 # Estimate variance of intra-chrom inter-hmlg (β d_ij^α) from
@@ -670,19 +671,23 @@ class HomologSeparating2022(Constraint):
                     bias_interchrom = bias.ravel()[row_interchrom] * (
                         bias.ravel()[col_interchrom])
                 lambda_interchrom = bias_interchrom * var['beta'] * ag_np.power(
-                    dis_interchrom, alpha)
+                    dis_interchrom, alpha) * 4
                 gamma_var = ag_np.var(lambda_interchrom)
-            else:
-                gamma_var = np.mean([
-                    mean_counts_interchrom,
-                    self.hparams['counts_interchrom'].var()])  # TODO check
-            if type(gamma_var).__name__ in ('DeviceArray', 'ndarray'):
-                print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={self.hparams['counts_interchrom'].var():.3g}")
 
-            # TODO you sure you want the below??
-            gamma_var = ag_np.maximum(mean_counts_interchrom, gamma_var)
-            gamma_var = ag_np.minimum(
-                self.hparams['counts_interchrom'].var(), gamma_var)
+                gamma_var = ag_np.maximum(mean_counts_interchrom, gamma_var)  # TODO check
+                gamma_var = ag_np.minimum(var_counts_interchrom, gamma_var)  # TODO check
+            else:
+                if var_counts_interchrom > mean_counts_interchrom:
+                    gamma_var = np.mean([
+                        mean_counts_interchrom, var_counts_interchrom])  # TODO check
+                else:
+                    gamma_var = mean_counts_interchrom  # TODO check
+
+            # if type(gamma_var).__name__ in ('DeviceArray', 'ndarray'):
+            #     print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={self.hparams['counts_interchrom'].var():.3g}")
+
+
+            raise ValueError("why not just use the var of the counts as the true var??? can I do that?? with the normal formulation of nbinom and scipy's nbinom ll?")
 
             theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
