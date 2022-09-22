@@ -264,7 +264,7 @@ class HomologSeparating2019(Constraint):
         if self._var is not None:
             return self._var
 
-        if self.multiscale_factor != 1:
+        if self.multiscale_factor > 1:
             fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
                 ploidy=self.ploidy, fullres_struct_nan=self._fullres_struct_nan)
@@ -274,6 +274,8 @@ class HomologSeparating2019(Constraint):
         struct_nan = find_beads_to_remove(
             counts, lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
+        if struct_nan.sum() != 0:
+            raise ValueError("Check that we actually want to remove torm beads here...")
         bead_weights[struct_nan] = 0.
         n = self.lengths_lowres.sum()
         begin = end = 0
@@ -574,7 +576,7 @@ class HomologSeparating2022(Constraint):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.hparams = hparams
-        self._fullres_struct_nan = None  # Not necessary for this constraint
+        self._fullres_struct_nan = fullres_struct_nan  # For self._setup() only
         self._lowmem = lowmem
         self._var = None
         self.mods = mods  # TODO remove
@@ -602,18 +604,27 @@ class HomologSeparating2022(Constraint):
             [c.beta for c in counts if c.sum() != 0], counts=counts,
             lengths=self.lengths, ploidy=self.ploidy)
 
-        if 'nbinom' in self.mods and self.lengths_lowres.size > 1:
-            n = self.lengths_lowres.sum()
-            row, col = (x.flatten() for x in np.indices((n, n)))
-            mask_interchrom = _intra_mask(
-                (n, n), lengths_at_res=self.lengths_lowres)
-            mask_interchrom = (col > row) & mask_interchrom
-        else:
-            mask_interchrom = None
+        # if self.multiscale_factor > 1:
+        #     fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+        #         multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+        #         ploidy=self.ploidy, fullres_struct_nan=self._fullres_struct_nan)
+        # else:
+        #     fullres_per_lowres_bead = None
 
-        var = {'beta': beta, 'mask_interchrom': mask_interchrom}
+        if self.lengths_lowres.size > 1 and (
+                'nbinom' in self.mods or 'interhmlg_intrachrom' in self.mods):
+            n = self.lengths_lowres.sum()
+            # row, col = (x.flatten() for x in np.indices((n, n)))
+            mask_intrachrom = _intra_mask(
+                (n, n), lengths_at_res=self.lengths_lowres)
+            # mask_intrachrom = (col > row) & mask_intrachrom
+        else:
+            mask_intrachrom = None
+
+        var = {'beta': beta, 'mask_intrachrom': mask_intrachrom}
         if not self._lowmem:
             self._var = var
+            self._fullres_struct_nan = None  # No longer needed unless lowmem
         return var
 
     def apply(self, struct, alpha=None, epsilon=None, counts=None, bias=None,
@@ -627,6 +638,11 @@ class HomologSeparating2022(Constraint):
 
         n = int(struct.shape[0] / 2)
         row, col = (x.flatten() for x in np.indices((n, n)))
+
+        if 'interhmlg_intrachrom' in self.mods:
+            row = row[var['mask_intrachrom']]
+            col = col[var['mask_intrachrom']]
+
         dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
         if bias is None or np.all(bias == 1):
             bias_interhmlg = 1
@@ -644,57 +660,65 @@ class HomologSeparating2022(Constraint):
             lambda_interhmlg = 4 * var['beta'] * (
                 bias_interhmlg * dis_alpha_interhmlg)
 
+        # if self.multiscale_factor > 1:
+        #     # fullres_per_lowres_bead
+        #     lambda_interhmlg = lambda_interhmlg / ((
+        #         var['fullres_per_lowres_bead'][row]) * (
+        #         var['fullres_per_lowres_bead'][col]))
+
         if 'mean' in self.mods:
             # TODO would have to apply to each pair of molecules separately
             lambda_interhmlg = ag_np.mean(lambda_interhmlg)
             # dis_intra1 = _euclidean_distance(struct, row=row, col=col)
             # dis_intra2 = _euclidean_distance(struct, row=row + n, col=col + n)
+
         if 'nbinom' in self.mods:
-            gamma_mean = lambda_interhmlg
-            mean_counts_interchrom = self.hparams['counts_interchrom'].mean()
-            var_counts_interchrom = self.hparams['counts_interchrom'].var()
+            if 'gp' in self.mods:
+                gamma_mean = lambda_interhmlg
+                mean_counts_interchrom = self.hparams['counts_interchrom'].mean()
+                var_counts_interchrom = self.hparams['counts_interchrom'].var()
 
-            if self.lengths_lowres.size > 1:
-                # Estimate variance of intra-chrom inter-hmlg (β d_ij^α) from
-                # the variance of inter-chrom intra-hmlg (β d_ij^α)
-                row_interchrom = row[var['mask_interchrom']]
-                col_interchrom = col[var['mask_interchrom']]
-                dis_interchrom_h1 = _euclidean_distance(
-                    struct, row=row_interchrom, col=col_interchrom)
-                dis_interchrom_h2 = _euclidean_distance(
-                    struct, row=row_interchrom + n, col=col_interchrom + n)
-                dis_interchrom = ag_np.concatenate(
-                    [dis_interchrom_h1, dis_interchrom_h2])
-                if bias is None or np.all(bias == 1):
-                    bias_interchrom = 1
+                if self.lengths_lowres.size > 1:
+                    # Estimate variance of intra-chrom inter-hmlg (β d_ij^α) from
+                    # the variance of inter-chrom intra-hmlg (β d_ij^α)
+                    mask = (col > row) & (~var['mask_intrachrom'])
+                    row_interchrom = row[mask]
+                    col_interchrom = col[mask]
+                    dis_interchrom_h1 = _euclidean_distance(
+                        struct, row=row_interchrom, col=col_interchrom)
+                    dis_interchrom_h2 = _euclidean_distance(
+                        struct, row=row_interchrom + n, col=col_interchrom + n)
+                    dis_interchrom = ag_np.concatenate(
+                        [dis_interchrom_h1, dis_interchrom_h2])
+                    if bias is None or np.all(bias == 1):
+                        bias_interchrom = 1
+                    else:
+                        bias_interchrom = bias.ravel()[row_interchrom] * (
+                            bias.ravel()[col_interchrom])
+                    lambda_interchrom = bias_interchrom * var['beta'] * ag_np.power(
+                        dis_interchrom, alpha) * 4
+                    gamma_var = ag_np.var(lambda_interchrom)
+
+                    gamma_var = ag_np.maximum(mean_counts_interchrom, gamma_var)  # TODO check
+                    gamma_var = ag_np.minimum(var_counts_interchrom, gamma_var)  # TODO check
                 else:
-                    bias_interchrom = bias.ravel()[row_interchrom] * (
-                        bias.ravel()[col_interchrom])
-                lambda_interchrom = bias_interchrom * var['beta'] * ag_np.power(
-                    dis_interchrom, alpha) * 4
-                gamma_var = ag_np.var(lambda_interchrom)
+                    if var_counts_interchrom > mean_counts_interchrom:
+                        gamma_var = np.mean([
+                            mean_counts_interchrom, var_counts_interchrom])  # TODO check
+                    else:
+                        gamma_var = mean_counts_interchrom  # TODO check
 
-                gamma_var = ag_np.maximum(mean_counts_interchrom, gamma_var)  # TODO check
-                gamma_var = ag_np.minimum(var_counts_interchrom, gamma_var)  # TODO check
+                # if type(gamma_var).__name__ in ('DeviceArray', 'ndarray'):
+                #     print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={self.hparams['counts_interchrom'].var():.3g}")
+
+                theta = gamma_var / gamma_mean
+                k = ag_np.square(gamma_mean) / gamma_var
+
+                obj = gamma_poisson_nll(
+                    theta=theta, k=k,
+                    data=(self.hparams['counts_interchrom']).reshape(1, -1))
             else:
-                if var_counts_interchrom > mean_counts_interchrom:
-                    gamma_var = np.mean([
-                        mean_counts_interchrom, var_counts_interchrom])  # TODO check
-                else:
-                    gamma_var = mean_counts_interchrom  # TODO check
-
-            # if type(gamma_var).__name__ in ('DeviceArray', 'ndarray'):
-            #     print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={self.hparams['counts_interchrom'].var():.3g}")
-
-
-            raise ValueError("why not just use the var of the counts as the true var??? can I do that?? with the normal formulation of nbinom and scipy's nbinom ll?")
-
-            theta = gamma_var / gamma_mean
-            k = ag_np.square(gamma_mean) / gamma_var
-
-            obj = gamma_poisson_nll(
-                theta=theta, k=k,
-                data=(self.hparams['counts_interchrom']).reshape(1, -1))
+                raise ValueError("why not just use the var of the counts as the true var??? can I do that?? with the normal formulation of nbinom and scipy's nbinom ll?")
         else:
             obj = poisson_nll(
                 np.mean(self.hparams['counts_interchrom']),
@@ -783,6 +807,29 @@ def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[]):
         counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
     counts_interchrom = _inter_counts(
         counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
+    counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
+    if 'nbinom' in mods:
+        return counts_interchrom
+    else:
+        return counts_interchrom.mean()
+
+
+def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1, mods=[]):
+    if lengths.size == 1:
+        raise ValueError(
+            "Must input counts_interchrom if inferring single chromosome.")
+    counts_ambig = counts[0] if isinstance(counts, list) else counts
+    counts_ambig = ambiguate_counts(
+        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)  # FIXME
+    counts_ambig = decrease_counts_res(
+        counts_ambig, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+
+    counts_interchrom = _inter_counts(
+        counts_ambig, lengths_at_res=lengths_lowres, ploidy=ploidy,
+        exclude_zeros=False)
     counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
     if 'nbinom' in mods:
         return counts_interchrom
