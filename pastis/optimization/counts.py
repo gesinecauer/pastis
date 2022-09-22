@@ -191,9 +191,13 @@ def _create_unambig_dummy_counts(counts, lengths, ploidy, multiscale_factor=1):
 
 
 def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
-                         chrom_subset_index=None, remove_diag=True):
+                         chrom_subset_index=None, remove_diag=True,
+                         copy=True):
     """Check counts dimensions, reformat, & excise selected chromosomes.
     """
+
+    if copy:
+        counts = counts.copy()
 
     if chrom_subset_index is not None and len(
             chrom_subset_index) / max(counts.shape) not in (1, 2):
