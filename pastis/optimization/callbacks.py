@@ -188,6 +188,8 @@ class Callback(object):
                     lengths=lengths, ploidy=ploidy)
             else:
                 self.struct_true = struct_true
+            if type(self.struct_true).__name__ == 'DeviceArray':
+                self.struct_true = self.struct_true._value
         else:
             self.struct_true = None
         self.alpha_true = alpha_true
@@ -217,6 +219,8 @@ class Callback(object):
         self.structures = [struct.copy().reshape(-1, 3)
                            for struct in structures]
         for i in range(len(structures)):
+            if type(self.structures[i]).__name__ == 'DeviceArray':
+                self.structures[i] = self.structures[i]._value
             self.structures[i][self.struct_nan] = np.nan
 
     def _check_frequency(self, frequency, last_iter=False):
@@ -364,7 +368,10 @@ class Callback(object):
                 if type(v).__name__ == 'DeviceArray':
                     self.obj[k] = v._value
 
-        self.X = Xi
+        if type(Xi).__name__ == 'DeviceArray':
+            self.X = Xi._value
+        else:
+            self.X = Xi
         if self.opt_type != 'alpha' or self.iter == 0:
             self._set_structures(structures)
         self.alpha = alpha
