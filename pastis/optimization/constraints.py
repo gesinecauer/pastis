@@ -386,7 +386,7 @@ class BeadChainConnectivity2021(Constraint):
             include_struct_nan_beads=False)
 
         if bias is not None and not np.all(bias == 1):
-            raise NotImplementedError("Implement for bias")  # TODO
+            raise NotImplementedError("Implement for bias... especially for multires")  # TODO
 
         counts_ambig = decrease_counts_res(
             counts_ambig, multiscale_factor=self.multiscale_factor,
@@ -502,10 +502,13 @@ class BeadChainConnectivity2022(Constraint):
         # Get bias corresponding to neighboring beads
         row_nghbr_ambig = _neighboring_bead_indices(
             lengths=self.lengths, ploidy=1,
-            multiscale_factor=self.multiscale_factor)
+            multiscale_factor=self.multiscale_factor)  # this is lowres rows
         if bias is None or np.all(bias == 1):
             bias_nghbr = 1
         else:
+            raise NotImplementedError("Implement for multires!")
+            # for this constraint, can probably actually just use fullres bias
+            # & input into the gamma-poisson objective...
             bias_nghbr = bias.ravel()[row_nghbr_ambig] * bias.ravel()[
                 row_nghbr_ambig + 1]
 
@@ -604,12 +607,12 @@ class HomologSeparating2022(Constraint):
             [c.beta for c in counts if c.sum() != 0], counts=counts,
             lengths=self.lengths, ploidy=self.ploidy)
 
-        # if self.multiscale_factor > 1:
-        #     fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-        #         multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-        #         ploidy=self.ploidy, fullres_struct_nan=self._fullres_struct_nan)
-        # else:
-        #     fullres_per_lowres_bead = None
+        if self.multiscale_factor > 1:
+            fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, fullres_struct_nan=self._fullres_struct_nan)
+        else:
+            fullres_per_lowres_bead = None
 
         if self.lengths_lowres.size > 1 and (
                 'nbinom' in self.mods or 'interhmlg_intrachrom' in self.mods):
@@ -621,7 +624,8 @@ class HomologSeparating2022(Constraint):
         else:
             mask_intrachrom = None
 
-        var = {'beta': beta, 'mask_intrachrom': mask_intrachrom}
+        var = {'beta': beta, 'fullres_per_lowres_bead': fullres_per_lowres_bead,
+               'mask_intrachrom': mask_intrachrom}
         if not self._lowmem:
             self._var = var
             self._fullres_struct_nan = None  # No longer needed unless lowmem
@@ -647,6 +651,12 @@ class HomologSeparating2022(Constraint):
         if bias is None or np.all(bias == 1):
             bias_interhmlg = 1
         else:
+            raise NotImplementedError("Implement for multires!")
+            # I know we're not supposed to multiply counts by anything because
+            # it messes with mean/var relationship, but if mean(bias) == 1,
+            # can we do it anyways?
+            # or maybe don't even need to worry about bias because it averages
+            # out for the inter-chrom counts....
             bias_interhmlg = bias.ravel()[row] * bias.ravel()[col]
         dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
 
@@ -660,11 +670,12 @@ class HomologSeparating2022(Constraint):
             lambda_interhmlg = 4 * var['beta'] * (
                 bias_interhmlg * dis_alpha_interhmlg)
 
-        # if self.multiscale_factor > 1:
-        #     # fullres_per_lowres_bead
-        #     lambda_interhmlg = lambda_interhmlg / ((
-        #         var['fullres_per_lowres_bead'][row]) * (
-        #         var['fullres_per_lowres_bead'][col]))
+        counts_interchrom = self.hparams['counts_interchrom']
+        if self.multiscale_factor > 1:
+            fullres_per_lowres_bins = var['fullres_per_lowres_bead'][row] * (
+                var['fullres_per_lowres_bead'][col + n])
+            lambda_interhmlg = lambda_interhmlg * fullres_per_lowres_bins
+            counts_interchrom = counts_interchrom * fullres_per_lowres_bins
 
         if 'mean' in self.mods:
             # TODO would have to apply to each pair of molecules separately
@@ -675,8 +686,8 @@ class HomologSeparating2022(Constraint):
         if 'nbinom' in self.mods:
             if 'gp' in self.mods:
                 gamma_mean = lambda_interhmlg
-                mean_counts_interchrom = self.hparams['counts_interchrom'].mean()
-                var_counts_interchrom = self.hparams['counts_interchrom'].var()
+                mean_counts_interchrom = counts_interchrom.mean()
+                var_counts_interchrom = counts_interchrom.var()
 
                 if self.lengths_lowres.size > 1:
                     # Estimate variance of intra-chrom inter-hmlg (β d_ij^α) from
@@ -709,21 +720,18 @@ class HomologSeparating2022(Constraint):
                         gamma_var = mean_counts_interchrom  # TODO check
 
                 # if type(gamma_var).__name__ in ('DeviceArray', 'ndarray'):
-                #     print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={self.hparams['counts_interchrom'].var():.3g}")
+                #     print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={counts_interchrom.var():.3g}")
 
                 theta = gamma_var / gamma_mean
                 k = ag_np.square(gamma_mean) / gamma_var
 
                 obj = gamma_poisson_nll(
                     theta=theta, k=k,
-                    data=(self.hparams['counts_interchrom']).reshape(1, -1))
+                    data=(counts_interchrom).reshape(1, -1))
             else:
                 raise ValueError("why not just use the var of the counts as the true var??? can I do that?? with the normal formulation of nbinom and scipy's nbinom ll?")
         else:
-            obj = poisson_nll(
-                np.mean(self.hparams['counts_interchrom']),
-                lambda_pois=lambda_interhmlg)
-        # print((self.hparams['counts_interchrom'], lambda_interhmlg, obj), flush=True)
+            obj = poisson_nll(counts_interchrom, lambda_pois=lambda_interhmlg)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
@@ -815,18 +823,18 @@ def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[]):
 
 
 def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1, mods=[]):
+    # TODO probably delete this function and just use the fullres version
     if lengths.size == 1:
         raise ValueError(
             "Must input counts_interchrom if inferring single chromosome.")
-    counts_ambig = counts[0] if isinstance(counts, list) else counts
-    counts_ambig = ambiguate_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)  # FIXME
-    counts_ambig = decrease_counts_res(
-        counts_ambig, multiscale_factor=multiscale_factor, lengths=lengths,
-        ploidy=ploidy)
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
 
+    counts_ambig = ambiguate_counts(
+        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
+    counts_ambig = decrease_counts_res(
+        counts_ambig, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
     counts_interchrom = _inter_counts(
         counts_ambig, lengths_at_res=lengths_lowres, ploidy=ploidy,
         exclude_zeros=False)
