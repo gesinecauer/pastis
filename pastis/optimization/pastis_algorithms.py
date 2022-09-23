@@ -226,7 +226,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_ = alpha_init
     if multiscale_factor == 1 and not (draft or simple_diploid):
         infer_draft_lowres = est_hmlg_sep is None and hsc_lambda > 0 and str(
-        hsc_version) == '2019'
+            hsc_version) == '2019'
         need_multiscale_var = use_multiscale_variance and (
             multiscale_rounds > 1 or infer_draft_lowres) and (
             not multiscale_reform)
