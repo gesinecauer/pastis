@@ -12,6 +12,9 @@ jax_config.update("jax_platform_name", "cpu")
 jax_config.update("jax_enable_x64", True)
 import jax.numpy as ag_np
 from jax.nn import relu
+from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
+from jax.scipy.stats.poisson import logpmf as logpmf_poisson
+from jax.scipy.stats.gamma import logpdf as logpdf_gamma
 
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
@@ -20,7 +23,7 @@ from .utils_poisson import find_beads_to_remove, _euclidean_distance
 from .utils_poisson import _inter_counts, _counts_near_diag, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta
 from .likelihoods import poisson_nll, gamma_poisson_nll
-from .poisson import relu_min  # TODO temporary (for NDC)
+from .poisson import relu_min, get_gamma_params, get_gamma_moments
 
 
 class Constraint(object):
@@ -201,6 +204,15 @@ class BeadChainConnectivity2019(Constraint):
         obj = nghbr_dis_var - 1.
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
+
+            # if type(obj).__name__ in ('DeviceArray', 'ndarray'):
+            print(f"{struct.mean()=:.3g}")  # TODO remove
+            print(f"{np.isnan(struct).sum() / struct.size:.3g}")
+            print(f"{nghbr_dis.mean()=:.3g}")
+            print(f"{nghbr_dis.min()=:.3g}")
+            print(f"{nghbr_dis_var.mean()=:.3g}")
+            exit(1)
+
             raise ValueError(f"{self.name} constraint objective is {obj}.")
         return self.lambda_val * obj
 
@@ -304,33 +316,33 @@ class HomologSeparating2019(Constraint):
         # Get homolog separation
         struct_bw = struct * np.repeat(var['bead_weights'], 3, axis=1)
         n = self.lengths_lowres.sum()
-        homo_sep = ag_np.zeros(self.lengths_lowres.shape)
+        hmlg_sep = ag_np.zeros(self.lengths_lowres.shape)
         begin = end = 0
         for i in range(self.lengths_lowres.shape[0]):
             end = end + ag_np.int32(self.lengths_lowres[i])
             chrom1_mean = ag_np.sum(struct_bw[begin:end], axis=0)
             chrom2_mean = ag_np.sum(struct_bw[(n + begin):(n + end)], axis=0)
-            homo_sep_i = ag_np.sqrt(ag_np.sum(ag_np.square(
+            hmlg_sep_i = ag_np.sqrt(ag_np.sum(ag_np.square(
                 chrom1_mean - chrom2_mean)))
-            homo_sep = homo_sep.at[i].set(homo_sep_i)
+            hmlg_sep = hmlg_sep.at[i].set(hmlg_sep_i)
             begin = end
 
-        homo_sep_diff = self.hparams["est_hmlg_sep"] - homo_sep
+        hmlg_sep_diff = self.hparams["est_hmlg_sep"] - hmlg_sep
         if 'rscale' in self.mods:
-            homo_sep_diff = 1 - homo_sep / self.hparams["est_hmlg_sep"]
+            hmlg_sep_diff = 1 - hmlg_sep / self.hparams["est_hmlg_sep"]
         if self.hparams['perc_diff'] is None:
-            homo_sep_diff = relu(homo_sep_diff)
+            hmlg_sep_diff = relu(hmlg_sep_diff)
             raise ValueError("I thought we weren't doing RELU for HSC anymore")
         else:
             hsc_cutoff = ag_np.array(self.hparams['perc_diff'] * self.hparams[
                 "est_hmlg_sep"])
-            gt0 = homo_sep_diff > 0
-            homo_sep_diff = homo_sep_diff.at[gt0].set(relu(
-                homo_sep_diff[gt0] - hsc_cutoff[gt0]))
-            homo_sep_diff = homo_sep_diff.at[~gt0].set(-relu(
-                -(homo_sep_diff[~gt0] + hsc_cutoff[~gt0])))
-        homo_sep_diff_sq = ag_np.square(homo_sep_diff)
-        obj = ag_np.mean(homo_sep_diff_sq)
+            gt0 = hmlg_sep_diff > 0
+            hmlg_sep_diff = hmlg_sep_diff.at[gt0].set(relu(
+                hmlg_sep_diff[gt0] - hsc_cutoff[gt0]))
+            hmlg_sep_diff = hmlg_sep_diff.at[~gt0].set(-relu(
+                -(hmlg_sep_diff[~gt0] + hsc_cutoff[~gt0])))
+        hmlg_sep_diff_sq = ag_np.square(hmlg_sep_diff)
+        obj = ag_np.mean(hmlg_sep_diff_sq)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
@@ -640,14 +652,16 @@ class HomologSeparating2022(Constraint):
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self._setup(counts=counts, bias=bias)
 
-        n = int(struct.shape[0] / 2)
+        # Get inter-homolog distances
+        # n = int(struct.shape[0] / 2)
+        n = self.lengths_lowres.sum()
         row, col = (x.flatten() for x in np.indices((n, n)))
-
         if 'interhmlg_intrachrom' in self.mods:
             row = row[var['mask_intrachrom']]
             col = col[var['mask_intrachrom']]
-
         dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
+
+        # Get inter-homolog bias
         if bias is None or np.all(bias == 1):
             bias_interhmlg = 1
         else:
@@ -658,84 +672,109 @@ class HomologSeparating2022(Constraint):
             # or maybe don't even need to worry about bias because it averages
             # out for the inter-chrom counts....
             bias_interhmlg = bias.ravel()[row] * bias.ravel()[col]
-        dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
-
-        if 'sum2' in self.mods:
-            dis_alpha_interhmlg = dis_alpha_interhmlg.reshape(n, n)
-            dis_alpha_interhmlg = dis_alpha_interhmlg[ag_np.triu_indices(
-                n, 1)] + dis_alpha_interhmlg[ag_np.tril_indices(n, -1)]
-            lambda_interhmlg = 2 * var['beta'] * (
-                bias_interhmlg * dis_alpha_interhmlg)
-        else:
-            lambda_interhmlg = 4 * var['beta'] * (
-                bias_interhmlg * dis_alpha_interhmlg)
 
         counts_interchrom = self.hparams['counts_interchrom']
-        if self.multiscale_factor > 1:
-            fullres_per_lowres_bins = var['fullres_per_lowres_bead'][row] * (
-                var['fullres_per_lowres_bead'][col + n])
-            lambda_interhmlg = lambda_interhmlg * fullres_per_lowres_bins
-            counts_interchrom = counts_interchrom * fullres_per_lowres_bins
 
-        if 'mean' in self.mods:
-            # TODO would have to apply to each pair of molecules separately
-            lambda_interhmlg = ag_np.mean(lambda_interhmlg)
-            # dis_intra1 = _euclidean_distance(struct, row=row, col=col)
-            # dis_intra2 = _euclidean_distance(struct, row=row + n, col=col + n)
-
-        if 'nbinom' in self.mods:
-            if 'gp' in self.mods:
-                gamma_mean = lambda_interhmlg
-                mean_counts_interchrom = counts_interchrom.mean()
-                var_counts_interchrom = counts_interchrom.var()
-
-                if self.lengths_lowres.size > 1:
-                    # Estimate variance of intra-chrom inter-hmlg (β d_ij^α) from
-                    # the variance of inter-chrom intra-hmlg (β d_ij^α)
-                    mask = (col > row) & (~var['mask_intrachrom'])
-                    row_interchrom = row[mask]
-                    col_interchrom = col[mask]
-                    dis_interchrom_h1 = _euclidean_distance(
-                        struct, row=row_interchrom, col=col_interchrom)
-                    dis_interchrom_h2 = _euclidean_distance(
-                        struct, row=row_interchrom + n, col=col_interchrom + n)
-                    dis_interchrom = ag_np.concatenate(
-                        [dis_interchrom_h1, dis_interchrom_h2])
-                    if bias is None or np.all(bias == 1):
-                        bias_interchrom = 1
-                    else:
-                        bias_interchrom = bias.ravel()[row_interchrom] * (
-                            bias.ravel()[col_interchrom])
-                    lambda_interchrom = bias_interchrom * var['beta'] * ag_np.power(
-                        dis_interchrom, alpha) * 4
-                    gamma_var = ag_np.var(lambda_interchrom)
-
-                    gamma_var = ag_np.maximum(mean_counts_interchrom, gamma_var)  # TODO check
-                    gamma_var = ag_np.minimum(var_counts_interchrom, gamma_var)  # TODO check
-                else:
-                    if var_counts_interchrom > mean_counts_interchrom:
-                        gamma_var = np.mean([
-                            mean_counts_interchrom, var_counts_interchrom])  # TODO check
-                    else:
-                        gamma_var = mean_counts_interchrom  # TODO check
-
-                # if type(gamma_var).__name__ in ('DeviceArray', 'ndarray'):
-                #     print(f"{mean_counts_interchrom=:.3g}\t   {gamma_var=:.3g}\t    counts_interchrom.var()={counts_interchrom.var():.3g}")
-
-                theta = gamma_var / gamma_mean
-                k = ag_np.square(gamma_mean) / gamma_var
-
-                obj = gamma_poisson_nll(
-                    theta=theta, k=k,
-                    data=(counts_interchrom).reshape(1, -1))
+        if 'mse' in self.mods:
+            pass
+        elif 'gamma' in self.mods:
+            if self.multiscale_factor > 1:
+                # gamma_mean, gamma_var = get_gamma_moments(
+                #     dis=dis_interhmlg, epsilon=epsilon, alpha=alpha,
+                #     beta=4 * var['beta'], ambiguity='ua')
+                theta, k = get_gamma_params(
+                    dis=dis_interhmlg, epsilon=epsilon, alpha=alpha,
+                    beta=4 * var['beta'], ambiguity='ua')
             else:
-                raise ValueError("why not just use the var of the counts as the true var??? can I do that?? with the normal formulation of nbinom and scipy's nbinom ll?")
+                dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
+                lambda_interhmlg = gamma_mean = (4 * var['beta']) * (
+                    bias_interhmlg * dis_alpha_interhmlg)
+                theta = 1e6
+                k = gamma_mean / theta
+            obj = -logpdf_gamma(np.mean(counts_interchrom), a=k, scale=theta).mean()
+            if type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                if epsilon is None:
+                    print(f"c={np.mean(counts_interchrom):.3g}\t   mean={lambda_interhmlg.mean():.3g}\t   obj={obj:.3g}", flush=True)
+                else:
+                    dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
+                    lambda_interhmlg = (4 * var['beta']) * (
+                        bias_interhmlg * dis_alpha_interhmlg)
+                    print(f"c={np.mean(counts_interchrom):.3g}\t   λ={lambda_interhmlg.mean():.3g}\t   Γ={(k * theta).mean():.3g}\t   obj={obj:.3g}\t   ε={epsilon:.3g}", flush=True)
+
+        elif self.multiscale_factor > 1 and 'nb_model' in self.mods:
+            theta, k = get_gamma_params(
+                dis=dis_interhmlg, epsilon=epsilon, alpha=alpha,
+                beta=4 * var['beta'], ambiguity='ua')
+
+            # fullres_per_lowres_bins = var['fullres_per_lowres_bead'][row] * (
+            #     var['fullres_per_lowres_bead'][col + n])
+
+            counts_interchrom = np.array([counts_interchrom.mean()])
+            counts_interchrom = counts_interchrom.reshape(-1, 1)
+            obj = gamma_poisson_nll(
+                theta=theta, k=k, data=counts_interchrom, bias=bias,
+                num_fullres_per_lowres_bins=None,
+                mods=self.mods)
+            if type(obj).__name__ in ('DeviceArray', 'ndarray') and False:
+                dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
+                lambda_interhmlg = (4 * var['beta']) * (
+                    bias_interhmlg * dis_alpha_interhmlg)
+                print(f"c={np.mean(counts_interchrom):.3g}\t   mean={lambda_interhmlg.mean():.3g}\t   obj={obj:.3g}\t   ε={epsilon:.3g}", flush=True)
         else:
-            obj = poisson_nll(counts_interchrom, lambda_pois=lambda_interhmlg)
+            dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
+            lambda_interhmlg = (4 * var['beta']) * (
+                bias_interhmlg * dis_alpha_interhmlg)
+
+            if self.multiscale_factor > 1:
+                fullres_per_lowres_bins = var['fullres_per_lowres_bead'][row] * (
+                    var['fullres_per_lowres_bead'][col + n])
+            else:
+                fullres_per_lowres_bins = 1
+
+            if 'nbinom' in self.mods:
+                # logpmf_negbinom(k, n, p)
+                # FIXME do something about fullres_per_lowres_bins
+                nb_mean = lambda_interhmlg
+                counts_var = counts_interchrom.var()
+                nb_var = relu_max(counts_var, nb_mean)
+
+                nb_mask = nb_mean != nb_var
+                obj_pois = -logpmf_poisson(
+                    counts_interchrom.reshape(-1, 1),
+                    mu=nb_mean[~nb_mask])
+
+                p = nb_mean[nb_mask] / counts_var
+                n = ag_np.square(nb_mean[nb_mask]) / (counts_var - nb_mean[nb_mask])
+                obj_nb = -logpmf_negbinom(
+                    counts_interchrom.reshape(-1, 1), n=n, p=p)
+
+                obj = (obj_nb.sum() + obj_pois.sum()) / row.size
+                if type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                    print(f"mean={nb_mean.mean():.3g}\t   var={nb_var.mean():.3g}\t   pois={obj_pois.mean():.3g}\t   nb={obj_nb.mean():.3g}", flush=True)
+                    # print(f"{lambda_interhmlg.var()=:.3g}")
+                # exit(1)
+            else:
+                counts_interchrom = np.mean(counts_interchrom)
+                if not 'no_nxny' in self.mods:
+                    counts_interchrom = counts_interchrom * fullres_per_lowres_bins
+                    lambda_interhmlg = lambda_interhmlg * fullres_per_lowres_bins
+                obj = poisson_nll(
+                    counts_interchrom, lambda_pois=lambda_interhmlg)
+                if type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                    if epsilon is None:
+                        print(f"c={np.mean(counts_interchrom):.3g}\t   mean={lambda_interhmlg.mean():.3g}\t   obj={obj:.3g}", flush=True)
+                    else:
+                        print(f"c={np.mean(counts_interchrom):.3g}\t   mean={lambda_interhmlg.mean():.3g}\t   obj={obj:.3g}\t   ε={epsilon:.3g}", flush=True)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
         return self.lambda_val * obj
+
+
+def relu_max(x1, x2):  # TODO move to likelihoods.py
+    # TODO this is temporary, remove this and switch to jax_max
+    # returns max(x1, x2)
+    return (relu((x1) - (x2)) + (x2))
 
 
 def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
@@ -816,7 +855,7 @@ def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[]):
     counts_interchrom = _inter_counts(
         counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
     counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
-    if 'nbinom' in mods:
+    if 'nbinom' in mods or 'nb_model' in mods:
         return counts_interchrom
     else:
         return counts_interchrom.mean()
@@ -907,23 +946,23 @@ def _inter_homolog_dis(struct, lengths):
     homo1 = struct[:n, :]
     homo2 = struct[n:, :]
 
-    homo_dis = []
+    hmlg_dis = []
     begin = end = 0
     for i in range(lengths.size):
         end += lengths[i]
         if np.isnan(homo1[begin:end, 0]).sum() == lengths[i] or np.isnan(
                 homo2[begin:end, 0]).sum() == lengths[i]:
-            homo_dis.append(np.nan)
+            hmlg_dis.append(np.nan)
         else:
-            homo_dis.append(((np.nanmean(homo1[
+            hmlg_dis.append(((np.nanmean(homo1[
                 begin:end, :], axis=0) - np.nanmean(
                 homo2[begin:end, :], axis=0)) ** 2).sum() ** 0.5)
         begin = end
 
-    homo_dis = np.array(homo_dis)
-    homo_dis[np.isnan(homo_dis)] = np.nanmean(homo_dis)
+    hmlg_dis = np.array(hmlg_dis)
+    hmlg_dis[np.isnan(hmlg_dis)] = np.nanmean(hmlg_dis)
 
-    return homo_dis
+    return hmlg_dis
 
 
 def _inter_homolog_dis_via_simple_diploid(struct, lengths):
@@ -945,10 +984,10 @@ def _inter_homolog_dis_via_simple_diploid(struct, lengths):
 
     chrom_barycenters = np.concatenate(chrom_barycenters)
 
-    homo_dis = euclidean_distances(chrom_barycenters)
-    homo_dis[np.tril_indices(homo_dis.shape[0])] = np.nan
+    hmlg_dis = euclidean_distances(chrom_barycenters)
+    hmlg_dis[np.tril_indices(hmlg_dis.shape[0])] = np.nan
 
-    return np.full(lengths.shape, np.nanmean(homo_dis))
+    return np.full(lengths.shape, np.nanmean(hmlg_dis))
 
 
 def distance_between_homologs(structures, lengths, mixture_coefs=None,
@@ -983,12 +1022,12 @@ def distance_between_homologs(structures, lengths, mixture_coefs=None,
         ploidy=(1 if simple_diploid else 2),
         mixture_coefs=mixture_coefs)
 
-    homo_dis = []
+    hmlg_dis = []
     for struct in structures:
         if simple_diploid:
-            homo_dis.append(_inter_homolog_dis_via_simple_diploid(
+            hmlg_dis.append(_inter_homolog_dis_via_simple_diploid(
                 struct=struct, lengths=lengths))
         else:
-            homo_dis.append(_inter_homolog_dis(struct=struct, lengths=lengths))
+            hmlg_dis.append(_inter_homolog_dis(struct=struct, lengths=lengths))
 
-    return np.mean(homo_dis, axis=0)
+    return np.mean(hmlg_dis, axis=0)
