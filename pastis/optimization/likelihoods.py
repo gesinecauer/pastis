@@ -42,7 +42,7 @@ def _stirling(z):
 
 
 def _masksum(x, mask=None, axis=None):
-    """Sum of masked array (for autograd)"""
+    """Sum of masked array (for jax)"""
     if mask is None:
         return ag_np.sum(x, axis=axis)
     else:
@@ -55,33 +55,36 @@ def relu_min(x1, x2):
     return - (relu((-x1) - (-x2)) + (-x2))
 
 
-def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
+def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins, bias=None,
                       mask=None, mods=[]):
-    if num_fullres_per_lowres_bins is None:
+    if num_fullres_per_lowres_bins is None:  # TODO really?
         num_fullres_per_lowres_bins = data.shape[1]
 
+    if not (bias is None or np.all(bias == 1)):
+        raise NotImplementedError("aaaaa.")
+
     log1p_theta = ag_np.log1p(theta)
-    obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
+    tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
     if data.sum() == 0:
-        obj = obj_tmp1
+        log_likelihood = tmp1
     else:
         k_plus_1 = k + 1
-        obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k_plus_1)
-        obj_tmp3 = _masksum(_stirling(
+        tmp2 = -num_fullres_per_lowres_bins * _stirling(k_plus_1)
+        tmp3 = _masksum(_stirling(
             data + k_plus_1), mask=mask, axis=0)
-        obj_tmp4 = _masksum(data, mask=mask, axis=0) * (
+        tmp4 = _masksum(data, mask=mask, axis=0) * (
             ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1)
-        obj_tmp5 = _masksum((data + k + 0.5) * ag_np.log1p(
+        tmp5 = _masksum((data + k + 0.5) * ag_np.log1p(
             data / k_plus_1), mask=mask, axis=0)
-        obj_tmp6 = -_masksum(
+        tmp6 = -_masksum(
             ag_np.log1p(data / k), mask=mask, axis=0)
-        obj = (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
+        log_likelihood = (tmp1 + tmp2 + tmp3 + tmp4 + tmp5 + tmp6)
 
     if 'ij_sum' not in mods:
-        obj = obj / num_fullres_per_lowres_bins
+        log_likelihood = log_likelihood / num_fullres_per_lowres_bins
 
-    obj = ag_np.mean(obj)
-    return obj
+    log_likelihood = ag_np.mean(log_likelihood)
+    return -log_likelihood
 
 
 @custom_jvp
