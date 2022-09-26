@@ -79,6 +79,66 @@ def loss2(x, mask, num_fullres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO re
     return - obj
 
 
+def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
+                      max_epsilon_over_dis=25):
+
+    dis_alpha = ag_np.power(dis, alpha)
+    epsilon_over_dis = epsilon / dis
+
+    epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
+    # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
+
+    ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
+    ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+
+    gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
+    gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
+
+    if ambiguity != 'ua':
+        if ambiguity == 'ambig':
+            reshape_0 = 4
+        else:
+            reshape_0 = 2
+        gamma_mean = gamma_mean.reshape(reshape_0, -1).sum(axis=0)
+        gamma_var = gamma_var.reshape(reshape_0, -1).sum(axis=0)
+
+    return gamma_mean, gamma_var
+
+
+def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
+                     max_epsilon_over_dis=25):
+
+    dis_alpha = ag_np.power(dis, alpha)
+    epsilon_over_dis = epsilon / dis
+
+    epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
+    # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
+
+    ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
+    ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+
+    if ambiguity == 'ua':
+        theta_tmp = dis_alpha * ag_np.exp(ln_gamma_var - ln_gamma_mean)
+
+        k = ag_np.exp(2 * ln_gamma_mean - ln_gamma_var)
+    else:
+        gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
+        gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
+
+        if ambiguity == 'ambig':
+            reshape_0 = 4
+        else:
+            reshape_0 = 2
+        gamma_mean = gamma_mean.reshape(reshape_0, -1).sum(axis=0)
+        gamma_var = gamma_var.reshape(reshape_0, -1).sum(axis=0)
+
+        theta_tmp = gamma_var / gamma_mean
+        k = ag_np.square(gamma_mean) / gamma_var
+
+    theta = beta * theta_tmp
+    return theta, k
+
+
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            bias=None, multiscale_factor=1, mixture_coefs=None,
                            mods=[], max_epsilon_over_dis=25):
@@ -135,8 +195,8 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             theta_tmp = gamma_var / gamma_mean
             k_tmp = ag_np.square(gamma_mean) / gamma_var
 
-        theta = theta + mix_coef * counts.beta * theta_tmp
-        k = k + mix_coef * k_tmp
+        theta = theta + (mix_coef * counts.beta * theta_tmp)
+        k = k + (mix_coef * k_tmp)
         # mu = mu + mix_coef * counts.beta * gamma_mean  # Not needed
 
     # Calculate objective  # TODO use gamma_poisson_nll from likelihoods.py
@@ -426,7 +486,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
               multiscale_reform=False, epsilon=None, mixture_coefs=None, mods=[]):
     """Reformat and check X.
     """
-    # FIXME epsilon shouldn't be inputted to here unless inferring struct/eps separately
+    # TODO epsilon shouldn't be inputted to here unless inferring struct/eps separately
 
     if mixture_coefs is None:
         mixture_coefs = [1]
@@ -438,7 +498,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
             lengths, multiscale_factor=multiscale_factor)
         nbeads = lengths_lowres.sum() * ploidy
 
-    if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # FIXME epsilon
+    if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # TODO epsilon
         if nbeads is None:
             raise ValueError("Must input `lengths` and `ploidy`.")
         if X.size == nbeads * 3 * len(mixture_coefs) + 1:
@@ -452,7 +512,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
                 f"Epsilon must be of length 1 or equal to the number of beads"
                 f" ({nbeads}). X.shape = ({', '.join(map(str, X.shape))}).")
     else:
-        #epsilon = None  # FIXME epsilon
+        #epsilon = None  # TODO epsilon
         pass
 
     try:
