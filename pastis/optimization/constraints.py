@@ -709,16 +709,23 @@ class HomologSeparating2022(Constraint):
                 obj = _mse_flexible(
                     actual=lambda_interhmlg, expected=ag_np.mean(counts_interchrom),
                     cutoff=self.hparams['perc_diff'], scale_by_expected=True)
+                test = _mse_flexible(
+                    actual=lambda_interhmlg, expected=ag_np.mean(counts_interchrom),
+                    cutoff=0, scale_by_expected=True)
+                if test < obj:
+                    print(f"WHY??\n{obj._value=}\n{test._value=}"); exit(1)
             else:
                 obj = _mse_outside_of_window(
                     actual=lambda_interhmlg, expected=ag_np.mean(counts_interchrom),
                     cutoff=self.hparams['perc_diff'], scale_by_expected=True)
             if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-                tmp = ', '.join([f"{x:.3g}" for x in lambda_interhmlg._value.ravel().tolist()])
+                tmp = f'\t  σ²={lambda_interhmlg.var():.2g}'
+                if 'mean' in self.mods:
+                    tmp = tmp + '\t  λ=' + ', '.join([f"{x:.2g}" for x in lambda_interhmlg._value.ravel().tolist()])
                 if epsilon is None:
-                    print(f"c={np.mean(counts_interchrom):.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  λ={tmp}", flush=True)
+                    print(f"c={np.mean(counts_interchrom):.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}{tmp}", flush=True)
                 else:
-                    print(f"c={np.mean(counts_interchrom):.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  ε={epsilon:.2g}\t  λ={tmp}", flush=True)
+                    print(f"c={np.mean(counts_interchrom):.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  ε={epsilon:.2g}{tmp}", flush=True)
         elif 'gamma' in self.mods:
             if self.multiscale_factor > 1:
                 # gamma_mean, gamma_var = get_gamma_moments(
@@ -815,12 +822,12 @@ class HomologSeparating2022(Constraint):
 
 def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
     """TODO"""
-    if scale_by_expected:
-        window = cutoff
-    else:
-        window = cutoff * expected
-
     if cutoff is not None and cutoff != 0:
+        if scale_by_expected:
+            window = cutoff
+        else:
+            window = cutoff * expected
+
         mle_expected = ag_np.mean(actual)
 
         # print(f"{window=:g}")
