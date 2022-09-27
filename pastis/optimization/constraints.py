@@ -318,7 +318,7 @@ class HomologSeparating2019(Constraint):
         n = self.lengths_lowres.sum()
         hmlg_sep = ag_np.zeros(self.lengths_lowres.shape)
         begin = end = 0
-        for i in range(self.lengths_lowres.shape[0]):
+        for i in range(self.lengths_lowres.size):
             end = end + ag_np.int32(self.lengths_lowres[i])
             chrom1_mean = ag_np.sum(struct_bw[begin:end], axis=0)
             chrom2_mean = ag_np.sum(struct_bw[(n + begin):(n + end)], axis=0)
@@ -604,6 +604,15 @@ class HomologSeparating2022(Constraint):
                              " haploid genomes.")
         if self.lambda_val < 0:
             raise ValueError("Constraint lambda may not be < 0.")
+        # Hyperparam: perc_diff  # TODO maybe remove
+        if self.hparams is None:
+            self.hparams = {'perc_diff': None}
+        if 'perc_diff' not in self.hparams:
+            self.hparams['perc_diff'] = None
+        if self.hparams['perc_diff'] is not None and (
+                self.hparams['perc_diff'] < 0 or self.hparams['perc_diff'] > 1):
+            raise ValueError("'perc_diff' must be between 0 and 1.")
+        # Hyperparam: counts_interchrom
         if self.hparams is None or 'counts_interchrom' not in self.hparams or (
                 self.hparams['counts_interchrom'] is None):
             raise ValueError(f"{self.name} constraint is missing"
@@ -676,7 +685,40 @@ class HomologSeparating2022(Constraint):
         counts_interchrom = self.hparams['counts_interchrom']
 
         if 'mse' in self.mods:
-            pass
+            dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
+            lambda_interhmlg = gamma_mean = (4 * var['beta']) * (
+                bias_interhmlg * dis_alpha_interhmlg)
+            if 'mean' in self.mods:
+                lambda_interhmlg = lambda_interhmlg.reshape(n, n)
+                nchrom = self.lengths.size
+                interhmlg_mean = ag_np.zeros((nchrom, nchrom))
+                begin_i = end_i = 0
+                for i in range(nchrom):
+                    end_i = end_i + ag_np.int32(self.lengths_lowres[i])
+                    begin_j = end_j = 0
+                    for j in range(nchrom):
+                        end_j = end_j + ag_np.int32(self.lengths_lowres[j])
+                        # print(f"i={i}=[{begin_i}:{end_i}],  j={j}=[{begin_j}:{end_j}]")
+                        interhmlg_mean = interhmlg_mean.at[i, j].set(ag_np.mean(
+                            lambda_interhmlg[begin_i:end_i, begin_j:end_j]))
+                        begin_j = end_j
+                    begin_i = end_i
+                lambda_interhmlg = interhmlg_mean
+                # print(lambda_interhmlg); exit(0)
+            if 'flex' in self.mods:
+                obj = _mse_flexible(
+                    actual=lambda_interhmlg, expected=ag_np.mean(counts_interchrom),
+                    cutoff=self.hparams['perc_diff'], scale_by_expected=True)
+            else:
+                obj = _mse_outside_of_window(
+                    actual=lambda_interhmlg, expected=ag_np.mean(counts_interchrom),
+                    cutoff=self.hparams['perc_diff'], scale_by_expected=True)
+            if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                tmp = ', '.join([f"{x:.3g}" for x in lambda_interhmlg._value.ravel().tolist()])
+                if epsilon is None:
+                    print(f"c={np.mean(counts_interchrom):.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  λ={tmp}", flush=True)
+                else:
+                    print(f"c={np.mean(counts_interchrom):.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  ε={epsilon:.2g}\t  λ={tmp}", flush=True)
         elif 'gamma' in self.mods:
             if self.multiscale_factor > 1:
                 # gamma_mean, gamma_var = get_gamma_moments(
@@ -771,6 +813,78 @@ class HomologSeparating2022(Constraint):
         return self.lambda_val * obj
 
 
+def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
+    """TODO"""
+    if scale_by_expected:
+        window = cutoff
+    else:
+        window = cutoff * expected
+
+    if cutoff is not None and cutoff != 0:
+        mle_expected = ag_np.mean(actual)
+
+        # print(f"{window=:g}")
+        # print(f"{expected=:g}")
+        # print(f"{mle_expected=:g}")
+
+        sub_from_expected = relu_min(relu(expected - mle_expected), window)
+        add_to_expected = relu_min(relu(mle_expected - expected), window)
+        expected = expected + add_to_expected - sub_from_expected
+
+        # print(f"{add_to_expected=:g}")
+        # print(f"{sub_from_expected=:g}")
+        # print(f"{expected=:g}")
+
+    if scale_by_expected:
+        diff = 1 - actual / expected
+    else:
+        diff = expected - actual
+    mse = ag_np.mean(ag_np.square(diff))
+
+    return mse
+
+
+def _mse_outside_of_window(actual, expected, cutoff=None, scale_by_expected=True, new=True):
+    """TODO"""
+    if scale_by_expected:
+        diff = 1 - actual / expected
+    else:
+        diff = expected - actual
+
+    if cutoff is None:
+        diff = relu(diff)
+        mse = ag_np.mean(ag_np.square(diff))
+        raise ValueError("I thought we weren't doing ReLU for HSC anymore")  # TODO remove ValueError
+        return mse
+
+    if cutoff == 0:
+        mse = ag_np.mean(ag_np.square(diff))
+        return mse
+
+    if scale_by_expected:
+        window = cutoff
+    else:
+        window = cutoff * expected
+
+    if new:
+        n = diff.size
+        diff_gt0 = relu(diff)
+        diff_lt0 = -relu(-diff)
+        diff_gt0 = relu(diff_gt0 - window)
+        diff_lt0 = -relu(-(diff_lt0 + window))
+        mse = (ag_np.square(diff_gt0).sum() + ag_np.square(diff_lt0).sum()) / n
+    else:  # TODO remove old code
+        window = ag_np.array(window)
+        if window.size == 1 and actual.size > 1:
+            window = ag_np.tile(window, actual.size)
+        gt0 = diff > 0
+        diff = diff.at[gt0].set(relu(diff[gt0] - window[gt0]))
+        diff = diff.at[~gt0].set(-relu(-(diff[~gt0] + window[~gt0])))
+        mse = ag_np.mean(ag_np.square(diff))
+
+    return mse
+
+
 def relu_max(x1, x2):  # TODO move to likelihoods.py
     # TODO this is temporary, remove this and switch to jax_max
     # returns max(x1, x2)
@@ -803,8 +917,8 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
             hsc_lambda != 0 and hsc_version == '2022'):
         if counts_interchrom is None:
             counts_interchrom = get_fullres_counts_interchrom(
-                counts, lengths=lengths, ploidy=ploidy,
-                multiscale_factor=multiscale_factor, mods=mods)
+                counts, lengths=lengths, ploidy=ploidy, mods=mods,
+                verbose=verbose)
         elif isinstance(counts_interchrom, str):
             try:
                 counts_interchrom = float(counts_interchrom)
@@ -821,7 +935,8 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
         '2022': {'counts_interchrom': counts_interchrom}}
     hsc_hparams = {
         '2019': {'est_hmlg_sep': est_hmlg_sep, 'perc_diff': hsc_perc_diff},
-        '2022': {'counts_interchrom': counts_interchrom}}
+        '2022': {'counts_interchrom': counts_interchrom,
+                 'perc_diff': hsc_perc_diff}}
 
     constraints = []
     if bcc_lambda != 0:
@@ -846,7 +961,8 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
     return constraints
 
 
-def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[]):
+def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[],
+                                  verbose=False):
     if lengths.size == 1:
         raise ValueError(
             "Must input counts_interchrom if inferring single chromosome.")
@@ -855,6 +971,9 @@ def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[]):
     counts_interchrom = _inter_counts(
         counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
     counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
+    if verbose:
+        print(f"Mean inter-chromosomal counts={counts_interchrom.mean():.3g}",
+              flush=True)
     if 'nbinom' in mods or 'nb_model' in mods:
         return counts_interchrom
     else:
