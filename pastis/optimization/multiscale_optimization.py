@@ -661,7 +661,13 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
         multiscale_factor=multiscale_factor,
         lengths=lengths, ploidy=ploidy)
 
-    if fullres_struct_nan is not None and fullres_struct_nan.shape != 0:
+    if fullres_struct_nan is not None and fullres_struct_nan.size != 0:
+        n = lengths.sum()
+        if ploidy == 1 and fullres_struct_nan.max() >= n:
+            fullres_struct_nan[fullres_struct_nan >= n] -= n
+            fullres_struct_nan = np.unique(fullres_struct_nan)
+        if fullres_struct_nan.max() >= ploidy * n:
+            raise ValueError("Inconsistent number of beads.")
         bad_idx[np.isin(fullres_idx, fullres_struct_nan)] = True
 
     return (~bad_idx).sum(axis=0)
