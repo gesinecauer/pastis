@@ -40,10 +40,14 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
     if not isinstance(counts, list):
         counts = [counts]
 
+    counts = [c for c in counts if c.sum() != 0]
+
     if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
+        c = counts[0]
+        if not isinstance(c, np.ndarray):
+            c = c.toarray()
         return _check_counts_matrix(
-            counts[0], lengths=lengths, ploidy=ploidy,
-            exclude_zeros=exclude_zeros)
+            c, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
     output = np.zeros((n, n))
     for c in counts:
