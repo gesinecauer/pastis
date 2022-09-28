@@ -12,6 +12,7 @@ jax_config.update("jax_enable_x64", True)
 from jax import custom_jvp, lax
 import jax.numpy as ag_np
 from jax.nn import relu
+from jax.scipy.special import gammaln
 
 from tensorflow_probability.substrates import jax as tfp
 from typing import Any
@@ -169,16 +170,36 @@ def skellam_nll(data, mu1, mu2, mods=[]):
     return obj
 
 
-def poisson_nll(data, lambda_pois, mask=None, num_fullres_per_lowres_bins=1):
+def negbinom_nll(data, n, p, mean=True):
+    if mean:
+        tmp1 = ag_np.mean(gammaln(data + n))
+        tmp2 = - ag_np.mean(gammaln(n))
+        tmp3 = ag_np.mean(data * ag_np.log(1 - p))
+        tmp4 = ag_np.mean(n * ag_np.log(p))
+    else:
+        tmp1 = ag_np.sum(ag_np.mean(gammaln(data + n), axis=0))
+        tmp2 = - ag_np.sum(gammaln(n))
+        tmp3 = ag_np.sum(ag_np.mean(data * ag_np.log(1 - p), axis=0))
+        tmp4 = ag_np.sum(n * ag_np.log(p))
+    log_likelihood = tmp1 + tmp2 + tmp3 + tmp4
+    return -log_likelihood
+
+
+def poisson_nll(data, lambda_pois, mask=None, num_fullres_per_lowres_bins=1, mean=True):
+    if mean:
+        fxn = ag_np.mean
+    else:
+        fxn = ag_np.sum
+
     lambda_pois = ag_np.asarray(lambda_pois)
     data = ag_np.asarray(data)
 
-    obj = ag_np.mean(lambda_pois * num_fullres_per_lowres_bins)
+    obj = fxn(lambda_pois * num_fullres_per_lowres_bins)
     non0 = (data != 0)
     if np.any(non0):
         if data.ndim > lambda_pois.ndim:
             data = _masksum(data, mask=mask, axis=0)
             # non0 = (data != 0)
-        # obj = obj - ag_np.mean(data[non0] * ag_np.log(lambda_pois[non0])) # TODO implement
-        obj = obj - ag_np.mean(data * ag_np.log(lambda_pois))
+        # obj = obj - fxn(data[non0] * ag_np.log(lambda_pois[non0])) # TODO implement
+        obj = obj - fxn(data * ag_np.log(lambda_pois))
     return obj
