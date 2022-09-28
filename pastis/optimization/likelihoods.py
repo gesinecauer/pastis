@@ -177,9 +177,9 @@ def negbinom_nll(data, n, p, mean=True):
         tmp3 = ag_np.mean(data * ag_np.log(1 - p))
         tmp4 = ag_np.mean(n * ag_np.log(p))
     else:
-        tmp1 = ag_np.sum(ag_np.mean(gammaln(data + n), axis=0))
+        tmp1 = ag_np.sum(gammaln(data + n)) / data.shape[0]
         tmp2 = - ag_np.sum(gammaln(n))
-        tmp3 = ag_np.sum(ag_np.mean(data * ag_np.log(1 - p), axis=0))
+        tmp3 = ag_np.sum(data * ag_np.log(1 - p)) / data.shape[0]
         tmp4 = ag_np.sum(n * ag_np.log(p))
     log_likelihood = tmp1 + tmp2 + tmp3 + tmp4
     return -log_likelihood
