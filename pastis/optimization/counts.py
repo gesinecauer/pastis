@@ -219,7 +219,7 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
         raise ValueError("Counts matrix shape (%d, %d) does not match lenghts"
                          " (%s)"
                          % (counts.shape[0], counts.shape[1],
-                             ",".join(map(str, lengths))))
+                             ", ".join(map(str, lengths))))
 
     empty_val = 0
     struct_nan_mask = np.full((max(counts.shape)), False)
@@ -960,8 +960,10 @@ class SparseCountsMatrix(CountsMatrix):
 
     def toarray(self):
         # TODO decide what this fxn should actually do (esp wrt reform), and make AtypicalCM match
+        lengths_lowres = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor)
         return _check_counts_matrix(
-            self.tocoo().toarray(), lengths=self.lengths, ploidy=self.ploidy,
+            self.tocoo().toarray(), lengths=lengths_lowres, ploidy=self.ploidy,
             exclude_zeros=False)
 
     def tocoo(self):
