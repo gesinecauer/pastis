@@ -13,6 +13,7 @@ from jax import custom_jvp, lax
 import jax.numpy as ag_np
 from jax.nn import relu
 from jax.scipy.special import gammaln
+from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
 
 from tensorflow_probability.substrates import jax as tfp
 from typing import Any
@@ -56,10 +57,10 @@ def relu_min(x1, x2):
     return - (relu((-x1) - (-x2)) + (-x2))
 
 
-def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins, bias=None,
-                      mask=None, mods=[]):
+def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
+                      bias=None, mask=None, mods=[]):
     if num_fullres_per_lowres_bins is None:  # TODO really?
-        num_fullres_per_lowres_bins = data.shape[1]
+        num_fullres_per_lowres_bins = data.shape[0]
 
     if not (bias is None or np.all(bias == 1)):
         raise NotImplementedError("aaaaa.")
@@ -170,7 +171,24 @@ def skellam_nll(data, mu1, mu2, mods=[]):
     return obj
 
 
-def negbinom_nll(data, n, p, mean=True):
+def negbinom_nll(data, n, p, mean=True, use_scipy=False, num_stable=True):
+    if num_stable:
+        k = n
+        theta = (1 - p) / p
+        nll = gamma_poisson_nll(theta=theta, k=k, data=data)
+        if not mean:
+            nll = nll * n.size
+        return nll
+    if use_scipy:
+        log_factorial_data = gammaln(data + 1).mean()
+        if mean:
+            log_likelihood = logpmf_negbinom(data, n=n, p=p).mean()
+            log_likelihood = log_likelihood + log_factorial_data
+        else:
+            log_likelihood = logpmf_negbinom(
+                data, n=n, p=p).sum() / data.shape[0]
+            log_likelihood = log_likelihood + log_factorial_data * n.size
+        return -log_likelihood
     if mean:
         tmp1 = ag_np.mean(gammaln(data + n))
         tmp2 = - ag_np.mean(gammaln(n))
