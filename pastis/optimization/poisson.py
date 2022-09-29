@@ -88,11 +88,11 @@ def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
     epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
     # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
-    ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
-    ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+    ln_fxn_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
+    ln_fxn_var = _polyval(epsilon_over_dis, coefs=coefs_var)
 
-    gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
-    gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
+    gamma_mean = ag_np.exp(ln_fxn_mean) * dis_alpha * beta
+    gamma_var = ag_np.exp(ln_fxn_var) * ag_np.square(dis_alpha * beta)
 
     if ambiguity != 'ua':
         if ambiguity == 'ambig':
@@ -114,16 +114,16 @@ def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
     epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
     # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
-    ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
-    ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+    ln_fxn_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
+    ln_fxn_var = _polyval(epsilon_over_dis, coefs=coefs_var)
 
     if ambiguity == 'ua':
-        theta_tmp = dis_alpha * ag_np.exp(ln_gamma_var - ln_gamma_mean)
+        theta_tmp = dis_alpha * ag_np.exp(ln_fxn_var - ln_fxn_mean)
 
-        k = ag_np.exp(2 * ln_gamma_mean - ln_gamma_var)
+        k = ag_np.exp(2 * ln_fxn_mean - ln_fxn_var)
     else:
-        gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
-        gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
+        gamma_mean = ag_np.exp(ln_fxn_mean) * dis_alpha
+        gamma_var = ag_np.exp(ln_fxn_var) * ag_np.square(dis_alpha)
 
         if ambiguity == 'ambig':
             reshape_0 = 4
@@ -173,16 +173,16 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # temp
         # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
-        ln_gamma_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
-        ln_gamma_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+        ln_fxn_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
+        ln_fxn_var = _polyval(epsilon_over_dis, coefs=coefs_var)
 
-        gamma_mean = ag_np.exp(ln_gamma_mean) * dis_alpha
-        gamma_var = ag_np.exp(ln_gamma_var) * ag_np.square(dis_alpha)
+        gamma_mean = ag_np.exp(ln_fxn_mean) * dis_alpha
+        gamma_var = ag_np.exp(ln_fxn_var) * ag_np.square(dis_alpha)
 
         if counts.ambiguity == 'ua':
-            theta_tmp = dis_alpha * ag_np.exp(ln_gamma_var - ln_gamma_mean)
+            theta_tmp = dis_alpha * ag_np.exp(ln_fxn_var - ln_fxn_mean)
 
-            k_tmp = ag_np.exp(2 * ln_gamma_mean - ln_gamma_var)
+            k_tmp = ag_np.exp(2 * ln_fxn_mean - ln_fxn_var)
         else:
             if counts.ambiguity != 'ua':
                 # print(ag_np.median(dis.reshape(-1, counts.nnz), axis=1))
@@ -231,14 +231,14 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         if counts.type == 'zero':
             printvars({
                 'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
-                'ln mean(ΓRV)': ln_gamma_mean, 'ln var(ΓRV)': ln_gamma_var,
-                'mean(ΓRV)': ag_np.exp(ln_gamma_mean), 'var(ΓRV)': ag_np.exp(ln_gamma_var),
+                'ln mean(ΓRV)': ln_fxn_mean, 'ln var(ΓRV)': ln_fxn_var,
+                'mean(ΓRV)': ag_np.exp(ln_fxn_mean), 'var(ΓRV)': ag_np.exp(ln_fxn_var),
                 'obj_tmp1': obj_tmp1})
         else:
             printvars({
                 'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
-                'ln mean(ΓRV)': ln_gamma_mean, 'ln var(ΓRV)': ln_gamma_var,
-                'mean(ΓRV)': ag_np.exp(ln_gamma_mean), 'var(ΓRV)': ag_np.exp(ln_gamma_var),
+                'ln mean(ΓRV)': ln_fxn_mean, 'ln var(ΓRV)': ln_fxn_var,
+                'mean(ΓRV)': ag_np.exp(ln_fxn_mean), 'var(ΓRV)': ag_np.exp(ln_fxn_var),
                 'c_ij / k': (counts.data / k),
                 '1 + c_ij / k': (1 + counts.data / k),
                 '<0  1 + c_ij / k': (1 + counts.data / k)[(1 + counts.data / k) < 0],
