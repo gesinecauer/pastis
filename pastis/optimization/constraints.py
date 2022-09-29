@@ -13,8 +13,6 @@ jax_config.update("jax_platform_name", "cpu")
 jax_config.update("jax_enable_x64", True)
 import jax.numpy as ag_np
 from jax.nn import relu
-from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
-from jax.scipy.stats.poisson import logpmf as logpmf_poisson
 from jax.scipy.stats.gamma import logpdf as logpdf_gamma
 # from jax.scipy.special import gammaln
 
@@ -514,25 +512,21 @@ class BeadChainConnectivity2022(Constraint):
             multiscale_factor=self.multiscale_factor)
 
         # Get bias corresponding to neighboring beads
-        row_nghbr_ambig = _neighboring_bead_indices(
-            lengths=self.lengths, ploidy=1,
-            multiscale_factor=self.multiscale_factor)  # this is lowres rows
+        row_nghbr_ambig_fullres = _neighboring_bead_indices(
+            lengths=self.lengths, ploidy=1, multiscale_factor=1)
         if bias is None or np.all(bias == 1):
             bias_nghbr = 1
         else:
-            raise NotImplementedError("Implement for multires!")
-            # for this constraint, can probably actually just use fullres bias
-            # & input into the gamma-poisson objective...
-            bias_nghbr = bias.ravel()[row_nghbr_ambig] * bias.ravel()[
-                row_nghbr_ambig + 1]
+            bias_nghbr = bias.ravel()[row_nghbr_ambig_fullres] * bias.ravel()[
+                row_nghbr_ambig_fullres + 1]
 
         # Get counts corresponding to neighboring beads
-        counts = [c for c in counts if c.sum() != 0]
         counts_ambig = ambiguate_counts(
             counts=counts, lengths=self.lengths, ploidy=self.ploidy,
             exclude_zeros=False)
         if self.multiscale_factor == 1:
-            counts_nghbr = counts_ambig[row_nghbr_ambig, row_nghbr_ambig + 1]
+            counts_nghbr = counts_ambig[
+                row_nghbr_ambig_fullres, row_nghbr_ambig_fullres + 1]
             counts_nghbr[np.isnan(counts_nghbr)] = np.nanmean(counts_nghbr)
         else:
             raise NotImplementedError
@@ -564,14 +558,49 @@ class BeadChainConnectivity2022(Constraint):
 
         nghbr_dis = _euclidean_distance(
             struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
-        lambda_nghbr = var['beta'] * var['bias_nghbr'] * ag_np.power(
-            nghbr_dis, alpha)
 
-        # TODO technically not poisson - continuous.... gamma?
-        data = np.maximum(
-            0, var['counts_nghbr'] - np.mean(
-                self.hparams['counts_interchrom']) / 2)
-        obj = poisson_nll(np.tile(data, 2), lambda_pois=2 * lambda_nghbr)
+        lambda_interchrom = np.mean(self.hparams['counts_interchrom']) / 2
+
+        if self.multiscale_factor == 1:
+            lambda_nghbr = 2 * var['beta'] * var['bias_nghbr'] * ag_np.power(
+                nghbr_dis, alpha)
+            lambda_nghbr = lambda_nghbr + lambda_interchrom
+            obj = poisson_nll(
+                np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_nghbr)
+        else:
+            raise NotImplementedError
+            # FIXME do we ant fullres or lowres counts_interchrom?
+            # FIXME is it legit to just add to gamma_mean like that?
+            # FIXME and what about multiplying gamma_mean by 2...??? wait, I should probably mark it as PA not UA then... right?
+
+            gamma_mean, gamma_var = get_gamma_moments(
+                dis=nghbr_dis, epsilon=epsilon, alpha=alpha,
+                beta=4 * var['beta'], ambiguity='ua')
+            gamma_mean = 2 * gamma_mean + lambda_interchrom
+
+            theta_tmp = gamma_var / gamma_mean
+            k = ag_np.square(gamma_mean) / gamma_var
+            theta = var['beta'] * theta_tmp
+
+            num_fullres_per_lowres_bins = (
+                var['fullres_per_lowres_bead'][var['row_nghbr']]) * (
+                var['fullres_per_lowres_bead'][var['row_nghbr'] + 1])
+
+            obj = gamma_poisson_nll(
+                theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
+                bias=var['bias_nghbr'],
+                num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
+                mods=self.mods)
+
+            lambda_nghbr = gamma_mean  # TODO temp
+
+        if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+            to_print = f"c={var['counts_nghbr'].mean():.2g}\t   μ={lambda_nghbr.mean():.2g}"
+            if epsilon is not None:
+                lambda_nghbr = 2 * var['beta'] * var['bias_nghbr'] * ag_np.power(
+                    nghbr_dis, alpha) + lambda_interchrom
+                to_print += f"\t   μ*={lambda_nghbr.mean():.2g}\t   ε={epsilon:.2g}"
+            print(to_print + f"\t   obj={obj:.2g}", flush=True)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
@@ -791,11 +820,15 @@ class HomologSeparating2022(Constraint):
                 # FIXME do something about fullres_per_lowres_bins
                 nb_mean = lambda_interhmlg
                 if self.multiscale_factor > 1:
-                    nb_mean = nb_mean * np.square(self.multiscale_factor)
+                    # num_fullres_per_lowres_bins = (
+                    #     var['fullres_per_lowres_bead'][row]) * (
+                    #     var['fullres_per_lowres_bead'][col + n])
+                    # nb_mean = nb_mean * num_fullres_per_lowres_bins
+                    nb_mean = nb_mean * np.square(self.multiscale_factor)  # TODO this is the best option, right?
 
                 counts_var = counts_interchrom.var()
-                nb_var = relu_max(counts_var, nb_mean)
 
+                # This must come after getting counts_var
                 mods_numeric = [x for x in self.mods if re.match(r'^[1-9][0-9]*$', x)]
                 if len(mods_numeric) > 1:
                     raise ValueError("see this is what happens when you do dumb hacks")
@@ -803,10 +836,7 @@ class HomologSeparating2022(Constraint):
                     lim = int(mods_numeric[0])
                     counts_interchrom = counts_interchrom[:lim]  # FIXME (out of 22500)
 
-                nb_mask = nb_mean != nb_var
-                # obj_pois = -logpmf_poisson(
-                #     counts_interchrom.reshape(-1, 1),
-                #     mu=nb_mean[~nb_mask])
+                nb_mask = (nb_mean != relu_max(counts_var, nb_mean))
                 if (~nb_mask).sum() == 0:
                     obj_pois = 0
                 else:
@@ -814,32 +844,18 @@ class HomologSeparating2022(Constraint):
                         counts_interchrom.mean(), lambda_pois=nb_mean[~nb_mask],
                         mean=False)
 
-                # log_factorial_counts = gammaln(counts_interchrom + 1).mean()
-                # print(gammaln(counts_interchrom + 1).mean())
-
-                # obj_test = poisson_nll(
-                #     counts_interchrom.mean(), lambda_pois=nb_mean[~nb_mask]) + log_factorial_counts
-                # print(ag_np.isclose(obj_pois.mean(), obj_test))
-
-                p = nb_mean[nb_mask] / counts_var
-                n = ag_np.square(nb_mean[nb_mask]) / (counts_var - nb_mean[nb_mask])
-                # obj_nb = -logpmf_negbinom(
-                #     counts_interchrom.reshape(-1, 1), n=n, p=p) - log_factorial_counts
                 if nb_mask.sum() == 0:
                     obj_nb = 0
                 else:
+                    p = nb_mean[nb_mask] / counts_var
+                    n = ag_np.square(nb_mean[nb_mask]) / (counts_var - nb_mean[nb_mask])
                     obj_nb = negbinom_nll(
-                        counts_interchrom.reshape(-1, 1), n=n, p=p, mean=False)
+                        counts_interchrom.reshape(-1, 1), n=n, p=p, mean=False,
+                        num_stable=True)
 
-                # obj_test = negbinom_nll(
-                #     counts_interchrom.reshape(-1, 1), n=n, p=p)
-                # if nb_mask.sum() > 0 and type(obj_nb).__name__ in ('DeviceArray', 'ndarray'):
-                #     if not ag_np.isclose(obj_nb.mean(), obj_test):
-                #         print(obj_nb.mean()); print(obj_test); exit(1)
-
-                # obj = ((obj_nb * nb_mask.sum()) + (obj_pois * (~nb_mask).sum())) / row.size
                 obj = (obj_nb + obj_pois) / row.size
                 if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                    nb_var = relu_max(counts_var, nb_mean)
                     to_print = f"c={counts_interchrom.mean():.2g}\t   μ={nb_mean.mean():.2g}\t   σ²={nb_var.mean():.2g}\t   pois={obj_pois / (~nb_mask).sum():.2g}\t   nb={obj_nb / nb_mask.sum():.2g}\t   {nb_mask.sum() / nb_mask.size * 100:.2g}% nb"
                     if epsilon is not None:
                         to_print += f"\t   ε={epsilon:.2g}"
