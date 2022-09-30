@@ -59,8 +59,13 @@ def relu_min(x1, x2):
 
 def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
                       bias=None, mask=None, mods=[]):
-    if num_fullres_per_lowres_bins is None:  # TODO really?
-        num_fullres_per_lowres_bins = data.shape[0]
+    """TODO"""
+
+    if num_fullres_per_lowres_bins is None:
+        if mask is None:
+            num_fullres_per_lowres_bins = data.shape[0]  # TODO really?
+        # else:
+        #     num_fullres_per_lowres_bins = mask.sum(axis=0)  # TODO check... probably wrong bc diff counts matrices...
 
     if not (bias is None or np.all(bias == 1)):
         raise NotImplementedError("aaaaa.")
