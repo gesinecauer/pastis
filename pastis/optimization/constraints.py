@@ -502,9 +502,18 @@ class BeadChainConnectivity2022(Constraint):
         if self._var is not None:
             return self._var
 
+        # Beta
         beta = _ambiguate_beta(
             [c.beta for c in counts if c.sum() != 0], counts=counts,
             lengths=self.lengths, ploidy=self.ploidy)
+
+        # Number of fullres beads per lowres bead
+        if self.multiscale_factor > 1:
+            fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, fullres_struct_nan=self._fullres_struct_nan)
+        else:
+            fullres_per_lowres_bead = None
 
         # Get indices of neighboring beads
         row_nghbr = _neighboring_bead_indices(
@@ -521,28 +530,56 @@ class BeadChainConnectivity2022(Constraint):
                 row_nghbr_ambig_fullres + 1]
 
         # Get counts corresponding to neighboring beads
-        counts_ambig = ambiguate_counts(
-            counts=counts, lengths=self.lengths, ploidy=self.ploidy,
-            exclude_zeros=False)
+        # counts_ambig = ambiguate_counts(
+        #     counts=counts, lengths=self.lengths, ploidy=self.ploidy,
+        #     exclude_zeros=False)  # FIXME
         if self.multiscale_factor == 1:
+            counts_ambig = ambiguate_counts(
+                counts=counts, lengths=self.lengths, ploidy=self.ploidy,
+                exclude_zeros=False)  # FIXME
             counts_nghbr = counts_ambig[
                 row_nghbr_ambig_fullres, row_nghbr_ambig_fullres + 1]
             counts_nghbr[np.isnan(counts_nghbr)] = np.nanmean(counts_nghbr)
+            counts_nghbr_mask = None
         else:
-            raise NotImplementedError
+            if len(counts) > 2:
+                raise NotImplementedError("Make .add and .ambiguate methods for counts object")
+            if not (bias is None or np.all(bias == 1)):
+                raise NotImplementedError("Need to include zero counts in ambiguated and also get nghbr counts mask")
 
-            counts_nghbr = _counts_near_diag(
-                counts_ambig, self.lengths, ploidy=self.ploidy, nbins=1,
-                exclude_zeros=False)
+            counts_ambig = [c for c in counts if c.sum() != 0][0]  # FIXME
+            # counts_nghbr = _counts_near_diag(
+            #     counts_ambig, self.lengths, ploidy=self.ploidy, nbins=1,
+            #     exclude_zeros=True)
+            # tmp = _group_counts_multiscale(
+            #     counts_nghbr, lengths=self.lengths, ploidy=self.ploidy,
+            #     multiscale_factor=self.multiscale_factor)
+            # counts_nghbr, indices, indices3d, counts_shape, counts_mask = tmp
 
-            tmp = _group_counts_multiscale(
-                counts_nghbr, lengths=self.lengths, ploidy=self.ploidy,
+            row_nghbr_ambig_lowres = _neighboring_bead_indices(
+                lengths=self.lengths, ploidy=1,
                 multiscale_factor=self.multiscale_factor)
-            counts_nghbr, indices, indices3d, counts_shape, counts_mask = tmp
+            mask = (counts_ambig.col == counts_ambig.row + 1) & np.isin(
+                counts_ambig.row, row_nghbr_ambig_lowres)
+            row_nghbr_counts = counts_ambig.row[mask]
+
+            if not np.array_equal(row_nghbr_counts, row_nghbr_ambig_lowres):
+                raise NotImplementedError("double check this code")
+                counts_nghbr = np.zeros(row_nghbr_ambig_lowres.shape)
+                counts_nghbr[:, row_nghbr_counts] = counts_ambig.data[:, mask]
+                tmp = ~np.isin(row_nghbr_ambig_lowres, row_nghbr_counts)
+                counts_nghbr[:, tmp] = np.mean(
+                    counts_nghbr[:, row_nghbr_counts])
+            else:
+                counts_nghbr = counts_ambig.data[:, mask]
+
+            counts_nghbr_mask = None  # FIXME
 
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
-            'bias_nghbr': bias_nghbr, 'beta': beta}
+            'bias_nghbr': bias_nghbr, 'beta': beta,
+            'fullres_per_lowres_bead': fullres_per_lowres_bead,
+            'counts_nghbr_mask': counts_nghbr_mask}
         if not self._lowmem:
             self._var = var
         return var
@@ -562,25 +599,28 @@ class BeadChainConnectivity2022(Constraint):
         lambda_interchrom = np.mean(self.hparams['counts_interchrom']) / 2
 
         if self.multiscale_factor == 1:
-            lambda_nghbr = 2 * var['beta'] * var['bias_nghbr'] * ag_np.power(
+            lambda_nghbr = (2 * var['beta']) * var['bias_nghbr'] * ag_np.power(
                 nghbr_dis, alpha)
             lambda_nghbr = lambda_nghbr + lambda_interchrom
             obj = poisson_nll(
                 np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_nghbr)
         else:
-            raise NotImplementedError
-            # FIXME do we ant fullres or lowres counts_interchrom?
-            # FIXME is it legit to just add to gamma_mean like that?
-            # FIXME and what about multiplying gamma_mean by 2...??? wait, I should probably mark it as PA not UA then... right?
-
+            # Multiply beta by 4 because...
+            # (1) Multiply by 2 because FIXME
+            # (2) Multiply by 2 because FIXME
+            # epsilon = 0.5  # FIXME
+            # FIXME omg I'm using the old polyfit coefficients, aren't I.... !!!!!!!!!!!!!!!!!!!!!!!!!!!
             gamma_mean, gamma_var = get_gamma_moments(
                 dis=nghbr_dis, epsilon=epsilon, alpha=alpha,
-                beta=4 * var['beta'], ambiguity='ua')
-            gamma_mean = 2 * gamma_mean + lambda_interchrom
+                beta=(2 * var['beta']), ambiguity='ua')
 
-            theta_tmp = gamma_var / gamma_mean
+            # Add lambda_interchrom (increases gamma mean & Poisson variance)
+            # FIXME TODO we want fullres lambda_interchrom, right?
+            gamma_mean = gamma_mean + (
+                lambda_interchrom / np.square(self.multiscale_factor))  # TODO this is the best option, right?
+
+            theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
-            theta = var['beta'] * theta_tmp
 
             num_fullres_per_lowres_bins = (
                 var['fullres_per_lowres_bead'][var['row_nghbr']]) * (
@@ -588,19 +628,22 @@ class BeadChainConnectivity2022(Constraint):
 
             obj = gamma_poisson_nll(
                 theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
-                bias=var['bias_nghbr'],
+                bias=var['bias_nghbr'], mask=var['counts_nghbr_mask'],
                 num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
                 mods=self.mods)
 
             lambda_nghbr = gamma_mean  # TODO temp
 
         if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-            to_print = f"c={var['counts_nghbr'].mean():.2g}\t   μ={lambda_nghbr.mean():.2g}"
+            to_print = f"𝔼[c]={var['counts_nghbr'].mean():.3g}\t   μNB={lambda_nghbr.mean():.2g}"
             if epsilon is not None:
-                lambda_nghbr = 2 * var['beta'] * var['bias_nghbr'] * ag_np.power(
-                    nghbr_dis, alpha) + lambda_interchrom
-                to_print += f"\t   μ*={lambda_nghbr.mean():.2g}\t   ε={epsilon:.2g}"
-            print(to_print + f"\t   obj={obj:.2g}", flush=True)
+                to_print += f"\t   V[c]={var['counts_nghbr'].var(axis=0).mean():.3g}"
+                to_print += f"\t   σ²NB={(gamma_mean + gamma_var).mean():.3g}\t   ε={epsilon:.2g}"
+                # lambda_nghbr = (2 * var['beta']) * var['bias_nghbr'] * ag_np.power(
+                #     nghbr_dis, alpha) + lambda_interchrom
+                # to_print += f"\t   μ*={lambda_nghbr.mean():.2g}"
+            print(to_print + f"\t   obj={obj:.3g}", flush=True)
+            exit(1)
 
         if ag_np.isnan(obj) or ag_np.isinf(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
