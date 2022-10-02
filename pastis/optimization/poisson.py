@@ -22,65 +22,12 @@ from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .callbacks import Callback
 from .utils_poisson import _print_code_header, jax_max
-
-
-coefs_mean = [5.549172757571418e-20, -1.6470775119344408e-17, 2.2606861003877433e-15, -1.903579023849604e-13, 1.1000461737635397e-11, -4.6239683202570464e-10, 1.4619806820341588e-08, -3.546250613583712e-07, 6.670958632097694e-06, -9.772260096077662e-05, 0.0011130662843361946, -0.00978764088393751, 0.0655592914191458, -0.3273049894339556, 1.1766273423250435, -2.872565184957617, 4.228635441434826, -2.533538222083517, -1.3991509787571033, 0.5364137375876942, -0.014652303861952376]
-coefs_var = [-8.89723012160453e-20, 2.6939031920163006e-17, -3.780088866833452e-15, 3.262503889748274e-13, -1.9384315351972383e-11, 8.408736957761065e-10, -2.7561824714335875e-08, 6.969965186508444e-07, -1.3766418318829012e-05, 0.00021367122264464005, -0.002609568682021054, 0.025003741308379887, -0.18663053580505512, 1.0728333419317682, -4.671837208672972, 15.062582659039125, -34.8224086368473, 55.041717936059165, -54.63542672952499, 25.766016969084514, -5.116935512532633]
-
-
-def _polyval(x, coefs):  # TODO move to likelihoods.py or maybe utils_poisson.py
-    """Analagous to np.polyval (which is not differentiable with jax)"""
-    ans = 0
-    power = len(coefs) - 1
-    for coef in coefs:
-        ans = ans + coef * ag_np.power(x, power)
-        power = power - 1
-    return ans
-
-
-def _stirling(z):  # TODO move to likelihoods.py
-    """Computes B_N(z)
-    """
-    sterling_coefs = [
-        8.11614167470508450300E-4, -5.95061904284301438324E-4,
-        7.93650340457716943945E-4, -2.77777777730099687205E-3,
-        8.33333333333331927722E-2]
-    z_sq_inv = 1. / (z * z)
-    return _polyval(z_sq_inv, coefs=sterling_coefs) / z
-
-
-def _masksum(x, mask, axis=None):  # TODO move to likelihoods.py
-    """Sum of masked array (for autograd)"""
-    return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
-
-
-def relu_min(x1, x2):  # TODO move to likelihoods.py
-    # TODO this is temporary, remove this and switch to jax_min
-    # returns min(x1, x2)
-    return - (relu((-x1) - (-x2)) + (-x2))
-
-
-def loss2(x, mask, num_fullres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO remove
-    log1p_theta = np.log1p(theta)
-    obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
-    obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k + 1)
-    obj_tmp3 = _masksum(
-        _stirling(x + k + 1), mask=mask,
-        axis=0)
-    obj_tmp4 = _masksum(x, mask=mask, axis=0) * (
-        np.log(theta) + np.log1p(k) - log1p_theta - 1)
-    obj_tmp5 = _masksum(
-        (x + k + 0.5) * np.log1p(
-            x / (k + 1)), mask=mask, axis=0)
-    obj_tmp6 = -_masksum(np.log1p(
-        x / k), mask=mask, axis=0)
-    obj = np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
-    # Taking negative log likelihood
-    return - obj
+from .polynomial import _approx_ln_f
+from .likelihoods import _stirling, _masksum, relu_min
 
 
 def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
-                      max_epsilon_over_dis=25):
+                      max_epsilon_over_dis=25, inferring_alpha=False):
 
     dis_alpha = ag_np.power(dis, alpha)
     epsilon_over_dis = epsilon / dis
@@ -88,11 +35,11 @@ def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
     epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
     # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
-    ln_fxn_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
-    ln_fxn_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+    ln_f_mean, ln_f_var = _approx_ln_f(
+        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
 
-    gamma_mean = ag_np.exp(ln_fxn_mean) * dis_alpha * beta
-    gamma_var = ag_np.exp(ln_fxn_var) * ag_np.square(dis_alpha * beta)
+    gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha * beta
+    gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha * beta)
 
     if ambiguity != 'ua':
         if ambiguity == 'ambig':
@@ -102,11 +49,13 @@ def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
         gamma_mean = gamma_mean.reshape(reshape_0, -1).sum(axis=0)
         gamma_var = gamma_var.reshape(reshape_0, -1).sum(axis=0)
 
+    # if not (ag_np.isfinite(gamma_mean) and ag_np.isfinite(gamma_var)): # TODO?
+
     return gamma_mean, gamma_var
 
 
 def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
-                     max_epsilon_over_dis=25):
+                     max_epsilon_over_dis=25, inferring_alpha=False):
 
     dis_alpha = ag_np.power(dis, alpha)
     epsilon_over_dis = epsilon / dis
@@ -114,16 +63,16 @@ def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
     epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
     # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
-    ln_fxn_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
-    ln_fxn_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+    ln_f_mean, ln_f_var = _approx_ln_f(
+        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
 
     if ambiguity == 'ua':
-        theta_tmp = dis_alpha * ag_np.exp(ln_fxn_var - ln_fxn_mean)
+        theta_tmp = dis_alpha * ag_np.exp(ln_f_var - ln_f_mean)
 
-        k = ag_np.exp(2 * ln_fxn_mean - ln_fxn_var)
+        k = ag_np.exp(2 * ln_f_mean - ln_f_var)
     else:
-        gamma_mean = ag_np.exp(ln_fxn_mean) * dis_alpha
-        gamma_var = ag_np.exp(ln_fxn_var) * ag_np.square(dis_alpha)
+        gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha
+        gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha)
 
         if ambiguity == 'ambig':
             reshape_0 = 4
@@ -140,8 +89,9 @@ def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
 
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
-                           bias=None, multiscale_factor=1, mixture_coefs=None,
-                           mods=[], max_epsilon_over_dis=25):
+                           bias=None, multiscale_factor=1,
+                           inferring_alpha=False, mixture_coefs=None,
+                           max_epsilon_over_dis=25, mods=[]):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
@@ -173,16 +123,16 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # temp
         # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
-        ln_fxn_mean = _polyval(epsilon_over_dis, coefs=coefs_mean)
-        ln_fxn_var = _polyval(epsilon_over_dis, coefs=coefs_var)
+        ln_f_mean, ln_f_var = _approx_ln_f(
+            epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
 
-        gamma_mean = ag_np.exp(ln_fxn_mean) * dis_alpha
-        gamma_var = ag_np.exp(ln_fxn_var) * ag_np.square(dis_alpha)
+        gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha
+        gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha)
 
         if counts.ambiguity == 'ua':
-            theta_tmp = dis_alpha * ag_np.exp(ln_fxn_var - ln_fxn_mean)
+            theta_tmp = dis_alpha * ag_np.exp(ln_f_var - ln_f_mean)
 
-            k_tmp = ag_np.exp(2 * ln_fxn_mean - ln_fxn_var)
+            k_tmp = ag_np.exp(2 * ln_f_mean - ln_f_var)
         else:
             if counts.ambiguity != 'ua':
                 # print(ag_np.median(dis.reshape(-1, counts.nnz), axis=1))
@@ -222,7 +172,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     obj = ag_np.mean(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
 
-    if ag_np.isnan(obj) or ag_np.isinf(obj):
+    if not ag_np.isfinite(obj):
         from topsy.utils.debug import printvars  # FIXME
         if type(obj).__name__ == 'JVPTracer':
             raise ValueError(
@@ -231,14 +181,14 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         if counts.type == 'zero':
             printvars({
                 'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
-                'ln mean(ΓRV)': ln_fxn_mean, 'ln var(ΓRV)': ln_fxn_var,
-                'mean(ΓRV)': ag_np.exp(ln_fxn_mean), 'var(ΓRV)': ag_np.exp(ln_fxn_var),
+                'ln mean(ΓRV)': ln_f_mean, 'ln var(ΓRV)': ln_f_var,
+                'mean(ΓRV)': ag_np.exp(ln_f_mean), 'var(ΓRV)': ag_np.exp(ln_f_var),
                 'obj_tmp1': obj_tmp1})
         else:
             printvars({
                 'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
-                'ln mean(ΓRV)': ln_fxn_mean, 'ln var(ΓRV)': ln_fxn_var,
-                'mean(ΓRV)': ag_np.exp(ln_fxn_mean), 'var(ΓRV)': ag_np.exp(ln_fxn_var),
+                'ln mean(ΓRV)': ln_f_mean, 'ln var(ΓRV)': ln_f_var,
+                'mean(ΓRV)': ag_np.exp(ln_f_mean), 'var(ΓRV)': ag_np.exp(ln_f_var),
                 'c_ij / k': (counts.data / k),
                 '1 + c_ij / k': (1 + counts.data / k),
                 '<0  1 + c_ij / k': (1 + counts.data / k)[(1 + counts.data / k) < 0],
@@ -305,7 +255,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             counts_data = _masksum(counts.data, mask=counts.mask, axis=0)
         obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()  # TODO fix on main branch: mean not sum!
 
-    if ag_np.isnan(obj) or ag_np.isinf(obj):
+    if not ag_np.isfinite(obj):
         from topsy.utils.debug import printvars
         if type(dis).__name__ != 'ArrayBox':
             printvars({
@@ -321,7 +271,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
 
 def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                mixture_coefs=None, mods=[]):
+                inferring_alpha=False, mixture_coefs=None, mods=[]):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -348,7 +298,8 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
         obj = _multires_negbinom_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
             lengths=lengths, ploidy=ploidy, bias=bias,
-            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
+            multiscale_factor=multiscale_factor,
+            inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
             mods=mods)
         if 'msv' in mods:
             multiscale_variances = 3 / 2 * ag_np.square(epsilon)
@@ -460,7 +411,8 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
-            mixture_coefs=mixture_coefs, mods=mods)
+            inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
+            mods=mods)
         obj_poisson[f"obj_{counts_maps.name}"] = obj_counts
         obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
 
