@@ -19,28 +19,20 @@ from tensorflow_probability.substrates import jax as tfp
 from typing import Any
 from scipy.special import iv, ivp
 from .utils_poisson import jax_max
+from .polynomial import _polyval
 
 
-def _polyval(x, coefs):  # TODO maybe move to utils_poisson.py
-    """Analagous to np.polyval (which is not differentiable with jax)"""
-    # TODO are we sure jax.numpy.polyval still isn't differentiable?
-    ans = 0
-    power = len(coefs) - 1
-    for coef in coefs:
-        ans = ans + coef * ag_np.power(x, power)
-        power = power - 1
-    return ans
+coefs_stirling = np.array([
+        8.11614167470508450300E-4, -5.95061904284301438324E-4,
+        7.93650340457716943945E-4, -2.77777777730099687205E-3,
+        8.33333333333331927722E-2])
 
 
 def _stirling(z):
     """Computes B_N(z)
     """
-    sterling_coefs = [
-        8.11614167470508450300E-4, -5.95061904284301438324E-4,
-        7.93650340457716943945E-4, -2.77777777730099687205E-3,
-        8.33333333333331927722E-2]
     z_sq_inv = 1. / (z * z)
-    return _polyval(z_sq_inv, coefs=sterling_coefs) / z
+    return _polyval(z_sq_inv, c=coefs_stirling) / z
 
 
 def _masksum(x, mask=None, axis=None):
@@ -55,6 +47,25 @@ def relu_min(x1, x2):
     # TODO this is temporary, remove this and switch to jax_min
     # returns min(x1, x2)
     return - (relu((-x1) - (-x2)) + (-x2))
+
+
+# def loss2(x, mask, num_fullres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO remove
+#     log1p_theta = np.log1p(theta)
+#     obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
+#     obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k + 1)
+#     obj_tmp3 = _masksum(
+#         _stirling(x + k + 1), mask=mask,
+#         axis=0)
+#     obj_tmp4 = _masksum(x, mask=mask, axis=0) * (
+#         np.log(theta) + np.log1p(k) - log1p_theta - 1)
+#     obj_tmp5 = _masksum(
+#         (x + k + 0.5) * np.log1p(
+#             x / (k + 1)), mask=mask, axis=0)
+#     obj_tmp6 = -_masksum(np.log1p(
+#         x / k), mask=mask, axis=0)
+#     obj = np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
+#     # Taking negative log likelihood
+#     return - obj
 
 
 def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
