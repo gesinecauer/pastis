@@ -203,7 +203,7 @@ class BeadChainConnectivity2019(Constraint):
             nghbr_dis).sum() / ag_np.square(nghbr_dis.sum())
         obj = nghbr_dis_var - 1.
 
-        if ag_np.isnan(obj) or ag_np.isinf(obj):
+        if not ag_np.isfinite(obj):
 
             # if type(obj).__name__ in ('DeviceArray', 'ndarray'):
             print(f"{struct.mean()=:.3g}")  # TODO remove
@@ -344,7 +344,7 @@ class HomologSeparating2019(Constraint):
         hmlg_sep_diff_sq = ag_np.square(hmlg_sep_diff)
         obj = ag_np.mean(hmlg_sep_diff_sq)
 
-        if ag_np.isnan(obj) or ag_np.isinf(obj):
+        if not ag_np.isfinite(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
         return self.lambda_val * obj
 
@@ -458,7 +458,7 @@ class BeadChainConnectivity2021(Constraint):
         #     # norm_dis_nomin: rmsd_intra=   disterr_intra=   disterr_interhmlg=   ndv_nrmse= ()
         #     print(f'μ={mu:.3f} \t σMax={sigma_max:.3f} \t mean={data.mean():.3f} \t sigma={sigma:.3f} \t sigma_tmp={sigma_tmp:.3f} \t std={data.std():.3f} \t obj={obj:.5g}')
 
-        if ag_np.isnan(obj) or ag_np.isinf(obj):
+        if not ag_np.isfinite(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
         return self.lambda_val * obj
 
@@ -608,8 +608,7 @@ class BeadChainConnectivity2022(Constraint):
             # Multiply beta by 4 because...
             # (1) Multiply by 2 because FIXME
             # (2) Multiply by 2 because FIXME
-            # epsilon = 0.5  # FIXME
-            # FIXME omg I'm using the old polyfit coefficients, aren't I.... !!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # epsilon = 1  # FIXME
             gamma_mean, gamma_var = get_gamma_moments(
                 dis=nghbr_dis, epsilon=epsilon, alpha=alpha,
                 beta=(2 * var['beta']), ambiguity='ua')
@@ -643,9 +642,9 @@ class BeadChainConnectivity2022(Constraint):
                 #     nghbr_dis, alpha) + lambda_interchrom
                 # to_print += f"\t   μ*={lambda_nghbr.mean():.2g}"
             print(to_print + f"\t   obj={obj:.3g}", flush=True)
-            exit(1)
+            # exit(1)
 
-        if ag_np.isnan(obj) or ag_np.isinf(obj):
+        if not ag_np.isfinite(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
         return self.lambda_val * obj
 
@@ -917,7 +916,7 @@ class HomologSeparating2022(Constraint):
                     else:
                         print(f"c={np.mean(counts_interchrom):.3g}\t   mean={lambda_interhmlg.mean():.3g}\t   obj={obj:.3g}\t   ε={epsilon:.3g}", flush=True)
 
-        if ag_np.isnan(obj) or ag_np.isinf(obj):
+        if not ag_np.isfinite(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
         return self.lambda_val * obj
 
