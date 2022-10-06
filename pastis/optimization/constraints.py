@@ -16,11 +16,11 @@ from jax.scipy.stats.gamma import logpdf as logpdf_gamma
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .multiscale_optimization import _group_counts_multiscale
-from .utils_poisson import find_beads_to_remove, _euclidean_distance
+from .utils_poisson import find_beads_to_remove, _euclidean_distance, relu_min
 from .utils_poisson import _inter_counts, _counts_near_diag, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta
 from .likelihoods import poisson_nll, gamma_poisson_nll, negbinom_nll
-from .poisson import relu_min, get_gamma_params, get_gamma_moments
+from .poisson import get_gamma_params, get_gamma_moments
 
 
 class Constraint(object):
