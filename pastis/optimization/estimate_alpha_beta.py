@@ -58,12 +58,17 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
             else:
                 tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
             tmp = tmp1.reshape(-1, counts.nnz).sum(axis=0)
+            lambda_intensity_sum += ag_np.sum(gamma * counts.bias_per_bin(
+                bias) * num_highres_per_lowres_bins * tmp)
         else:
             tmp = get_gamma_moments(
                 dis, epsilon=epsilon, alpha=alpha, beta=1,
-                ambiguity=counts.ambiguity, inferring_alpha=True)
-        lambda_intensity_sum += ag_np.sum(gamma * counts.bias_per_bin(
-            bias) * num_highres_per_lowres_bins * tmp)
+                ambiguity=counts.ambiguity, inferring_alpha=True,
+                return_var=False)
+            if bias is not None and not np.all(bias == 1):
+                raise NotImplementedError
+            lambda_intensity_sum += ag_np.sum(gamma * counts.bias_per_bin(
+                bias) * num_highres_per_lowres_bins * tmp)
 
     return lambda_intensity_sum
 
