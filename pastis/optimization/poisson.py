@@ -17,51 +17,61 @@ from datetime import timedelta
 from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .callbacks import Callback
-from .utils_poisson import _print_code_header
+from .utils_poisson import _print_code_header, relu_min
 from .polynomial import _approx_ln_f
-from .likelihoods import _stirling, _masksum, relu_min
+from .likelihoods import _stirling, _masksum
 
 
-def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
-                      max_epsilon_over_dis=25, inferring_alpha=False):
+def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity, return_mean=True,
+                      return_var=True, inferring_alpha=False):
 
     # epsilon = 0.73 # FIXME
 
     dis_alpha = ag_np.power(dis, alpha)
     epsilon_over_dis = epsilon / dis
 
-    epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
-    # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
+    ln_f = _approx_ln_f(
+        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha,
+        return_mean=return_mean, return_var=return_var)
+    if return_mean and return_var:
+        ln_f_mean, ln_f_var = ln_f
+    elif return_mean:
+        ln_f_mean = ln_f
+    else:
+        ln_f_var = ln_f
 
-    ln_f_mean, ln_f_var = _approx_ln_f(
-        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
-
-    gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha * beta
-    gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha * beta)
+    gamma_mean = gamma_var = 0
+    if return_mean:
+        gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha * beta
+    if return_var:
+        gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha * beta)
 
     if ambiguity != 'ua':
         if ambiguity == 'ambig':
             reshape_0 = 4
         else:
             reshape_0 = 2
-        gamma_mean = gamma_mean.reshape(reshape_0, -1).sum(axis=0)
-        gamma_var = gamma_var.reshape(reshape_0, -1).sum(axis=0)
+        if return_mean:
+            gamma_mean = gamma_mean.reshape(reshape_0, -1).sum(axis=0)
+        if return_var:
+            gamma_var = gamma_var.reshape(reshape_0, -1).sum(axis=0)
 
     # if not (ag_np.isfinite(gamma_mean) and ag_np.isfinite(gamma_var)): # TODO?
-
-    return gamma_mean, gamma_var
+    if return_mean and return_var:
+        return gamma_mean, gamma_var
+    elif return_mean:
+        return gamma_mean
+    else:
+        return gamma_var
 
 
 def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
-                     max_epsilon_over_dis=25, inferring_alpha=False):
+                     inferring_alpha=False):
 
     # epsilon = 0.73 # FIXME
 
     dis_alpha = ag_np.power(dis, alpha)
     epsilon_over_dis = epsilon / dis
-
-    epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # FIXME temp, verify jax_min
-    # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
     ln_f_mean, ln_f_var = _approx_ln_f(
         epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
@@ -90,8 +100,7 @@ def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            bias=None, multiscale_factor=1,
-                           inferring_alpha=False, mixture_coefs=None,
-                           max_epsilon_over_dis=25, mods=[]):
+                           inferring_alpha=False, mixture_coefs=None, mods=[]):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
@@ -119,11 +128,6 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                 ag_np.square(epsilon[counts.row3d]) + ag_np.square(
                     epsilon[counts.col3d])) / sqrt_2
             epsilon_over_dis = epsilon_per_bin / dis
-
-        # FIXME this relu_min is a temp fix until I verify jax_min!!!!
-        # epsilon_over_dis = ag_np.min(epsilon_over_dis, max_epsilon_over_dis)  # orig, runs into abnorm term
-        epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)  # temp
-        # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
         ln_f_mean, ln_f_var = _approx_ln_f(
             epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
