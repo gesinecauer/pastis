@@ -8,7 +8,6 @@ from .utils_poisson import _setup_jax
 _setup_jax()
 from jax import custom_jvp, lax
 import jax.numpy as ag_np
-from jax.nn import relu
 from jax.scipy.special import gammaln
 from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
 
@@ -17,6 +16,7 @@ from typing import Any
 from scipy.special import iv, ivp
 from .utils_poisson import jax_max
 from .polynomial import _polyval
+from .utils_poisson import relu_min
 
 
 coefs_stirling = np.flip(np.array([
@@ -38,12 +38,6 @@ def _masksum(x, mask=None, axis=None):
         return ag_np.sum(x, axis=axis)
     else:
         return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
-
-
-def relu_min(x1, x2):
-    # TODO this is temporary, remove this and switch to jax_min
-    # returns min(x1, x2)
-    return - (relu((-x1) - (-x2)) + (-x2))
 
 
 # def loss2(x, mask, num_fullres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO remove
