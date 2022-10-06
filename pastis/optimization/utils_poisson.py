@@ -34,6 +34,7 @@ import jax.numpy as jnp
 from jax import custom_jvp
 from jax import lax
 import jax.numpy as ag_np
+from jax.nn import relu
 
 
 if sys.version_info[0] < 3:
@@ -307,6 +308,12 @@ def _struct_replace_nan(struct, lengths, kind='linear', random_state=None):
             warn('The following chromosomes were all NaN: ' + ' '.join(nan_chroms))
 
         return(interpolated_struct)
+
+
+def relu_min(x1, x2):
+    # TODO this is temporary, remove this and switch to jax_min
+    # returns min(x1, x2)
+    return - (relu((-x1) - (-x2)) + (-x2))
 
 
 @custom_jvp
