@@ -2,11 +2,8 @@ import numpy as np
 from scipy import optimize
 import warnings
 
-from absl import logging as absl_logging
-absl_logging.set_verbosity('error')
-from jax.config import config as jax_config
-jax_config.update("jax_platform_name", "cpu")
-jax_config.update("jax_enable_x64", True)
+from .utils_poisson import _setup_jax
+_setup_jax()
 from jax import grad
 
 from .poisson import objective

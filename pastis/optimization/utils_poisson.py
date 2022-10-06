@@ -8,11 +8,26 @@ import pandas as pd
 from scipy import sparse
 from distutils.util import strtobool
 
-from absl import logging as absl_logging
-absl_logging.set_verbosity('error')
-from jax.config import config as jax_config
-jax_config.update("jax_platform_name", "cpu")
-jax_config.update("jax_enable_x64", True)
+
+def _setup_jax():
+    from absl import logging as absl_logging
+    absl_logging.set_verbosity('error')
+    from jax.config import config as jax_config
+    jax_config.update("jax_platform_name", "cpu")
+    jax_config.update("jax_enable_x64", True)
+    # os.environ.update(
+    #     XLA_FLAGS=(
+    #         '--xla_cpu_multi_thread_eigen=false '
+    #         'intra_op_parallelism_threads=1 '
+    #         'inter_op_parallelism_threads=1 '
+    #     ),
+    #     XLA_PYTHON_CLIENT_PREALLOCATE='false',
+    # )
+    # # jax_config.update("jax_debug_nans", True)
+    # # jax_config.update("jax_debug_infs", True)
+    # jax_config.update("jax_check_tracer_leaks", True)
+
+_setup_jax()
 
 from typing import Any as Array
 import jax.numpy as jnp

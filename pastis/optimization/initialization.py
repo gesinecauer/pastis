@@ -47,8 +47,11 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     # print(type(bias), bias.dtype)
     # print(np.nansum(ua_counts_arr.toarray()))
 
+    if alpha is None:
+        raise ValueError("Must supply alpha for MDS initialization.")
+
     struct = estimate_X(
-        ua_counts_arr, alpha=-3. if alpha is None else alpha, beta=ua_beta,
+        ua_counts_arr, alpha=alpha, beta=ua_beta,
         verbose=False, use_zero_entries=False, precompute_distances='auto',
         bias=bias_per_bin, random_state=random_state, type="MDS2", factr=1e12,
         maxiter=10000, ini=None)
@@ -111,8 +114,14 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         raise ValueError("Initial structures are of different shapes")
     else:
         struct_length = struct_length.pop()
-    multiscale_factor_init = int(np.ceil(
-        lengths.sum() * ploidy / struct_length))
+    # multiscale_factor_init = int(np.ceil(
+    #     lengths.sum() * ploidy / struct_length)) # TODO remove junk
+    # multiscale_factor_init = int(np.ceil(
+    #     np.tile(lengths, ploidy) / struct_length).sum())
+    multiscale_factor_init = 1
+    while ploidy * decrease_lengths_res(
+            lengths, multiscale_factor_init * 2).sum() >= struct_length:
+        multiscale_factor_init *= 2
     lengths_init = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor_init)
 

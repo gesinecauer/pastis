@@ -5,11 +5,8 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
 
-from absl import logging as absl_logging
-absl_logging.set_verbosity('error')
-from jax.config import config as jax_config
-jax_config.update("jax_platform_name", "cpu")
-jax_config.update("jax_enable_x64", True)
+from .utils_poisson import _setup_jax
+_setup_jax()
 import jax.numpy as ag_np
 
 if sys.version_info[0] < 3:

@@ -6,11 +6,8 @@ if sys.version_info[0] < 3:
 import numpy as np
 import re
 
-from absl import logging as absl_logging
-absl_logging.set_verbosity('error')
-from jax.config import config as jax_config
-jax_config.update("jax_platform_name", "cpu")
-jax_config.update("jax_enable_x64", True)
+from .utils_poisson import _setup_jax
+_setup_jax()
 import jax.numpy as ag_np
 from jax.nn import relu
 from jax.scipy.stats.gamma import logpdf as logpdf_gamma
@@ -605,10 +602,6 @@ class BeadChainConnectivity2022(Constraint):
             obj = poisson_nll(
                 np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_nghbr)
         else:
-            # Multiply beta by 4 because...
-            # (1) Multiply by 2 because FIXME
-            # (2) Multiply by 2 because FIXME
-            # epsilon = 1  # FIXME
             gamma_mean, gamma_var = get_gamma_moments(
                 dis=nghbr_dis, epsilon=epsilon, alpha=alpha,
                 beta=(2 * var['beta']), ambiguity='ua')
@@ -633,7 +626,7 @@ class BeadChainConnectivity2022(Constraint):
 
             lambda_nghbr = gamma_mean  # TODO temp
 
-        if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+        if False and 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
             to_print = f"𝔼[c]={var['counts_nghbr'].mean():.3g}\t   μNB={lambda_nghbr.mean():.2g}"
             if epsilon is not None:
                 to_print += f"\t   V[c]={var['counts_nghbr'].var(axis=0).mean():.3g}"
@@ -690,6 +683,11 @@ class HomologSeparating2022(Constraint):
                 self.hparams['counts_interchrom'] is None):
             raise ValueError(f"{self.name} constraint is missing"
                              f" neccessary hyperparams: 'counts_interchrom'")
+        # Hyperparam: counts_interchrom_var  # TODO maybe remove
+        if self.hparams is None or 'counts_interchrom_var' not in self.hparams or (
+                self.hparams['counts_interchrom_var'] is None):
+            raise ValueError(f"{self.name} constraint is missing"
+                             f" neccessary hyperparams: 'counts_interchrom_var'")
 
     def _setup(self, counts=None, bias=None):
         if self.lambda_val <= 0:
@@ -737,7 +735,11 @@ class HomologSeparating2022(Constraint):
         # n = int(struct.shape[0] / 2)
         n = self.lengths_lowres.sum()
         row, col = (x.flatten() for x in np.indices((n, n)))
-        if 'interhmlg_intrachrom' in self.mods:
+        if 'same_locus' in self.mods:
+            mask = row == col
+            row = row[mask]
+            col = col[mask]
+        elif 'interhmlg_intrachrom' in self.mods and 'mean' not in self.mods:
             row = row[var['mask_intrachrom']]
             col = col[var['mask_intrachrom']]
         dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
@@ -757,9 +759,15 @@ class HomologSeparating2022(Constraint):
         counts_interchrom = self.hparams['counts_interchrom']
 
         if 'mse' in self.mods:
-            dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
-            lambda_interhmlg = gamma_mean = (4 * var['beta']) * (
-                bias_interhmlg * dis_alpha_interhmlg)
+            if 'use_gmean' in self.mods and self.multiscale_factor > 1:
+                lambda_interhmlg, _ = get_gamma_moments(
+                    dis=dis_interhmlg, epsilon=epsilon, alpha=alpha,
+                    beta=4 * var['beta'], ambiguity='ua')  # FIXME
+            else:
+                dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
+                lambda_interhmlg = (4 * var['beta']) * (
+                    bias_interhmlg * dis_alpha_interhmlg)
+            lambda_interhmlg = lambda_interhmlg * np.square(self.multiscale_factor)  # TODO this is the best option, right?
             if 'mean' in self.mods:
                 lambda_interhmlg = lambda_interhmlg.reshape(n, n)
                 nchrom = self.lengths.size
@@ -770,13 +778,20 @@ class HomologSeparating2022(Constraint):
                     begin_j = end_j = 0
                     for j in range(nchrom):
                         end_j = end_j + ag_np.int32(self.lengths_lowres[j])
-                        # print(f"i={i}=[{begin_i}:{end_i}],  j={j}=[{begin_j}:{end_j}]")
+                        if 'interhmlg_intrachrom' in self.mods and i != j:
+                            begin_j = end_j
+                            continue
+                        # tmp = ag_np.mean(
+                        #     lambda_interhmlg[begin_i:end_i, begin_j:end_j])
+                        # print(f"i={i}=[{begin_i}:{end_i}],  j={j}=[{begin_j}:{end_j}],   {tmp}")
                         interhmlg_mean = interhmlg_mean.at[i, j].set(ag_np.mean(
                             lambda_interhmlg[begin_i:end_i, begin_j:end_j]))
                         begin_j = end_j
                     begin_i = end_i
                 lambda_interhmlg = interhmlg_mean
-                # print(lambda_interhmlg); exit(0)
+                if 'interhmlg_intrachrom' in self.mods:
+                    lambda_interhmlg = lambda_interhmlg[lambda_interhmlg != 0]
+                # print(lambda_interhmlg); exit(1)
             if 'flex' in self.mods:
                 obj = _mse_flexible(
                     actual=lambda_interhmlg, expected=ag_np.mean(counts_interchrom),
@@ -852,69 +867,99 @@ class HomologSeparating2022(Constraint):
                 bias_interhmlg * dis_alpha_interhmlg)
 
             if self.multiscale_factor > 1:
+                gamma_mean, gamma_var = get_gamma_moments(
+                    dis=dis_interhmlg, epsilon=epsilon, alpha=alpha,
+                    beta=4 * var['beta'], ambiguity='ua')  # FIXME
+            else:
+                gamma_mean, gamma_var = None
+
+            if self.multiscale_factor > 1:
                 fullres_per_lowres_bins = var['fullres_per_lowres_bead'][row] * (
                     var['fullres_per_lowres_bead'][col + n])
             else:
                 fullres_per_lowres_bins = 1
 
-            if 'nbinom' in self.mods:
-                # logpmf_negbinom(k, n, p)
-                # FIXME do something about fullres_per_lowres_bins
-                nb_mean = lambda_interhmlg
+            if 'nbinom' in self.mods and self.multiscale_factor != 1 and not (
+                    'nbinom_new' in self.mods and self.hparams['gamma_theta'] == 0):
                 if self.multiscale_factor > 1:
                     # num_fullres_per_lowres_bins = (
                     #     var['fullres_per_lowres_bead'][row]) * (
                     #     var['fullres_per_lowres_bead'][col + n])
                     # nb_mean = nb_mean * num_fullres_per_lowres_bins
-                    nb_mean = nb_mean * np.square(self.multiscale_factor)  # TODO this is the best option, right?
+                    lambda_interhmlg = lambda_interhmlg * np.square(self.multiscale_factor)  # TODO this is the best option, right?
+                    gamma_mean = gamma_mean * np.square(self.multiscale_factor)  # FIXME
 
-                counts_var = counts_interchrom.var()
-
-                # This must come after getting counts_var
-                mods_numeric = [x for x in self.mods if re.match(r'^[1-9][0-9]*$', x)]
-                if len(mods_numeric) > 1:
-                    raise ValueError("see this is what happens when you do dumb hacks")
-                if len(mods_numeric) == 1:
-                    lim = int(mods_numeric[0])
-                    counts_interchrom = counts_interchrom[:lim]  # FIXME (out of 22500)
-
-                nb_mask = (nb_mean != relu_max(counts_var, nb_mean))
-                if (~nb_mask).sum() == 0:
-                    obj_pois = 0
+                # nb_mean = relu_max(gamma_mean, lambda_interhmlg)  # FIXME
+                if ('concat_gmean' in self.mods) and (gamma_mean is not None):
+                    nb_mean = ag_np.concatenate([lambda_interhmlg, gamma_mean])
+                elif ('use_gmean' in self.mods) and (gamma_mean is not None):
+                    nb_mean = gamma_mean
                 else:
-                    obj_pois = poisson_nll(
-                        counts_interchrom.mean(), lambda_pois=nb_mean[~nb_mask],
-                        mean=False)
+                    nb_mean = lambda_interhmlg
 
-                if nb_mask.sum() == 0:
-                    obj_nb = 0
+                if 'nbinom_new' in self.mods:
+                    k = nb_mean / self.hparams['gamma_theta']
+                    obj = gamma_poisson_nll(
+                        theta=self.hparams['gamma_theta'], k=k,
+                        data=counts_interchrom.reshape(-1, 1))
+
+                    if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                        nb_var = nb_mean * (1 + self.hparams['gamma_theta'])
+                        to_print = f"c={counts_interchrom.mean():.2g}\t   Γμ={gamma_mean.mean():.2g}\t   μ={lambda_interhmlg.mean():.2g}\t   σ²={nb_var.mean():.2g}\t   obj={obj:.2g}"
+                        if epsilon is not None:
+                            to_print += f"\t   ε={epsilon:.2g}"
+                        print(to_print, flush=True)
                 else:
-                    p = nb_mean[nb_mask] / counts_var
-                    n = ag_np.square(nb_mean[nb_mask]) / (counts_var - nb_mean[nb_mask])
-                    obj_nb = negbinom_nll(
-                        counts_interchrom.reshape(-1, 1), n=n, p=p, mean=False,
-                        num_stable=True)
+                    # counts_var = counts_interchrom.var()
+                    counts_var = self.hparams['counts_interchrom_var']
+                    if 'all_nb' in self.mods:
+                        counts_var = relu_max(counts_var, nb_mean * 1.1)  # FIXME remove
 
-                obj = (obj_nb + obj_pois) / row.size
+                    nb_mask = (nb_mean != relu_max(counts_var, nb_mean))
+                    if (~nb_mask).sum() == 0:
+                        obj_pois = 0
+                    else:
+                        obj_pois = poisson_nll(
+                            counts_interchrom.mean(), lambda_pois=nb_mean[~nb_mask],
+                            mean=False)
+
+                    if nb_mask.sum() == 0:
+                        obj_nb = 0
+                    else:
+                        p = nb_mean[nb_mask] / counts_var
+                        n = ag_np.square(nb_mean[nb_mask]) / (counts_var - nb_mean[nb_mask])
+                        obj_nb = negbinom_nll(
+                            counts_interchrom.reshape(-1, 1), n=n, p=p,
+                            mean=False, num_stable=False, use_scipy=True)
+
+                    obj = (obj_nb + obj_pois) / row.size
+                    if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                        nb_var = relu_max(counts_var, nb_mean)
+                        to_print = f"c={counts_interchrom.mean():.2g}\t   Γμ={gamma_mean.mean():.2g}\t   μ={lambda_interhmlg.mean():.2g}\t   σ²={nb_var.mean():.2g}\t   pois={obj_pois / (~nb_mask).sum():.2g}\t   nb={obj_nb / nb_mask.sum():.2g}\t   {nb_mask.sum() / nb_mask.size * 100:.2g}% nb"
+                        if epsilon is not None:
+                            to_print += f"\t   ε={epsilon:.2g}"
+                        print(to_print, flush=True)
+
+            else:
+                counts_interchrom = np.mean(counts_interchrom)
+                lambda_interhmlg = lambda_interhmlg * np.square(self.multiscale_factor)  # TODO this is the best option, right?
+                gamma_mean = gamma_mean * np.square(self.multiscale_factor)  # TODO this is the best option, right?
+
+                if ('concat_gmean' in self.mods) and (gamma_mean is not None):
+                    nb_mean = ag_np.concatenate([lambda_interhmlg, gamma_mean])
+                elif ('use_gmean' in self.mods) and (gamma_mean is not None):
+                    nb_mean = gamma_mean
+                else:
+                    nb_mean = lambda_interhmlg
+
+                obj = poisson_nll(
+                    counts_interchrom, lambda_pois=nb_mean)
+
                 if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-                    nb_var = relu_max(counts_var, nb_mean)
-                    to_print = f"c={counts_interchrom.mean():.2g}\t   μ={nb_mean.mean():.2g}\t   σ²={nb_var.mean():.2g}\t   pois={obj_pois / (~nb_mask).sum():.2g}\t   nb={obj_nb / nb_mask.sum():.2g}\t   {nb_mask.sum() / nb_mask.size * 100:.2g}% nb"
+                    to_print = f"c={np.mean(counts_interchrom):.2g}\t   Γμ={gamma_mean.mean():.2g}\t   μ={lambda_interhmlg.mean():.2g}\t   obj={obj:.2g}"
                     if epsilon is not None:
                         to_print += f"\t   ε={epsilon:.2g}"
                     print(to_print, flush=True)
-                # exit(1)
-            else:
-                counts_interchrom = np.mean(counts_interchrom)
-                if 'no_nxny' not in self.mods:
-                    counts_interchrom = counts_interchrom * fullres_per_lowres_bins
-                    lambda_interhmlg = lambda_interhmlg * fullres_per_lowres_bins
-                obj = poisson_nll(
-                    counts_interchrom, lambda_pois=lambda_interhmlg)
-                if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-                    if epsilon is None:
-                        print(f"c={np.mean(counts_interchrom):.3g}\t   mean={lambda_interhmlg.mean():.3g}\t   obj={obj:.3g}", flush=True)
-                    else:
-                        print(f"c={np.mean(counts_interchrom):.3g}\t   mean={lambda_interhmlg.mean():.3g}\t   obj={obj:.3g}\t   ε={epsilon:.3g}", flush=True)
 
         if not ag_np.isfinite(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
@@ -1023,13 +1068,20 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
         hsc_version = '2019'
     hsc_version = str(hsc_version)
 
+    counts_interchrom_var = 0
+    gamma_theta = 0
     if (bcc_lambda != 0 and bcc_version == '2022') or (
             hsc_lambda != 0 and hsc_version == '2022'):
         if counts_interchrom is None:
             counts_interchrom = get_counts_interchrom(
                 counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor,
-                fullres_struct_nan=fullres_struct_nan, verbose=verbose, mods=mods)
+                fullres_struct_nan=fullres_struct_nan, verbose=verbose)
+
+            gamma_theta = (
+                counts_interchrom.var() / counts_interchrom.mean()) - 1
+            gamma_theta = max(gamma_theta, 0.0001)
+
             if not ('nbinom' in mods or 'nb_model' in mods):
                 counts_interchrom = counts_interchrom.mean()
         elif isinstance(counts_interchrom, str):
@@ -1039,6 +1091,28 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
                 counts_interchrom = float(counts_interchrom)
             except ValueError:
                 counts_interchrom = np.loadtxt(counts_interchrom)
+
+        if isinstance(counts_interchrom, np.ndarray):  # FIXME
+            counts_interchrom_var = counts_interchrom.var()
+            gamma_theta = (
+                counts_interchrom.var() / counts_interchrom.mean()) - 1
+            if gamma_theta < 0:
+                if verbose:
+                    print("Mean of inter-chromosomal counts is greater than the"
+                          f" variance, θ={gamma_theta:.3g}", flush=True)
+                gamma_theta = 0
+            elif verbose:
+                print(f"Inter-chromosomal counts θ={gamma_theta:.3g}", flush=True)
+            # This must come after getting counts_var
+            if multiscale_factor == 1 or gamma_theta == 0:
+                counts_interchrom = np.mean(counts_interchrom)
+            else:
+                mods_numeric = [x for x in mods if re.match(r'^[1-9][0-9]*$', x)]
+                if len(mods_numeric) > 1:
+                    raise ValueError("see this is what happens when you do dumb hacks")
+                if len(mods_numeric) == 1:
+                    lim = int(mods_numeric[0])
+                    counts_interchrom = counts_interchrom[:lim]  # FIXME (out of 22500)
 
         # if isinstance(counts_interchrom, np.ndarray):  # FIXME
         #     rng = np.random.default_rng(0)
@@ -1069,7 +1143,9 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
     hsc_hparams = {
         '2019': {'est_hmlg_sep': est_hmlg_sep, 'perc_diff': hsc_perc_diff},
         '2022': {'counts_interchrom': counts_interchrom,
-                 'perc_diff': hsc_perc_diff}}
+                 'perc_diff': hsc_perc_diff,
+                 'counts_interchrom_var': counts_interchrom_var,
+                 'gamma_theta': gamma_theta}}
 
     constraints = []
     if bcc_lambda != 0:
@@ -1094,9 +1170,8 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
     return constraints
 
 
-def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[],
-                                  verbose=False):
-    """TODO"""
+def get_fullres_counts_interchrom(counts, lengths, ploidy, verbose=False):
+    """TODO"""  # TODO remove function?
 
     if lengths.size == 1:
         raise ValueError(
@@ -1107,13 +1182,13 @@ def get_fullres_counts_interchrom(counts, lengths, ploidy, mods=[],
         counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
     counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
     if verbose:
-        print(f"Mean inter-chromosomal counts={counts_interchrom.mean():.3g}",
-              flush=True)
+        print(f"Inter-chromosomal counts μ={counts_interchrom.mean():.3g}"
+              f"  σ²={counts_interchrom.var():.3g}", flush=True)
     return counts_interchrom
 
 
 def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1,
-                          fullres_struct_nan=None, verbose=False, mods=[]):
+                          fullres_struct_nan=None, verbose=False):
     """TODO"""
 
     if lengths.size == 1:
@@ -1138,8 +1213,8 @@ def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1,
 
     counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
     if verbose:
-        print(f"Mean inter-chromosomal counts={counts_interchrom.mean():.3g}",
-              flush=True)
+        print(f"Inter-chromosomal counts μ={counts_interchrom.mean():.3g}"
+              f"  σ²={counts_interchrom.var():.3g}", flush=True)
     return counts_interchrom
 
 

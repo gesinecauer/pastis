@@ -4,14 +4,10 @@ import numpy as np
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
-from absl import logging as absl_logging
-absl_logging.set_verbosity('error')
-from jax.config import config as jax_config
-jax_config.update("jax_platform_name", "cpu")
-jax_config.update("jax_enable_x64", True)
+from .utils_poisson import _setup_jax
+_setup_jax()
 import jax.numpy as ag_np
 from jax import grad
-from jax.nn import relu
 
 from scipy import optimize
 import warnings
@@ -21,13 +17,15 @@ from datetime import timedelta
 from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .callbacks import Callback
-from .utils_poisson import _print_code_header, jax_max
+from .utils_poisson import _print_code_header
 from .polynomial import _approx_ln_f
 from .likelihoods import _stirling, _masksum, relu_min
 
 
 def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
                       max_epsilon_over_dis=25, inferring_alpha=False):
+
+    # epsilon = 0.73 # FIXME
 
     dis_alpha = ag_np.power(dis, alpha)
     epsilon_over_dis = epsilon / dis
@@ -56,6 +54,8 @@ def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
 
 def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
                      max_epsilon_over_dis=25, inferring_alpha=False):
+
+    # epsilon = 0.73 # FIXME
 
     dis_alpha = ag_np.power(dis, alpha)
     epsilon_over_dis = epsilon / dis
@@ -96,6 +96,8 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     """
 
     ####
+
+    # epsilon = 0.73 # FIXME
 
     num_fullres_per_lowres_bins = counts.fullres_per_lowres_dis().reshape(1, -1)
 
@@ -503,7 +505,7 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
 
     if callback is not None:
-        if multiscale_reform:
+        if multiscale_reform and multiscale_factor > 1:
             epsilon = X[-1]
         else:
             epsilon = None
@@ -864,12 +866,17 @@ class PastisPM(object):
 
         from .estimate_alpha_beta import _estimate_beta
 
+        if (self.multiscale_factor > 1 and self.multiscale_reform):
+            X_ = np.append(self.X_.flatten(), self.epsilon)
+        else:
+            X_ = self.X_.flatten()
+
         new_beta = _estimate_beta(
-            self.X_.flatten(), self.counts, alpha=self.alpha_,
+            X_, self.counts, alpha=self.alpha_,
             lengths=self.lengths, ploidy=self.ploidy, bias=self.bias,
             multiscale_factor=self.multiscale_factor,
             multiscale_variances=self.multiscale_variances,
-            epsilon=self.epsilon_,
+            multiscale_reform=self.multiscale_reform,
             mixture_coefs=self.mixture_coefs,
             reorienter=self.reorienter, verbose=verbose)
         if update_counts:
@@ -903,12 +910,9 @@ class PastisPM(object):
             verbose=self.verbose,
             mods=self.mods)
 
-        # if len(history_) > 1:
-        #     if self.history_ is None:
-        #         self.history_ = history_
-        #     else:
-        #         for k, v in history_.items():
-        #             self.history_[k].extend(v)
+        if self.multiscale_reform and self.multiscale_factor > 1:
+            self.epsilon_ = self.X_[-1]
+            self.X_ = self.X_[:-1]
 
     def _fit_alpha(self, alpha_loop=0):
         """Fit alpha to counts data, given current structure.
@@ -937,13 +941,6 @@ class PastisPM(object):
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose,
             mods=self.mods)
-
-        # if len(history_) > 1:
-        #     if self.history_ is None:
-        #         self.history_ = history_
-        #     else:
-        #         for k, v in history_.items():
-        #             self.history_[k].extend(v)
 
     def _fit_epsilon(self, inferring_epsilon, alpha_loop=0, epsilon_loop=0):
         """Fit structure/epsilon to counts, given current structure/epsilon.
@@ -988,13 +985,6 @@ class PastisPM(object):
                 self.epsilon_ = self.epsilon_[0]
         else:
             self.X_ = new_X_
-
-        # if len(history_) > 1:
-        #     if self.history_ is None:
-        #         self.history_ = history_
-        #     else:
-        #         for k, v in history_.items():
-        #             self.history_[k].extend(v)
 
     def _fit_naive_multiscale(self, alpha_loop=0):
         """Fit structure to counts data, given current alpha. TODO
@@ -1180,24 +1170,18 @@ class PastisPM(object):
         self.history_ = None
         time_start = timer()
         #self._fit_naive_multiscale()
-        self._fit_struct_epsilon_jointly(time_start)
-        #self._fit_struct_alpha_jointly(time_start)  # FIXME duh, temporary
+        # self._fit_struct_epsilon_jointly(time_start)
+        self._fit_struct_alpha_jointly(time_start)
         self.time_elapsed_ = timer() - time_start
         time_current = str(timedelta(seconds=round(self.time_elapsed_)))
         print(f"OPTIMIZATION AT {self.multiscale_factor}X RESOLUTION COMPLETE,"
               f" TOTAL ELAPSED TIME={time_current}", flush=True)
 
-        if self.multiscale_reform and not self.epsilon_coord_descent:
-            self.epsilon_ = self.X_[-1]
-            X_ = self.X_[:-1]
-        else:
-            X_ = self.X_
-
         if self.reorienter.reorient:
-            self.orientation_ = X_
-            self.struct_ = self.reorienter.translate_and_rotate(X_)[
+            self.orientation_ = self.X_
+            self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
                 0].reshape(-1, 3)
         else:
-            self.struct_ = X_.reshape(-1, 3)
+            self.struct_ = self.X_.reshape(-1, 3)
 
         return self

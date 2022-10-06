@@ -14,7 +14,7 @@ from sklearn.utils import check_random_state
 
 from .utils_poisson import _print_code_header, _load_infer_var
 from .utils_poisson import _output_subdir
-from .counts import preprocess_counts, ambiguate_counts
+from .counts import preprocess_counts, ambiguate_counts, _ambiguate_beta
 from .counts import check_counts
 from .initialization import initialize
 from .callbacks import Callback
@@ -560,6 +560,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         # COMPUTE OBJECTIVE ON TRUE STRUCTURE TODO move this to callback fxn on main branch
 
         # INFER STRUCTURE
+        original_counts_beta = [c.beta for c in counts if c.sum() != 0]
         pm = PastisPM(
             counts=counts, lengths=lengths,
             ploidy=(1 if simple_diploid else ploidy), alpha=alpha_,
@@ -590,8 +591,19 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 pm.epsilon_bounds = [epsilon_min, epsilon_max]
                 pm.fit()
 
+        # RE-SCALE STRUCTURE TO MATCH ORIGINAL BETA
+        if alpha_ is None and (
+                multiscale_rounds <= 1 or final_multiscale_round):
+            original_beta = _ambiguate_beta(
+                original_counts_beta, counts=counts, lengths=lengths,
+                ploidy=ploidy)
+            final_beta = _ambiguate_beta(
+                pm.beta_, counts=counts, lengths=lengths, ploidy=ploidy)
+            struct_ *= (original_beta / final_beta)
+            pm.beta_ = original_counts_beta
+
+
         # SAVE RESULTS
-        # TODO add conv_desc to main branch
         infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
                      'seed': seed, 'converged': pm.converged_,
                      'conv_desc': pm.conv_desc_, 'time': pm.time_elapsed_,

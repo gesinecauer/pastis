@@ -83,8 +83,10 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
     """Sum betas to be consistent with ambiguated counts.
     """
 
-    if beta is None or ploidy == 1:
+    if beta is None:
         return beta
+    if ploidy == 1:
+        return beta[0]
 
     if not isinstance(counts, list):
         counts = [counts]

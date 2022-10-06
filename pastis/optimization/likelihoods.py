@@ -4,11 +4,8 @@ import numpy as np
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
-from absl import logging as absl_logging
-absl_logging.set_verbosity('error')
-from jax.config import config as jax_config
-jax_config.update("jax_platform_name", "cpu")
-jax_config.update("jax_enable_x64", True)
+from .utils_poisson import _setup_jax
+_setup_jax()
 from jax import custom_jvp, lax
 import jax.numpy as ag_np
 from jax.nn import relu
@@ -22,10 +19,10 @@ from .utils_poisson import jax_max
 from .polynomial import _polyval
 
 
-coefs_stirling = np.array([
+coefs_stirling = np.flip(np.array([
         8.11614167470508450300E-4, -5.95061904284301438324E-4,
         7.93650340457716943945E-4, -2.77777777730099687205E-3,
-        8.33333333333331927722E-2])
+        8.33333333333331927722E-2]))
 
 
 def _stirling(z):
@@ -191,7 +188,12 @@ def negbinom_nll(data, n, p, mean=True, use_scipy=False, num_stable=True):
     if num_stable:
         k = n
         theta = (1 - p) / p
+
+        # tmp = ' obj' if type(k).__name__ in ('DeviceArray', 'ndarray') else 'grad'  # TODO
+        # print(f"{tmp}: gamma_poisson_nll begin", flush=True)  # TODO
         nll = gamma_poisson_nll(theta=theta, k=k, data=data)
+        # print(f"{tmp}: gamma_poisson_nll done", flush=True)  # TODO
+
         if not mean:
             nll = nll * n.size
         return nll
