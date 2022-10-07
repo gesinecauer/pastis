@@ -588,7 +588,7 @@ def _intra_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
     """Return intra-chromosomal counts.  # TODO move to counts.py
     """
     return _get_counts_sections(
-        counts=counts, sections='inter', lengths_at_res=lengths_at_res,
+        counts=counts, sections='intra', lengths_at_res=lengths_at_res,
         ploidy=ploidy, exclude_zeros=exclude_zeros)
 
 
