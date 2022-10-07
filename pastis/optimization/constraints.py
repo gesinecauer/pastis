@@ -1091,6 +1091,9 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
                 counts_interchrom = float(counts_interchrom)
             except ValueError:
                 counts_interchrom = np.loadtxt(counts_interchrom)
+            if verbose:
+                print(f"Inter-chromosomal counts μ={np.mean(counts_interchrom):.3g}"
+                      f"  σ²={np.var(counts_interchrom):.3g}", flush=True)
 
         if isinstance(counts_interchrom, np.ndarray):  # FIXME
             counts_interchrom_var = counts_interchrom.var()

@@ -347,13 +347,13 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         beta=beta_, input_weight=input_weight, verbose=verbose,
         excluded_counts=excluded_counts, mixture_coefs=mixture_coefs, mods=mods)
     if verbose:
-        print('BETA: %s' % ', '.join(
-            ['%s=%.3g' % (c.ambiguity, c.beta) for c in counts if c.sum() != 0]),
+        print('BETA: ' + ', '.join(
+            [f'{c.ambiguity}={c.beta:.3g}' for c in counts if c.sum() != 0]),
             flush=True)
         if alpha_ is None:
-            print('ALPHA: to be inferred, init = %.3g' % alpha_init, flush=True)
+            print(f'ALPHA: to be inferred, init = {alpha_init:.3g}', flush=True)
         else:
-            print('ALPHA: %.3g' % alpha_, flush=True)
+            print(f'ALPHA: {alpha_:.3g}', flush=True)
 
     # HOMOLOG-SEPARATING CONSTRAINT
     if ploidy == 1 and hsc_lambda > 0:
@@ -504,8 +504,11 @@ def _infer_struct(counts, lengths, ploidy, alpha, struct_init, struct_nan,
                  'conv_desc': pm.conv_desc_, 'time': pm.time_elapsed_,
                  'epsilon': pm.epsilon_,
                  'multiscale_variances': multiscale_variances}
-    if hsc_lambda > 0:
-        infer_param['est_hmlg_sep'] = est_hmlg_sep
+    if constraints is not None:
+        hsc19 = [c for c in constraints if (
+            c.name == "Homolog separating (2019)" and c.lambda_val > 0)]
+        if len(hsc19) == 1:
+            infer_param['est_hmlg_sep'] = hsc19[0].hparams['est_hmlg_sep']
     if reorienter is not None and reorienter.reorient:
         infer_param['orient'] = pm.orientation_.flatten()
 
@@ -522,7 +525,7 @@ def _infer_struct(counts, lengths, ploidy, alpha, struct_init, struct_nan,
             np.savetxt(outfiles['reorient'], pm.orientation_)
         if pm.converged_:
             np.savetxt(outfiles['struct_infer'], struct_)
-            if pm.history_ is not None:
+            if pm.history_ is not None and len(pm.history_) > 0:
                 pd.DataFrame(pm.history_).to_csv(
                     outfiles['history'], sep='\t', index=False)
         else:
