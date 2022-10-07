@@ -136,10 +136,9 @@ class Callback(object):
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
                  on_iter_end=None, directory=None, seed=None, struct_true=None,
-                 alpha_true=None, epsilon_true=None, constraints=None,
+                 alpha_true=None, constraints=None,
                  multiscale_variances=None, mixture_coefs=None, verbose=False,
                  mods=[]):
-        # TODO add to main branch -- new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.epsilon = None
@@ -162,8 +161,10 @@ class Callback(object):
 
         self.analysis_function = analysis_function
         if frequency is None or isinstance(frequency, int):
-            self.frequency = {'print': frequency,
-                              'history': frequency, 'save': frequency}
+            self.frequency = {
+                'print': frequency, 'history': frequency, 'save': frequency}
+            if frequency is None:
+                self.frequency['print'] = 100
         else:
             if not isinstance(frequency, dict) or any(
                     [k not in ('print', 'history', 'save') for k in frequency.keys()]):
@@ -179,9 +180,16 @@ class Callback(object):
             directory = ''
         self.directory = directory
         self.seed = seed
+        self.epsilon_true = None
         if struct_true is not None:
-            # TODO 2 lines add below to main branch
             struct_true = struct_true.reshape(-1, 3)
+            if multiscale_factor != 1 and multiscale_reform:
+                self.epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
+                    struct_true, lengths=lengths,
+                    multiscale_factor=multiscale_factor, verbose=False))
+                if verbose:
+                    print(f"True epsilon ({multiscale_factor}x):"
+                          f" {self.epsilon_true:.3g}", flush=True)
             if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
                 self.struct_true = decrease_struct_res(
                     struct_true, multiscale_factor=multiscale_factor,
@@ -193,7 +201,6 @@ class Callback(object):
         else:
             self.struct_true = None
         self.alpha_true = alpha_true
-        self.epsilon_true = epsilon_true
         self.verbose = verbose
 
         if history is None:

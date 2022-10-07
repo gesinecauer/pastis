@@ -56,13 +56,13 @@ parser.add_argument("--multiscale_rounds", default=1, type=int,
 # Optimization convergence
 parser.add_argument("--max_iter", default=30000, type=int,
                     help="Maximum number of iterations per optimization.")
-parser.add_argument("--factr", default=10000000.0, type=float,
+parser.add_argument("--factr", default=1e7, type=float,
                     help="factr for scipy's L-BFGS-B, alters convergence"
                          " criteria")
 parser.add_argument("--pgtol", default=1e-05, type=float,
                     help="pgtol for scipy's L-BFGS-B, alters convergence"
                          " criteria")
-parser.add_argument("--alpha_factr", default=1000000000000., type=float,
+parser.add_argument("--alpha_factr", default=1e12, type=float,
                     help="factr for convergence criteria of joint"
                          " alpha/structure inference")
 

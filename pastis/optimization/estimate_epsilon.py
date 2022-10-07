@@ -132,7 +132,7 @@ def estimate_epsilon(counts, init_X, alpha, lengths, ploidy, bias=None,
                      constraints=None, epsilon=None, structures=None,
                      multiscale_factor=1,
                      epsilon_bounds=None, max_iter=30000, max_fun=None,
-                     factr=10000000., pgtol=1e-05, callback=None,
+                     factr=1e7, pgtol=1e-05, callback=None,
                      alpha_loop=None, epsilon_loop=None,
                      reorienter=None, mixture_coefs=None, verbose=True,
                      mods=[]):

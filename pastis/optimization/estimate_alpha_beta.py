@@ -258,7 +258,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
                    constraints=None, multiscale_factor=1,
                    multiscale_variances=None, epsilon=None,
                    random_state=None, max_iter=30000, max_fun=None,
-                   factr=10000000., pgtol=1e-05, callback=None, alpha_loop=None,
+                   factr=1e7, pgtol=1e-05, callback=None, alpha_loop=None,
                    reorienter=None, mixture_coefs=None, verbose=True, mods=[]):
     """Estimates alpha, given current structure.
 

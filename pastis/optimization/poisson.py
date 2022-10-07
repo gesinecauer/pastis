@@ -547,7 +547,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
 def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                constraints=None, multiscale_factor=1, multiscale_variances=None,
                epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
-               factr=10000000., pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
+               factr=1e7, pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
                reorienter=None, mixture_coefs=None, verbose=True, mods=[]):
     """Estimates a 3D structure, given current alpha.
 
@@ -708,7 +708,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
     return X, obj, converged, history, conv_desc
 
 
-def _convergence_criteria(f_k, f_kplus1, factr=10000000.):
+def _convergence_criteria(f_k, f_kplus1, factr=1e7):
     """Convergence criteria for joint inference of alpha & structure.
     """
     if f_k is None:
@@ -789,7 +789,7 @@ class PastisPM(object):
                  constraints=None, callback=None, multiscale_factor=1,
                  multiscale_variances=None, epsilon=None, epsilon_bounds=None,
                  epsilon_coord_descent=False, alpha_init=-3., max_alpha_loop=20, max_iter=30000,
-                 factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
+                 factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                  reorienter=None, null=False, mixture_coefs=None, verbose=True,
                  mods=[]):
 

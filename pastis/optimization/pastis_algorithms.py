@@ -10,9 +10,10 @@ if sys.version_info[0] < 3:
 import os
 import numpy as np
 import pandas as pd
+from scipy import sparse
 from sklearn.utils import check_random_state
 
-from .utils_poisson import _print_code_header, _load_infer_var
+from .utils_poisson import _print_code_header, _get_output_files
 from .utils_poisson import _output_subdir
 from .counts import preprocess_counts, ambiguate_counts, _ambiguate_beta
 from .counts import check_counts
@@ -27,36 +28,11 @@ from .multiscale_optimization import decrease_lengths_res
 from ..io.read import load_data
 
 
-def _adjust_beta_simple_diploid(beta, counts, lengths):
-    """Adjust beta for simple diploid.
-    """
-
-    # TODO use _ambiguate_beta fxn in counts.py for this
-
-    if beta is None:
-        raise ValueError(
-            "Beta must not be None to adjust beta for simple diploid.")
-    if not isinstance(counts, list):
-        counts = [counts]
-    if len(counts) != len(beta):
-        raise ValueError(
-            "Inconsistent number of betas (%d) and counts matrices (%d)"
-            % (len(beta), len(counts)))
-
-    summed_beta = 0.
-    for i in range(len(beta)):
-        if counts[i].shape[0] == counts[i].shape[1]:
-            summed_beta += beta[i] * 2
-        else:
-            summed_beta += beta[i] * 4
-    return summed_beta
-
-
 def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  normalize=True, filter_threshold=0.04, alpha_init=-3.,
                  max_alpha_loop=20, beta=None, multiscale_rounds=1,
                  use_multiscale_variance=True, init='mds', max_iter=30000,
-                 factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
+                 factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                  hsc_lambda=0., hsc_version='2019', est_hmlg_sep=None,
                  hsc_min_beads=5, struct_draft_fullres=None, callback_freq=None,
                  callback_fxns=None, reorienter=None,
@@ -112,7 +88,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             fullres_outdir = None
         else:
             fullres_outdir = os.path.join(outdir, 'struct_draft_fullres')
-        struct_draft_fullres, infer_var_fullres = infer(
+        struct_draft_fullres, infer_param_fullres = infer(
             counts_raw=counts_raw, outdir=fullres_outdir, lengths=lengths,
             ploidy=ploidy, alpha=alpha, seed=seed, normalize=normalize,
             filter_threshold=filter_threshold, alpha_init=alpha_init,
@@ -124,14 +100,14 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             alpha_true=alpha_true, struct_true=struct_true,
             input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
             mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
-        if not infer_var_fullres['converged']:
+        if not infer_param_fullres['converged']:
             return struct_draft_fullres, alpha_, beta_, est_hmlg_sep, False
         if alpha is not None:
-            alpha_ = infer_var_fullres['alpha']
+            alpha_ = infer_param_fullres['alpha']
             if ploidy == 2:  # TODO add this line on the main branch too
-                beta_ = list(infer_var_fullres['beta'] * np.array(
-                    beta) / _adjust_beta_simple_diploid(
-                    beta, counts_raw, lengths=lengths))
+                beta_ = list(infer_param_fullres['beta'] * np.array(
+                    beta) / (2 * _ambiguate_beta(
+                        beta, counts=counts_raw, lengths=lengths, ploidy=2)))
 
     if infer_draft_lowres:
         if verbose and infer_draft_fullres:
@@ -167,7 +143,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             counts_for_lowres = counts_raw
             simple_diploid_for_lowres = True
             beta_for_lowres = beta
-        struct_draft_lowres, infer_var_lowres = infer(
+        struct_draft_lowres, infer_param_lowres = infer(
             counts_raw=counts_for_lowres, outdir=lowres_outdir,
             lengths=lengths, ploidy=ploidy, alpha=alpha_,
             seed=seed, normalize=normalize,
@@ -183,7 +159,7 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
             alpha_true=alpha_true, struct_true=struct_true,
             input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
             mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
-        if not infer_var_lowres['converged']:
+        if not infer_param_lowres['converged']:
             return struct_draft_fullres, alpha_, beta_, est_hmlg_sep, False
         est_hmlg_sep = distance_between_homologs(
             structures=struct_draft_lowres,
@@ -200,12 +176,86 @@ def _infer_draft(counts_raw, lengths, ploidy, outdir=None, alpha=None, seed=0,
     return struct_draft_fullres, alpha_, beta_, est_hmlg_sep, True
 
 
+def _get_tmp_fullres(counts_raw, lengths, ploidy, struct_infer, outdir='',
+                     alpha=None, seed=0, normalize=True, filter_threshold=0.04,
+                     alpha_init=-3., max_alpha_loop=20, beta=None,
+                     multiscale_factor=1, max_iter=30000, factr=1e7,
+                     pgtol=1e-05, alpha_factr=1e12, callback_freq=None,
+                     callback_fxns=None, alpha_true=None, struct_true=None,
+                     input_weight=None, exclude_zeros=False, null=False,
+                     mixture_coefs=None, verbose=True, mods=[]):
+
+    if outdir is not None:
+        outfiles = _get_output_files(
+            os.path.join(outdir, 'temp_idk'), seed=seed)
+        if os.path.exists(outfiles['struct_infer']) or os.path.exists(
+                outfiles['struct_nonconv']):
+            if verbose:
+                if os.path.exists(outfiles['struct_infer']):
+                    print('CONVERGED\n', flush=True)
+                elif os.path.exists(outfiles['struct_nonconv']):
+                    print('OPTIMIZATION DID NOT CONVERGE\n', flush=True)
+            infer_param = _load_infer_param(outfiles['infer_param'])
+            struct_ = np.loadtxt(outfiles['struct_infer'])
+            return struct_, infer_param
+    else:
+        outfiles = None
+
+    # PREPARE COUNTS OBJECTS
+    counts_mini, bias, struct_nan_mini, _ = preprocess_counts(
+        counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
+        normalize=normalize, filter_threshold=filter_threshold,
+        multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
+        input_weight=input_weight, excluded_counts=multiscale_factor,
+        diploid_to_unambig=True, verbose=False, mixture_coefs=mixture_coefs,
+        mods=mods)
+
+    # INITIALIZATION
+    random_state = np.random.RandomState(seed)
+    struct_init = initialize(
+        counts=counts_mini, lengths=lengths, init=struct_infer, ploidy=ploidy,
+        random_state=random_state, alpha=alpha_init if alpha is None else alpha,
+        bias=bias, multiscale_factor=1, mixture_coefs=mixture_coefs,
+        verbose=False, mods=mods)
+
+    # SETUP CALLBACKS
+    if callback_fxns is None:
+        callback_fxns = {}
+    callback = Callback(
+        lengths=lengths, ploidy=ploidy, counts=counts_mini, bias=bias,
+        multiscale_factor=1, frequency=callback_freq, directory=outdir,
+        seed=seed, struct_true=struct_true, alpha_true=alpha_true,
+        mixture_coefs=mixture_coefs, **callback_fxns, verbose=False, mods=mods)
+
+    # INFER TEMPORARY FULLRES STRUCT
+    _infer_struct(
+        counts=counts_mini, lengths=lengths, ploidy=ploidy, alpha=alpha,
+        struct_init=struct_init, struct_nan=struct_nan_mini, bias=bias,
+        callback=callback, multiscale_factor=1, max_iter=max_iter, factr=factr,
+        pgtol=pgtol, alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
+        alpha_factr=alpha_factr, null=null, seed=seed, outfiles=outfiles,
+        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+
+
+    # # INFER ALPHA  #....probably use pm.infer_alpha() for this or something
+    # _infer_struct(
+    #     counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
+    #     struct_init=struct_init, struct_nan=struct_nan, bias=bias,
+    #     constraints=constraints, callback=callback,
+    #     multiscale_factor=1, alpha_init=alpha_init,
+    #     max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
+    #     pgtol=pgtol, alpha_factr=alpha_factr,
+    #     null=null, seed=seed, outfiles=outfiles, mixture_coefs=mixture_coefs,
+    #     verbose=verbose, mods=mods)
+
+
+
 def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     normalize=True, filter_threshold=0.04, alpha_init=-3.,
                     max_alpha_loop=20, beta=None, multiscale_factor=1,
                     multiscale_rounds=1, use_multiscale_variance=True,
                     final_multiscale_round=False, init='mds', max_iter=30000,
-                    factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
+                    factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                     bcc_lambda=0., hsc_lambda=0., bcc_version='2019',
                     hsc_version='2019', counts_interchrom=None, est_hmlg_sep=None,
                     hsc_min_beads=5, hsc_perc_diff=None, excluded_counts=None,
@@ -214,10 +264,9 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     multiscale_reform=False, init_std_dev=None,
                     alpha_true=None, struct_true=None, input_weight=None,
                     exclude_zeros=False, null=False, mixture_coefs=None,
-                    out_file=None, verbose=True, mods=[]):
+                    outfiles=None, verbose=True, mods=[]):
     """TODO
     """
-    # TODO add _prep_inference to main branch; use fxn in unit tests (easier)
 
     # INFER DRAFT STRUCTURES (for estimation of multiscale_variance & est_hmlg_sep)
     alpha_ = alpha
@@ -257,8 +306,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 ['Draft inference complete', 'INFERRING STRUCTURE'],
                 max_length=80, blank_lines=2)
 
-    if verbose and out_file is not None:
-        print('OUTPUT: %s' % out_file, flush=True)
+    if verbose and outfiles is not None:
+        print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
 
     # MULTISCALE VARIANCES
     if multiscale_factor != 1 and use_multiscale_variance and struct_draft_fullres is not None and not multiscale_reform:
@@ -277,29 +326,20 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     else:
         multiscale_variances = None
 
-    # MULTISCALE EPSILON
-    epsilon_true = None
-    if multiscale_factor != 1 and multiscale_reform:
-        if struct_true is not None:
-            epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
-                struct_true, lengths=lengths,
-                multiscale_factor=multiscale_factor, verbose=False))
-            if verbose:
-                print(f"True epsilon ({multiscale_factor}x):"
-                      f" {epsilon_true:.3g}", flush=True)
-
     # PREPARE COUNTS OBJECTS
     if simple_diploid:
-        if ploidy != 2:  # TODO add this if stmt on the main branch too
+        if ploidy != 2:
             raise ValueError("Ploidy is not 2, but simple_diploid specified.")
         counts_raw = check_counts(
-            counts_raw, lengths=lengths, ploidy=ploidy,
-            exclude_zeros=exclude_zeros)
-        beta_ = _adjust_beta_simple_diploid(beta_, counts_raw, lengths=lengths)
+            counts_raw, lengths=lengths, ploidy=2, exclude_zeros=exclude_zeros)
+        beta_ = 2 * _ambiguate_beta(
+            beta_, counts=counts_raw, lengths=lengths, ploidy=2)
         counts_raw = [ambiguate_counts(
-            counts=counts_raw, lengths=lengths, ploidy=ploidy,
+            counts=counts_raw, lengths=lengths, ploidy=2,
             exclude_zeros=exclude_zeros)]
         ploidy = 1
+    if excluded_counts is None and 'diag8' in mods:
+        excluded_counts = 8
     counts, bias, struct_nan, fullres_struct_nan = preprocess_counts(
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
         normalize=normalize, filter_threshold=filter_threshold,
@@ -353,6 +393,20 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             epsilon = None
 
+        # # TEST
+        # if isinstance(init, np.ndarray) and np.array_equal(init, struct_true):
+        #     from .multiscale_optimization import increase_struct_res_gaussian
+        #     test_struct_fullres = increase_struct_res_gaussian(
+        #         struct_init, current_multiscale_factor=multiscale_factor,
+        #         final_multiscale_factor=1, lengths=lengths,
+        #         std_dev=epsilon_true / np.sqrt(2))
+        #     epsilon_true_test = np.mean(get_multiscale_epsilon_from_struct(
+        #         test_struct_fullres, lengths=lengths,
+        #         multiscale_factor=multiscale_factor, verbose=False))
+        #     print(f"True epsilon TEST ({multiscale_factor}x):"
+        #           f" {epsilon_true_test:.3g}", flush=True)
+        #     exit(0)
+
         # SETUP CONSTRAINTS
         constraints = prep_constraints(
             counts=counts, lengths=lengths, ploidy=ploidy,
@@ -363,26 +417,22 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             fullres_struct_nan=fullres_struct_nan, verbose=verbose, mods=mods)
 
         # SETUP CALLBACKS
-        # TODO add bug fix (simple_diploid if/else stmt below & struct_true_tmp) to main branch
         if simple_diploid and struct_true is not None:
             struct_true_tmp = np.nanmean(
                 [struct_true[:int(struct_true.shape[0] / 2)],
                  struct_true[int(struct_true.shape[0] / 2):]], axis=0)
         else:
             struct_true_tmp = struct_true
-        if callback_freq is None:
-            callback_freq = {'print': 100, 'history': None, 'save': None}
         if callback_fxns is None:
             callback_fxns = {}
-        # TODO change callback_fxns on main branch... new inputs: bias, constraints, epsilon_true, mixture_coefs, multiscale_variances, mods
         callback = Callback(
-            lengths, ploidy, counts=counts, bias=bias,
+            lengths=lengths, ploidy=ploidy, counts=counts, bias=bias,
             multiscale_factor=multiscale_factor,
             multiscale_reform=multiscale_reform, frequency=callback_freq,
             directory=outdir, seed=seed, struct_true=struct_true_tmp,
-            alpha_true=alpha_true, epsilon_true=epsilon_true,
-            constraints=constraints, mixture_coefs=mixture_coefs,
-            **callback_fxns, multiscale_variances=multiscale_variances,
+            alpha_true=alpha_true, constraints=constraints,
+            mixture_coefs=mixture_coefs, **callback_fxns,
+            multiscale_variances=multiscale_variances, verbose=verbose,
             mods=mods)
     else:
         struct_init = None
@@ -395,12 +445,101 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             epsilon)
 
 
+def _infer_struct(counts, lengths, ploidy, alpha, struct_init, struct_nan,
+                  bias=None, constraints=None, callback=None,
+                  multiscale_factor=1, multiscale_variances=None, epsilon=None,
+                  epsilon_min=1e-6, epsilon_max=1e6,
+                  epsilon_coord_descent=False, multiscale_rounds=1,
+                  final_multiscale_round=False, alpha_init=-3,
+                  max_alpha_loop=20, max_iter=30000, factr=1e7, pgtol=1e-05,
+                  alpha_factr=1e12, reorienter=None, null=False, seed=None,
+                  outfiles=None, mixture_coefs=None, verbose=True, mods=[]):
+    """TODO"""
+
+    # INFER STRUCTURE
+    original_counts_beta = [c.beta for c in counts if c.sum() != 0]
+    pm = PastisPM(
+        counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
+        init=struct_init, bias=bias, constraints=constraints,
+        callback=callback, multiscale_factor=multiscale_factor,
+        multiscale_variances=multiscale_variances, epsilon=epsilon,
+        epsilon_bounds=[epsilon_min, epsilon_max],
+        epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
+        max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
+        pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
+        null=null, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+    pm.fit()
+    struct_ = pm.struct_.reshape(-1, 3)
+    struct_[struct_nan] = np.nan
+
+    # # If inferred epsilon is near epsilon_max, rerun with higher epsilon_max
+    # # FIXME not sure about whether to include this
+    # if (pm.epsilon_ is not None) and multiscale_factor == 2 ** (multiscale_rounds - 1):
+    #     i = 1
+    #     while pm.epsilon_ >= epsilon_max * 0.9:
+    #         i += 1
+    #         epsilon_max *= 2
+    #         if verbose:
+    #             _print_code_header(
+    #                 [f'RE-INFERRING: MULTISCALE FACTOR {multiscale_factor}',
+    #                  f'Try {i}, new epsilon_max={epsilon_max:.3g}'],
+    #                 max_length=60, blank_lines=1)
+    #         pm.epsilon_bounds = [epsilon_min, epsilon_max]
+    #         pm.fit()
+
+    # RE-SCALE STRUCTURE TO MATCH ORIGINAL BETA
+    if alpha is None and (
+            multiscale_rounds <= 1 or final_multiscale_round):
+        original_beta = _ambiguate_beta(
+            original_counts_beta, counts=counts, lengths=lengths,
+            ploidy=ploidy)
+        final_beta = _ambiguate_beta(
+            pm.beta_, counts=counts, lengths=lengths, ploidy=ploidy)
+        struct_ *= (original_beta / final_beta)
+        pm.beta_ = original_counts_beta
+
+    # SAVE RESULTS
+    infer_param = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
+                 'seed': seed, 'converged': pm.converged_,
+                 'conv_desc': pm.conv_desc_, 'time': pm.time_elapsed_,
+                 'epsilon': pm.epsilon_,
+                 'multiscale_variances': multiscale_variances}
+    if hsc_lambda > 0:
+        infer_param['est_hmlg_sep'] = est_hmlg_sep
+    if reorienter is not None and reorienter.reorient:
+        infer_param['orient'] = pm.orientation_.flatten()
+
+    if outfiles is not None:
+        os.makedirs(outfiles['dir'], exist_ok=True)
+        with open(outfiles['infer_param'], 'w') as f:
+            for k, v in infer_param.items():
+                if isinstance(v, np.ndarray) or isinstance(v, list):
+                    f.write(
+                        '%s\t%s\n' % (k, ' '.join(['%g' % x for x in v])))
+                elif v is not None:
+                    f.write(f'{k}\t{v}\n')
+        if reorienter is not None and reorienter.reorient:
+            np.savetxt(outfiles['reorient'], pm.orientation_)
+        if pm.converged_:
+            np.savetxt(outfiles['struct_infer'], struct_)
+            if pm.history_ is not None:
+                pd.DataFrame(pm.history_).to_csv(
+                    outfiles['history'], sep='\t', index=False)
+        else:
+            np.savetxt(outfiles['struct_nonconv'], struct_)
+
+    if pm.converged_:
+        return struct_, infer_param
+    else:
+        return None, infer_param
+
+
 def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
           normalize=True, filter_threshold=0.04, alpha_init=-3.,
           max_alpha_loop=20, beta=None, multiscale_factor=1,
           multiscale_rounds=1, use_multiscale_variance=True,
           final_multiscale_round=False, init='mds', max_iter=30000,
-          factr=10000000., pgtol=1e-05, alpha_factr=1000000000000.,
+          factr=1e7, pgtol=1e-05, alpha_factr=1e12,
           bcc_lambda=0., hsc_lambda=0., bcc_version='2019', hsc_version='2019',
           counts_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
           hsc_perc_diff=None, excluded_counts=None,
@@ -500,37 +639,25 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     -------
     struct_ : array_like of float of shape (lengths.sum() * ploidy, 3)
         3D structure resulting from the optimization.
-    infer_var : dict
-        A few of the variables used in inference or generated by inference.
+    infer_param : dict
+        A few of the parameters used in inference or generated by inference.
         Keys: 'alpha', 'beta', 'est_hmlg_sep', 'obj', and 'seed'.
     """
 
     if outdir is not None:
-        os.makedirs(outdir, exist_ok=True)
-        if seed is None:
-            seed_str = ''
-        else:
-            seed_str = f'.{seed:03d}'
-        out_file = os.path.join(outdir, f'struct_inferred{seed_str}.coords')
-        orient_file = os.path.join(
-            outdir, f'orient_inferred{seed_str}.coords')
-        history_file = os.path.join(outdir, f'history{seed_str}')
-        infer_var_file = os.path.join(
-            outdir, f'inference_variables{seed_str}')
-        out_fail = os.path.join(
-            outdir, f'struct_nonconverged{seed_str}.coords')
-
-        if os.path.exists(out_file) or os.path.exists(out_fail):
+        outfiles = _get_output_files(outdir, seed=seed)
+        if os.path.exists(outfiles['struct_infer']) or os.path.exists(
+                outfiles['struct_nonconv']):
             if verbose:
-                if os.path.exists(out_file):
+                if os.path.exists(outfiles['struct_infer']):
                     print('CONVERGED\n', flush=True)
-                elif os.path.exists(out_fail):
+                elif os.path.exists(outfiles['struct_nonconv']):
                     print('OPTIMIZATION DID NOT CONVERGE\n', flush=True)
-            infer_var = _load_infer_var(infer_var_file)
-            struct_ = np.loadtxt(out_file)
-            return struct_, infer_var
+            infer_param = _load_infer_param(outfiles['infer_param'])
+            struct_ = np.loadtxt(outfiles['struct_infer'])
+            return struct_, infer_param
     else:
-        out_file = orient_file = history_file = infer_var_file = out_fail = None
+        outfiles = None
 
     # PREP FOR INFERENCE
     prepped = _prep_inference(
@@ -552,91 +679,25 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_reform=multiscale_reform, init_std_dev=init_std_dev,
         alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null, mixture_coefs=mixture_coefs,
-        out_file=out_file, verbose=verbose, mods=mods)
+        outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, alpha_, beta_, bias, struct_nan, struct_init, constraints, est_hmlg_sep,
         callback, struct_draft_fullres, multiscale_variances, epsilon) = prepped
 
     if multiscale_rounds <= 1 or multiscale_factor > 1 or final_multiscale_round:
-        # COMPUTE OBJECTIVE ON TRUE STRUCTURE TODO move this to callback fxn on main branch
-
-        # INFER STRUCTURE
-        original_counts_beta = [c.beta for c in counts if c.sum() != 0]
-        pm = PastisPM(
-            counts=counts, lengths=lengths,
-            ploidy=(1 if simple_diploid else ploidy), alpha=alpha_,
-            init=struct_init, bias=bias, constraints=constraints,
-            callback=callback, multiscale_factor=multiscale_factor,
+        return _infer_struct(
+            counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
+            struct_init=struct_init, struct_nan=struct_nan, bias=bias,
+            constraints=constraints, callback=callback,
+            multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
-            epsilon_bounds=[epsilon_min, epsilon_max],
-            epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
+            epsilon_min=epsilon_min, epsilon_max=epsilon_max,
+            epsilon_coord_descent=epsilon_coord_descent,
+            multiscale_rounds=multiscale_rounds,
+            final_multiscale_round=final_multiscale_round, alpha_init=alpha_init,
             max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
             pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
-            null=null, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
-        pm.fit()
-        struct_ = pm.struct_.reshape(-1, 3)
-        struct_[struct_nan] = np.nan
-
-        # If inferred epsilon is near epsilon_max, rerun with higher epsilon_max
-        # FIXME not sure about whether to include this
-        if (pm.epsilon_ is not None) and multiscale_factor == 2 ** (multiscale_rounds - 1):
-            i = 1
-            while pm.epsilon_ >= epsilon_max * 0.9:
-                i += 1
-                epsilon_max *= 2
-                if verbose:
-                    _print_code_header(
-                        [f'RE-INFERRING: MULTISCALE FACTOR {multiscale_factor}',
-                         f'Try {i}, new epsilon_max={epsilon_max:.3g}'],
-                        max_length=60, blank_lines=1)
-                pm.epsilon_bounds = [epsilon_min, epsilon_max]
-                pm.fit()
-
-        # RE-SCALE STRUCTURE TO MATCH ORIGINAL BETA
-        if alpha_ is None and (
-                multiscale_rounds <= 1 or final_multiscale_round):
-            original_beta = _ambiguate_beta(
-                original_counts_beta, counts=counts, lengths=lengths,
-                ploidy=ploidy)
-            final_beta = _ambiguate_beta(
-                pm.beta_, counts=counts, lengths=lengths, ploidy=ploidy)
-            struct_ *= (original_beta / final_beta)
-            pm.beta_ = original_counts_beta
-
-
-        # SAVE RESULTS
-        infer_var = {'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_,
-                     'seed': seed, 'converged': pm.converged_,
-                     'conv_desc': pm.conv_desc_, 'time': pm.time_elapsed_,
-                     'epsilon': pm.epsilon_,
-                     'multiscale_variances': multiscale_variances}
-        if hsc_lambda > 0:
-            infer_var['est_hmlg_sep'] = est_hmlg_sep
-        if reorienter is not None and reorienter.reorient:
-            infer_var['orient'] = pm.orientation_.flatten()
-
-        if outdir is not None:
-            with open(infer_var_file, 'w') as f:
-                for k, v in infer_var.items():
-                    if isinstance(v, np.ndarray) or isinstance(v, list):
-                        f.write(
-                            '%s\t%s\n' % (k, ' '.join(['%g' % x for x in v])))
-                    elif v is not None:
-                        f.write(f'{k}\t{v}\n')
-            if reorienter is not None and reorienter.reorient:
-                np.savetxt(orient_file, pm.orientation_)
-            if pm.converged_:
-                np.savetxt(out_file, struct_)
-                if pm.history_ is not None:
-                    pd.DataFrame(
-                        pm.history_).to_csv(history_file, sep='\t', index=False)
-            else:
-                np.savetxt(out_fail, struct_)
-
-        if pm.converged_:
-            return struct_, infer_var
-        else:
-            return None, infer_var
-
+            null=null, seed=seed, outfiles=outfiles,
+            mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     else:
         # BEGIN MULTISCALE OPTIMIZATION
         all_multiscale_factors = 2 ** np.flip(
@@ -654,7 +715,7 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             else:
                 multiscale_outdir = os.path.join(outdir, 'multiscale_x%d' % i)
                 final_multiscale_round = False
-            struct_, infer_var = infer(
+            struct_, infer_param = infer(
                 counts_raw=counts_raw, outdir=multiscale_outdir,
                 lengths=lengths, ploidy=ploidy, alpha=alpha_, seed=seed,
                 normalize=normalize, filter_threshold=filter_threshold,
@@ -679,37 +740,37 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                 struct_true=struct_true, input_weight=input_weight,
                 exclude_zeros=exclude_zeros, null=null,
                 mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
-            if not infer_var['converged']:
-                return struct_, infer_var
+            if not infer_param['converged']:
+                return struct_, infer_param
             if reorienter is not None and reorienter.reorient:
-                X_ = infer_var['orient']
+                X_ = infer_param['orient']
             else:
                 X_ = struct_
-            alpha_ = infer_var['alpha']
+            alpha_ = infer_param['alpha']
 
             use_prev_std_dev = False
             if use_prev_std_dev:
                 if multiscale_reform:
-                    prev_std_dev = infer_var['epsilon'] / np.sqrt(2)
+                    prev_std_dev = infer_param['epsilon'] / np.sqrt(2)
                 elif use_multiscale_variance:
-                    #prev_std_dev = np.sqrt(infer_var['multiscale_variances'])
+                    #prev_std_dev = np.sqrt(infer_param['multiscale_variances'])
                     pass
 
-            if 'epsilon' in infer_var:
-                epsilon_max = infer_var['epsilon']  # FIXME??
+            if 'epsilon' in infer_param:
+                epsilon_max = infer_param['epsilon']  # FIXME??
 
             if 'lowres_exit' in mods:
                 exit(0)
 
-        return struct_, infer_var
+        return struct_, infer_param
 
 
 def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    chrom_subset=None, alpha=None, seed=0, normalize=True,
                    filter_threshold=0.04, alpha_init=-3., max_alpha_loop=20,
                    beta=None, multiscale_rounds=1, use_multiscale_variance=True,
-                   max_iter=30000, factr=10000000., pgtol=1e-05,
-                   alpha_factr=1000000000000., bcc_lambda=0., hsc_lambda=0.,
+                   max_iter=30000, factr=1e7, pgtol=1e-05,
+                   alpha_factr=1e12, bcc_lambda=0., hsc_lambda=0.,
                    bcc_version='2019', hsc_version='2019',
                    counts_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
                    hsc_perc_diff=None, struct_draft_fullres=None,
@@ -798,8 +859,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
     -------
     struct_ : array_like of float of shape (lengths.sum() * ploidy, 3)
         3D structure resulting from the optimization.
-    infer_var : dict
-        A few of the variables used in inference or generated by inference.
+    infer_param : dict
+        A few of the parameters used in inference or generated by inference.
         Keys: 'alpha', 'beta', 'est_hmlg_sep', 'obj', and 'seed'.
     """
 
@@ -835,7 +896,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         null=null)
 
     if (not piecewise) or len(chrom_subset) == 1:
-        struct_, infer_var = infer(
+        struct_, infer_param = infer(
             counts_raw=counts, outdir=outdir, lengths=lengths_subset,
             ploidy=ploidy, alpha=alpha, seed=seed, normalize=normalize,
             filter_threshold=filter_threshold, alpha_init=alpha_init,
@@ -858,7 +919,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
     else:
         from .piecewise_whole_genome import infer_piecewise
 
-        struct_, infer_var = infer_piecewise(
+        struct_, infer_param = infer_piecewise(
             counts_raw=counts, outdir=outdir, lengths=lengths_subset,
             ploidy=ploidy, chromosomes=chrom_subset, alpha=alpha, seed=seed,
             normalize=normalize, filter_threshold=filter_threshold,
@@ -887,9 +948,9 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             verbose=verbose, mods=mods)
 
     if verbose:
-        if infer_var['converged']:
+        if infer_param['converged']:
             print("INFERENCE COMPLETE: CONVERGED", flush=True)
         else:
             print("INFERENCE COMPLETE: DID NOT CONVERGE", flush=True)
 
-    return struct_, infer_var
+    return struct_, infer_param

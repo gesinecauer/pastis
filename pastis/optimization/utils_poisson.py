@@ -41,6 +41,32 @@ if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
 
+
+def _get_output_files(outdir, seed=None):
+    """TODO"""
+    if seed is None:
+        seed_str = ''
+    else:
+        seed_str = f'.{seed:03d}'
+    out_file = os.path.join(outdir, f'struct_inferred{seed_str}.coords')
+    out_fail = os.path.join(
+        outdir, f'struct_nonconverged{seed_str}.coords')
+    init_file = os.path.join(outdir, f'struct_init{seed_str}.coords')
+    history_file = os.path.join(outdir, f'history{seed_str}')
+    infer_param_file = os.path.join(
+        outdir, f'inference_params{seed_str}')
+    reorient_file = os.path.join(
+        outdir, f'reorient_inferred{seed_str}.coords')
+    reorient_init_file = os.path.join(
+        outdir, f'reorient_init{seed_str}.coords')
+    outfiles = {
+        'struct_infer': out_file, 'struct_nonconv': out_fail,
+        'history': history_file, 'infer_param': infer_param_file,
+        'init': init_file, 'dir': outdir, 'reorient': reorient_file,
+        'reorient_init': reorient_init_file}
+    return outfiles
+
+
 def _euclidean_distance(struct, row, col):
     """TODO"""
     dis_sq = (ag_np.square(struct[row] - struct[col])).sum(axis=1)
@@ -63,29 +89,29 @@ def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
         print('=' * max_length, flush=True)
 
 
-def _load_infer_var(infer_var_file):
+def _load_infer_param(infer_param_file):
     """Loads a dictionary of inference variables, including alpha and beta.
     """
 
-    infer_var = dict(pd.read_csv(
-        infer_var_file, sep='\t', header=None, index_col=0,
+    infer_param = dict(pd.read_csv(
+        infer_param_file, sep='\t', header=None, index_col=0,
         dtype=str).squeeze("columns"))
 
     for key in ['beta', 'est_hmlg_sep', 'orient', 'epsilon']:
-        if key in infer_var:
-            infer_var[key] = np.array(infer_var[key].split(), dtype=float)
+        if key in infer_param:
+            infer_param[key] = np.array(infer_param[key].split(), dtype=float)
     convert_type_fxns = {
         'alpha': [float], 'converged': [strtobool], 'seed': [float, int],
         'multiscale_variances': [float], 'obj': [float], 'time': [float]}
     for key, type_fxns in convert_type_fxns.items():
-        if key in infer_var:
+        if key in infer_param:
             for type_fxn in type_fxns:
-                infer_var[key] = type_fxn(infer_var[key])
+                infer_param[key] = type_fxn(infer_param[key])
 
-    if 'epsilon' in infer_var and infer_var['epsilon'].size == 1:
-        infer_var['epsilon'] = infer_var['epsilon'][0]  # TODO just put epsilon above
+    if 'epsilon' in infer_param and infer_param['epsilon'].size == 1:
+        infer_param['epsilon'] = infer_param['epsilon'][0]  # TODO just put epsilon above
 
-    return infer_var
+    return infer_param
 
 
 def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,

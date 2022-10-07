@@ -32,13 +32,13 @@ def test_pastis_poisson_haploid():
     counts = np.triu(counts, 1)
     counts = sparse.coo_matrix(counts)
 
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
         history_freq=None, save_freq=None)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
 
 def test_pastis_poisson_diploid_unambig():
@@ -60,13 +60,13 @@ def test_pastis_poisson_diploid_unambig():
     counts = np.triu(counts, 1)
     counts = sparse.coo_matrix(counts)
 
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
         history_freq=None, save_freq=None)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
 
 def test_pastis_poisson_diploid_ambig():
@@ -89,13 +89,13 @@ def test_pastis_poisson_diploid_ambig():
     counts = np.triu(counts, 1)
     counts = sparse.coo_matrix(counts)
 
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
         history_freq=None, save_freq=None)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
     # TODO couldn't we at least compare the distance error or something? these tests are too simplistic!
 
@@ -121,13 +121,13 @@ def test_pastis_poisson_diploid_partially_ambig():
     np.fill_diagonal(counts[n:, :], 0)
     counts = sparse.coo_matrix(counts)
 
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         print_freq=None, history_freq=None, save_freq=None)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
 
 def test_pastis_poisson_diploid_combo():
@@ -168,16 +168,16 @@ def test_pastis_poisson_diploid_combo():
 
     counts = [ambig_counts, pa_counts, ua_counts]
 
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         print_freq=None, history_freq=None, save_freq=None)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
     # Make sure estimated betas are appropriate given nreads per counts matrix
-    infer_beta = np.array(infer_var['beta'])
+    infer_beta = np.array(infer_param['beta'])
     sim_ratio = np.array([ratio_ambig, ratio_pa, ratio_ua])
     assert_array_almost_equal(
         infer_beta / infer_beta.sum(), sim_ratio / sim_ratio.sum(), decimal=2)
@@ -202,13 +202,13 @@ def test_pastis_poisson_diploid_unambig_bcc_constraint():
     counts = np.triu(counts, 1)
     counts = sparse.coo_matrix(counts)
 
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         print_freq=None, history_freq=None, save_freq=None)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
 
 def test_pastis_poisson_diploid_unambig_hsc_constraint():
@@ -286,7 +286,7 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint():
     counts = np.triu(counts, 1)
     counts = sparse.coo_matrix(counts)
 
-    struct_, infer_var = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
@@ -294,9 +294,9 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint():
         struct_true=struct_true, multiscale_reform=multiscale_reform,
         use_multiscale_variance=use_multiscale_variance)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
-    infer_est_hmlg_sep = infer_var['est_hmlg_sep']
+    infer_est_hmlg_sep = infer_param['est_hmlg_sep']
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 
     print(f"hmlg sep: true={true_interhomo_dis}, infer={infer_est_hmlg_sep}, "
@@ -408,7 +408,7 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint_multiscale(multiscale_fac
     # print(_inter_homolog_dis(struct_init, lengths=lengths))
 
     callback_freq = {'print': 0, 'history': 0, 'save': 0}
-    struct_, infer_var = pastis_algorithms.infer(
+    struct_, infer_param = pastis_algorithms.infer(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
@@ -418,7 +418,7 @@ def test_pastis_poisson_diploid_unambig_hsc_constraint_multiscale(multiscale_fac
         use_multiscale_variance=use_multiscale_variance,
         init=struct_init)  # FIXME
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 
@@ -515,7 +515,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale(multiscale_facto
     counts = sparse.coo_matrix(counts)
 
     callback_freq = {'print': 0, 'history': 0, 'save': 0}
-    struct_, infer_var = pastis_algorithms.infer(
+    struct_, infer_param = pastis_algorithms.infer(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
@@ -524,7 +524,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale(multiscale_facto
         multiscale_reform=multiscale_reform,
         use_multiscale_variance=use_multiscale_variance)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 
@@ -605,7 +605,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale2(multiscale_fact
     counts = sparse.coo_matrix(counts)
 
     callback_freq = {'print': 0, 'history': 0, 'save': 0}
-    struct_, infer_var = pastis_algorithms.infer(
+    struct_, infer_param = pastis_algorithms.infer(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
@@ -614,7 +614,7 @@ def test_pastis_poisson_diploid_ambig_hsc_constraint_multiscale2(multiscale_fact
         multiscale_reform=multiscale_reform,
         use_multiscale_variance=use_multiscale_variance)
 
-    assert infer_var['converged']
+    assert infer_param['converged']
 
     interhomo_dis = _inter_homolog_dis(struct_, lengths=lengths)
 

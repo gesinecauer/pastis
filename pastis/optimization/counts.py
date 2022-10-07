@@ -93,9 +93,8 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
     counts = [c for c in counts if (
         isinstance(c, np.ndarray) and np.nansum(c) != 0) or c.sum() != 0]
     if len(counts) != len(beta):
-        raise ValueError(
-            "Inconsistent number of betas (%d) and counts matrices (%d)"
-            % (len(beta), len(counts)))
+        raise ValueError(f"Inconsistent number of betas ({len(beta)}) and"
+                         f" counts matrices ({len(counts)}).")
 
     beta_ambig = 0.
     for i in range(len(beta)):
@@ -320,7 +319,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                       normalize=True, filter_threshold=0.04, beta=None,
                       excluded_counts=None, mixture_coefs=None,
                       exclude_zeros=False, input_weight=None, verbose=True,
-                      mods=[]):
+                      diploid_to_unambig=False, mods=[]):
     """Check counts, reformat, reduce resolution, filter, and compute bias.
 
     Preprocessing options include reducing resolution, computing bias (if
@@ -374,8 +373,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         fullres_struct_nan = find_beads_to_remove(
             counts_prepped, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
 
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-
+    # Optionally exclude certain counts
     if excluded_counts is not None:
         if isinstance(excluded_counts, float):
             if excluded_counts != int(excluded_counts):
@@ -388,7 +386,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             counts_prepped = [_counts_near_diag(
                 c, lengths_at_res=lengths, ploidy=ploidy, nbins=excluded_counts,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
-            # print(((counts_prepped[0] != 0) & ~np.isnan(counts_prepped[0])).astype(int)[:20, :20])
+            # print(((counts_prepped[0] != 0) & ~np.isnan(counts_prepped[0])).astype(int)[:20, :20]) # TODO
         elif excluded_counts.lower() == 'intra':
             counts_prepped = [_inter_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy,
@@ -399,51 +397,37 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         else:
             raise ValueError(
-                "`excluded_counts` must be 'inter', 'intra' or None.")  # TODO update
+                "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
 
+    # Optionally "convert" ambiguous counts to unambigous
+    if diploid_to_unambig and ploidy == 2:
+        beta = 2 * _ambiguate_beta(
+            beta, counts=counts_raw, lengths=lengths, ploidy=ploidy)
+        counts_prepped = ambiguate_counts(
+            counts=counts_prepped, lengths=lengths, ploidy=ploidy,
+            exclude_zeros=True)
+        n = lengths.sum()
+        row = np.concatenate([counts_prepped.row, counts_prepped.row + n])
+        col = np.concatenate([counts_prepped.col, counts_prepped.col + n])
+        counts_prepped = [sparse.coo_matrix(
+            (np.tile(counts_prepped.data, 2), (row, col)),
+            shape=(n * 2, n * 2))]
+
+    # Format counts as CountsMatrix objects
     counts = _format_counts(
         counts_prepped, beta=beta, input_weight=input_weight,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
         multiscale_factor=multiscale_factor)
 
-    struct_nan = find_beads_to_remove(  # TODO recently changed from using counts_prepped to counts (8/13/21)
+    # Identify beads to be removed from the final structure
+    struct_nan = find_beads_to_remove(
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
-    if mixture_coefs is not None:
+    if mixture_coefs is not None and len(mixture_coefs) > 1:
+        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
         struct_nan_mask = np.full(lengths_lowres * ploidy, False)
         struct_nan_mask[struct_nan] = True
         struct_nan = np.where(np.tile(struct_nan_mask, len(mixture_coefs)))[0]
-
-    if mods is not None and 'highatlow' in mods and multiscale_factor != 1:  # TODO remove
-        if 'diag-auto' in mods:
-            excluded_counts = int(multiscale_factor - 1)
-            print("Including full-res obj at low-res, with intra-chromosomal"
-                  " counts that are within (multiscale_factor - 1) = "
-                  f"{excluded_counts} bins of diagonal", flush=True)
-        else:
-            diag_mod = [int(x.replace('diag', '')) for x in mods if re.match(
-                r'^diag[0-9]+$', x)]
-            if len(diag_mod) == 1:
-                excluded_counts = diag_mod[0]
-                print("Including full-res obj at low-res, with intra-"
-                      f" counts that are within {excluded_counts} bins of diagonal",
-                      flush=True)
-            elif len(diag_mod) > 1:
-                raise ValueError("Impossible!")
-            elif 'intra' in mods:
-                excluded_counts = 'intra'
-                print("Including full-res obj at low-res, with intra-chromosomal"
-                      " counts", flush=True)
-            else:
-                print("Including full-res obj at low-res", flush=True)
-        counts_fullres, _, struct_nan, _ = preprocess_counts(
-            counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
-            normalize=normalize, filter_threshold=filter_threshold,
-            multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
-            input_weight=input_weight, verbose=verbose,
-            excluded_counts=excluded_counts, mixture_coefs=mixture_coefs,
-            mods=mods)
-        counts.extend(counts_fullres)
 
     return counts, bias, struct_nan, fullres_struct_nan
 
