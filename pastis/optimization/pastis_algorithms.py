@@ -340,6 +340,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         ploidy = 1
     if excluded_counts is None and 'diag8' in mods:
         excluded_counts = 8
+    if excluded_counts is None and 'intra8' in mods:
+        excluded_counts = 'intra8'
     counts, bias, struct_nan, fullres_struct_nan = preprocess_counts(
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
         normalize=normalize, filter_threshold=filter_threshold,

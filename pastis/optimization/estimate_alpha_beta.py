@@ -326,6 +326,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
+    if 'no0alpha' in mods:  # TODO
+        counts = [c for c in counts if c.sum() != 0]
     lengths = np.array(lengths)
     if bias is None:
         if multiscale_reform:

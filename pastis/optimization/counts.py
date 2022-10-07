@@ -380,7 +380,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                 raise ValueError("excluded_counts must be an integer.")
             excluded_counts = int(excluded_counts)
         if isinstance(excluded_counts, str) and re.match(
-                r'[0-9]+', excluded_counts):
+                r'[0-9]+(\.0){0,1}', excluded_counts):
             excluded_counts = int(excluded_counts)
         if isinstance(excluded_counts, int):
             counts_prepped = [_counts_near_diag(
@@ -395,6 +395,15 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             counts_prepped = [_intra_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
+        elif excluded_counts.lower() == 'intra8':  # TODO
+            from .multiscale_optimization import _count_fullres_per_lowres_bead
+            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+            tmp = _count_fullres_per_lowres_bead(
+                multiscale_factor=8, lengths=lengths_lowres, ploidy=1)
+            counts_prepped = [_intra_counts(
+                c, lengths_at_res=tmp, ploidy=ploidy,
+                exclude_zeros=exclude_zeros) for c in counts_prepped]
+            print(((counts_prepped[0] != 0) & ~np.isnan(counts_prepped[0])).astype(int)[:20, :20]); exit(1) # TODO
         else:
             raise ValueError(
                 "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
