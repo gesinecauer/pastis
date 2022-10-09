@@ -795,10 +795,7 @@ class PastisPM(object):
 
         from .piecewise_whole_genome import ChromReorienter
 
-        #print('%s\n%s 3D STRUCTURAL INFERENCE' %
-        #      ('=' * 30, {2: 'DIPLOID', 1: 'HAPLOID'}[ploidy]), flush=True) # TODO removed
-
-        lengths = np.array(lengths)
+        lengths = np.asarray(lengths)
 
         if constraints is None:
             constraints = []
@@ -839,15 +836,21 @@ class PastisPM(object):
 
         self.mods = mods
 
+        if self.null:
+            print('GENERATING NULL STRUCTURE', flush=True)
+            # Dummy counts need to be inputted because we need to know which
+            # row/col to include in calculations of constraints
+            self.counts = [NullCountsMatrix(
+                counts=self.counts, lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor)]
+
         # FIXME this is obviously temporary...
         self.max_epsilon_loop = max_alpha_loop
         self.epsilon_factr = alpha_factr
 
-        # TODO update this on the main branch too...?
         self._clear()
 
     def _clear(self):
-        # TODO update this on the main branch too...?
         self.X_ = self.init_X
         if self.alpha is not None:
             self.alpha_ = self.alpha
@@ -856,7 +859,7 @@ class PastisPM(object):
         self.beta_ = [c.beta for c in self.counts if c.sum() != 0]
         self.epsilon_ = self.epsilon
         self.obj_ = None
-        self.alpha_obj_ = None  # TODO update this on the main branch too
+        self.alpha_obj_ = None
         self.epsilon_obj_ = None
         self.converged_ = None
         self.history_ = None
@@ -892,7 +895,7 @@ class PastisPM(object):
         """Fit structure to counts data, given current alpha.
         """
 
-        self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(  # TODO check self.history_
+        self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(
             counts=self.counts,
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
@@ -924,7 +927,7 @@ class PastisPM(object):
 
         from .estimate_alpha_beta import estimate_alpha
 
-        self.alpha_, self.alpha_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_alpha(  # TODO check self.history_
+        self.alpha_, self.alpha_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_alpha(
             counts=self.counts,
             X=self.X_.flatten(),
             alpha_init=self.alpha_,
@@ -960,7 +963,7 @@ class PastisPM(object):
             epsilon = self.epsilon_
             structures = None
 
-        new_X_, self.epsilon_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_epsilon(  # TODO check self.history_
+        new_X_, self.epsilon_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_epsilon(
             counts=self.counts,
             init_X=init_X,
             alpha=self.alpha_,
@@ -1006,7 +1009,7 @@ class PastisPM(object):
         _print_code_header(
             "Inferring with naive multiscale", max_length=50, blank_lines=1)
 
-        self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(  # TODO check self.history_
+        self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(
             counts=self.counts,
             init_X=self.X_.flatten(),
             alpha=self.alpha_,
@@ -1156,25 +1159,8 @@ class PastisPM(object):
 
         self._clear()
 
-        if self.null:
-            print('GENERATING NULL STRUCTURE', flush=True)
-            # Dummy counts need to be inputted because we need to know which
-            # row/col to include in calculations of constraints
-            self.counts = [NullCountsMatrix(
-                counts=self.counts, lengths=self.lengths, ploidy=self.ploidy,
-                multiscale_factor=self.multiscale_factor)]
-
-        if any([b is None for b in self.beta_]):
-            if all([b is None for b in self.beta_]):
-                self.beta_ = self._infer_beta()
-            else:
-                raise ValueError("Some but not all values in beta are None.")
-
         # Infer structure
-        self.history_ = None
         time_start = timer()
-        #self._fit_naive_multiscale()
-        # self._fit_struct_epsilon_jointly(time_start)
         self._fit_struct_alpha_jointly(time_start)
         self.time_elapsed_ = timer() - time_start
         time_current = str(timedelta(seconds=round(self.time_elapsed_)))
