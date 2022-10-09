@@ -25,6 +25,7 @@ def _get_counts_shape(row_max, col_max, lengths=None):
     # Round up to nearest (n/2)
     nrows = int((n / 2) * np.ceil(float(nrows) / (n / 2)))
     ncols = int((n / 2) * np.ceil(float(ncols) / (n / 2)))
+    # FIXME check that shape is either ambig or unambig or pa
     return (nrows, ncols)
 
 

@@ -546,10 +546,11 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
     from .counts import _check_counts_matrix, _row_and_col
 
     sections = sections.lower()
-    if sections not in ('inter', 'intra', 'near diag'):
-        raise ValueError("Must choose between: 'inter', 'intra', 'near diag'.")
-    if sections == 'near diag' and nbins is None:
-        raise ValueError("Must input nbins to mask counts near diag")
+    options = ['inter', 'intra', 'near diag', 'lowres nghbr']
+    if sections not in options:
+        raise ValueError(f"Options: {', '.join(options)}.")
+    if sections in ('near diag', 'lowres nghbr') and nbins is None:
+        raise ValueError("Must input nbins.")
 
     counts = _check_counts_matrix(
         counts, lengths=lengths_at_res, ploidy=ploidy,
@@ -570,6 +571,22 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
             col[col >= n] -= n
         mask_near_diag = np.abs(row - col) <= nbins
         mask = mask_intra & mask_near_diag
+    elif sections == 'lowres nghbr':
+        row, col = _row_and_col(counts)
+        row = row.copy()
+        col = col.copy()
+        if counts.shape[0] != counts.shape[1]:
+            n = lengths_at_res.sum()
+            row[row >= n] -= n
+            col[col >= n] -= n
+        lengths_tiled = np.tile(lengths_at_res, ploidy)
+        for i in np.flip(np.arange(1, lengths_tiled.size)):
+            l = lengths_tiled[:i].sum()
+            row[row >= l] -= lengths_tiled[i - 1]
+            col[col >= l] -= lengths_tiled[i - 1]
+        mask_lowres_nghbr = np.abs(np.floor(row / nbins) - np.floor(
+            col / nbins)) == 1
+        mask = mask_intra & mask_lowres_nghbr
 
     if exclude_zeros:
         return sparse.coo_matrix(

@@ -236,7 +236,6 @@ def _get_tmp_fullres(counts_raw, lengths, ploidy, struct_infer, outdir='',
         alpha_factr=alpha_factr, null=null, seed=seed, outfiles=outfiles,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
 
-
     # # INFER ALPHA  #....probably use pm.infer_alpha() for this or something
     # _infer_struct(
     #     counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
@@ -247,6 +246,21 @@ def _get_tmp_fullres(counts_raw, lengths, ploidy, struct_infer, outdir='',
     #     pgtol=pgtol, alpha_factr=alpha_factr,
     #     null=null, seed=seed, outfiles=outfiles, mixture_coefs=mixture_coefs,
     #     verbose=verbose, mods=mods)
+
+    # INFER ALPHA
+    original_counts_beta = [c.beta for c in counts if c.sum() != 0]
+    pm = PastisPM(
+        counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
+        init=struct_init, bias=bias, constraints=constraints,
+        callback=callback, multiscale_factor=multiscale_factor,
+        multiscale_variances=multiscale_variances, epsilon=epsilon,
+        epsilon_bounds=[epsilon_min, epsilon_max],
+        epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
+        max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
+        pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
+        null=null, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+    pm.fit()
+
 
 
 
@@ -340,6 +354,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         ploidy = 1
     if excluded_counts is None and 'diag8' in mods:
         excluded_counts = 8
+    if excluded_counts is None and 'diag16' in mods:
+        excluded_counts = 16
     if excluded_counts is None and 'intra8' in mods:
         excluded_counts = 'intra8'
     counts, bias, struct_nan, fullres_struct_nan = preprocess_counts(
@@ -394,20 +410,6 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             epsilon = random_state.rand()
         else:
             epsilon = None
-
-        # # TEST
-        # if isinstance(init, np.ndarray) and np.array_equal(init, struct_true):
-        #     from .multiscale_optimization import increase_struct_res_gaussian
-        #     test_struct_fullres = increase_struct_res_gaussian(
-        #         struct_init, current_multiscale_factor=multiscale_factor,
-        #         final_multiscale_factor=1, lengths=lengths,
-        #         std_dev=epsilon_true / np.sqrt(2))
-        #     epsilon_true_test = np.mean(get_multiscale_epsilon_from_struct(
-        #         test_struct_fullres, lengths=lengths,
-        #         multiscale_factor=multiscale_factor, verbose=False))
-        #     print(f"True epsilon TEST ({multiscale_factor}x):"
-        #           f" {epsilon_true_test:.3g}", flush=True)
-        #     exit(0)
 
         # SETUP CONSTRAINTS
         constraints = prep_constraints(
@@ -705,6 +707,8 @@ def infer(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     else:
         # BEGIN MULTISCALE OPTIMIZATION
+        # TODO set everything from _prep_inference besides struct_draft_fullres, est_hmlg_sep, alpha_, beta_ to None
+
         all_multiscale_factors = 2 ** np.flip(
             np.arange(multiscale_rounds), axis=0)
         X_ = init

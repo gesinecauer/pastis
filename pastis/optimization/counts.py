@@ -396,14 +396,52 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                 c, lengths_at_res=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
         elif excluded_counts.lower() == 'intra8':  # TODO
-            from .multiscale_optimization import _count_fullres_per_lowres_bead
-            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-            tmp = _count_fullres_per_lowres_bead(
-                multiscale_factor=8, lengths=lengths_lowres, ploidy=1)
+            nbins = 8
+
             counts_prepped = [_intra_counts(
-                c, lengths_at_res=tmp, ploidy=ploidy,
+                c, lengths_at_res=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
-            print(((counts_prepped[0] != 0) & ~np.isnan(counts_prepped[0])).astype(int)[:20, :20]); exit(1) # TODO
+
+            # from .multiscale_optimization import _count_fullres_per_lowres_bead
+            # tmp = _count_fullres_per_lowres_bead(
+            #     multiscale_factor=nbins, lengths=lengths, ploidy=1)
+            # counts_prepped = [_inter_counts(
+            #     c, lengths_at_res=tmp, ploidy=ploidy,
+            #     exclude_zeros=exclude_zeros) for c in counts_prepped]
+
+            counts_prepped = counts_prepped[0]
+            row, col = _row_and_col(counts_prepped)
+            if counts_prepped.shape[0] != counts_prepped.shape[1]:
+                row = row.copy()
+                col = col.copy()
+                n = lengths.sum()
+                row[row >= n] -= n
+                col[col >= n] -= n
+
+            row = row.copy()
+            col = col.copy()
+            lengths_tiled = np.tile(lengths, ploidy)
+            for i in np.flip(np.arange(1, lengths_tiled.size)):
+                l = lengths_tiled[:i].sum()
+                row[row >= l] -= lengths_tiled[i - 1]
+                col[col >= l] -= lengths_tiled[i - 1]
+
+            mask = np.abs(np.floor(row / nbins) - np.floor(col / nbins)) == 1
+            if exclude_zeros:
+                counts_prepped = sparse.coo_matrix(
+                    (counts_prepped.data[mask], (
+                        counts_prepped.row[mask], counts_prepped.col[mask])),
+                    shape=counts_prepped.shape)
+            else:
+                row, col = _row_and_col(counts_prepped)
+                row = row[mask]
+                col = col[mask]
+                counts_prepped_new = np.full_like(counts_prepped, np.nan)
+                counts_prepped_new[row, col] = counts_prepped[row, col]
+                counts_prepped = counts_prepped_new
+            counts_prepped = [counts_prepped]
+
+            # print(np.array2string((~np.isnan(counts_prepped[0])).astype(int)[:80, :80], max_line_width=np.inf, threshold=np.inf).replace('0', '□').replace('1', '■')); exit(1) # TODO
         else:
             raise ValueError(
                 "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
