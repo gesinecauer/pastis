@@ -22,10 +22,15 @@ def _get_counts_shape(row_max, col_max, lengths=None):
 
     nrows = row_max + 1
     ncols = col_max + 1
+
     # Round up to nearest (n/2)
-    nrows = int((n / 2) * np.ceil(float(nrows) / (n / 2)))
-    ncols = int((n / 2) * np.ceil(float(ncols) / (n / 2)))
-    # FIXME check that shape is either ambig or unambig or pa
+    row_factor = np.ceil(nrows / (n / 2)) / 2
+    col_factor = np.ceil(ncols / (n / 2)) / 2
+    if {row_factor, col_factor} not in ({2}, {1}, {1, 2}):
+        raise ValueError("Counts matrix shape does not match chrom lengths.")
+    nrows = int(n * row_factor)
+    ncols = int(n * col_factor)
+
     return (nrows, ncols)
 
 
