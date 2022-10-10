@@ -1047,7 +1047,7 @@ def relu_max(x1, x2):  # TODO move to likelihoods.py
 
 
 def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
-                     bcc_lambda=0., hsc_lambda=0., bcc_version='2019',
+                     bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
                      hsc_version='2019', counts_interchrom=None,
                      est_hmlg_sep=None, hsc_perc_diff=None,
                      fullres_struct_nan=None, verbose=True, mods=[]):

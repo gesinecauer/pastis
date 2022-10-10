@@ -405,8 +405,9 @@ def _orient_fullres_chroms_via_lowres_genome(outdir, seed, chromosomes,
     return reorient_init, struct_fullres_genome_init, struct_fullres_genome_reoriented
 
 
-def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
+def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
                     seed=0, normalize=True, filter_threshold=0.04,
+                    chrom_subset=None,
                     alpha_init=-3., max_alpha_loop=20, beta=None,
                     multiscale_rounds=1, use_multiscale_variance=True,
                     max_iter=1e40, factr=1e7, pgtol=1e-05,
@@ -422,6 +423,11 @@ def infer_piecewise(counts_raw, outdir, lengths, ploidy, chromosomes, alpha,
                     mixture_coefs=None, verbose=True):
     """Infer whole genome 3D structures piecewise, first inferring chromosomes.
     """
+
+    counts_raw, lengths, chromosomes, _, _, struct_true = load_data(
+        counts=counts, lengths_full=lengths, ploidy=ploidy,
+        chrom_full=chromosomes, chrom_subset=chrom_subset,
+        exclude_zeros=exclude_zeros, struct_true=struct_true)
 
     if multiscale_reform:
         raise NotImplementedError

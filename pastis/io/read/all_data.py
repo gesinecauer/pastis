@@ -116,4 +116,5 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
         chrom_subset=chrom_subset, counts=counts, structures=struct_true,
         exclude_zeros=exclude_zeros)
 
-    return counts, lengths_subset, chrom_subset, lengths_full, chrom_full, struct_true
+    return (counts, lengths_subset, chrom_subset, lengths_full, chrom_full,
+            struct_true)

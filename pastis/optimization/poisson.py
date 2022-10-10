@@ -788,7 +788,7 @@ class PastisPM(object):
     def __init__(self, counts, lengths, ploidy, alpha, init, bias=None,
                  constraints=None, callback=None, multiscale_factor=1,
                  multiscale_variances=None, epsilon=None, epsilon_bounds=None,
-                 epsilon_coord_descent=False, alpha_init=-3., max_alpha_loop=20, max_iter=30000,
+                 epsilon_coord_descent=False, alpha_init=-3, max_alpha_loop=20, max_iter=30000,
                  factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                  reorienter=None, null=False, mixture_coefs=None, verbose=True,
                  mods=[]):
@@ -844,10 +844,6 @@ class PastisPM(object):
                 counts=self.counts, lengths=self.lengths, ploidy=self.ploidy,
                 multiscale_factor=self.multiscale_factor)]
 
-        # FIXME this is obviously temporary...
-        self.max_epsilon_loop = max_alpha_loop
-        self.epsilon_factr = alpha_factr
-
         self._clear()
 
     def _clear(self):
@@ -862,10 +858,11 @@ class PastisPM(object):
         self.alpha_obj_ = None
         self.epsilon_obj_ = None
         self.converged_ = None
+        self.alpha_converged_ = None
         self.history_ = None
         self.struct_ = None
         self.orientation_ = None
-        self.time_elapsed_ = None
+        self.time_elapsed_ = 0
 
     def _infer_beta(self, update_counts=True, verbose=True):
         """Estimate beta, given current structure and alpha.
@@ -891,10 +888,16 @@ class PastisPM(object):
                 counts=self.counts, beta=new_beta)
         return list(new_beta.values())
 
-    def _fit_structure(self, alpha_loop=0):
+    def _fit_structure(self, alpha_loop=None):
         """Fit structure to counts data, given current alpha.
         """
 
+        if alpha_loop is not None:
+            _print_code_header([
+                "Jointly inferring structure & alpha",
+                f"Inferring STRUCTURE #{alpha_loop}"], max_length=50)
+
+        time_start = timer()
         self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(
             counts=self.counts,
             init_X=self.X_.flatten(),
@@ -916,18 +919,31 @@ class PastisPM(object):
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose,
             mods=self.mods)
+        self.time_elapsed_ += timer() - time_start
 
         if self.multiscale_reform and self.multiscale_factor > 1:
             self.epsilon_ = self.X_[-1]
             self.X_ = self.X_[:-1]
+        if self.reorienter.reorient:
+            self.orientation_ = self.X_
+            self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
+                0].reshape(-1, 3)
+        else:
+            self.struct_ = self.X_.reshape(-1, 3)
 
-    def _fit_alpha(self, alpha_loop=0):
+    def _fit_alpha(self, alpha_loop=None):
         """Fit alpha to counts data, given current structure.
         """
 
         from .estimate_alpha_beta import estimate_alpha
 
-        self.alpha_, self.alpha_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_alpha(
+        if alpha_loop is not None:
+            _print_code_header([
+                "Jointly inferring structure & alpha",
+                f"Inferring ALPHA #{alpha_loop}"], max_length=50)
+
+        time_start = timer()
+        self.alpha_, self.alpha_obj_, self.alpha_converged_, self.history_, self.conv_desc_ = estimate_alpha(
             counts=self.counts,
             X=self.X_.flatten(),
             alpha_init=self.alpha_,
@@ -948,94 +964,97 @@ class PastisPM(object):
             mixture_coefs=self.mixture_coefs,
             verbose=self.verbose,
             mods=self.mods)
+        self.time_elapsed_ += timer() - time_start
 
-    def _fit_epsilon(self, inferring_epsilon, alpha_loop=0, epsilon_loop=0):
-        """Fit structure/epsilon to counts, given current structure/epsilon.
-        """
-        from .estimate_epsilon import estimate_epsilon
+        self.beta_ = self._infer_beta()
 
-        if inferring_epsilon:
-            init_X = self.epsilon_
-            epsilon = None
-            structures = self.X_.flatten()
-        else:
-            init_X = self.X_.flatten()
-            epsilon = self.epsilon_
-            structures = None
+    # def _fit_epsilon(self, inferring_epsilon, alpha_loop=0, epsilon_loop=0):
+    #     """Fit structure/epsilon to counts, given current structure/epsilon.
+    #     """
+    #     from .estimate_epsilon import estimate_epsilon
 
-        new_X_, self.epsilon_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_epsilon(
-            counts=self.counts,
-            init_X=init_X,
-            alpha=self.alpha_,
-            lengths=self.lengths,
-            ploidy=self.ploidy,
-            bias=self.bias,
-            constraints=self.constraints,
-            multiscale_factor=self.multiscale_factor,
-            epsilon=epsilon,
-            structures=structures,
-            epsilon_bounds=self.epsilon_bounds,
-            max_iter=self.max_iter,
-            factr=self.factr,
-            pgtol=self.pgtol,
-            callback=self.callback,
-            alpha_loop=alpha_loop,
-            epsilon_loop=epsilon_loop,
-            reorienter=self.reorienter,
-            mixture_coefs=self.mixture_coefs,
-            verbose=self.verbose,
-            mods=self.mods)
+    #     if inferring_epsilon:
+    #         init_X = self.epsilon_
+    #         epsilon = None
+    #         structures = self.X_.flatten()
+    #     else:
+    #         init_X = self.X_.flatten()
+    #         epsilon = self.epsilon_
+    #         structures = None
 
-        if inferring_epsilon:
-            self.epsilon_ = new_X_
-            if self.epsilon_.size == 1:
-                self.epsilon_ = self.epsilon_[0]
-        else:
-            self.X_ = new_X_
+    #     new_X_, self.epsilon_obj_, self.converged_, self.history_, self.conv_desc_ = estimate_epsilon(
+    #         counts=self.counts,
+    #         init_X=init_X,
+    #         alpha=self.alpha_,
+    #         lengths=self.lengths,
+    #         ploidy=self.ploidy,
+    #         bias=self.bias,
+    #         constraints=self.constraints,
+    #         multiscale_factor=self.multiscale_factor,
+    #         epsilon=epsilon,
+    #         structures=structures,
+    #         epsilon_bounds=self.epsilon_bounds,
+    #         max_iter=self.max_iter,
+    #         factr=self.factr,
+    #         pgtol=self.pgtol,
+    #         callback=self.callback,
+    #         alpha_loop=alpha_loop,
+    #         epsilon_loop=epsilon_loop,
+    #         reorienter=self.reorienter,
+    #         mixture_coefs=self.mixture_coefs,
+    #         verbose=self.verbose,
+    #         mods=self.mods)
 
-    def _fit_naive_multiscale(self, alpha_loop=0):
-        """Fit structure to counts data, given current alpha. TODO
-        """
+    #     if inferring_epsilon:
+    #         self.epsilon_ = new_X_
+    #         if self.epsilon_.size == 1:
+    #             self.epsilon_ = self.epsilon_[0]
+    #     else:
+    #         self.X_ = new_X_
 
-        if self.multiscale_factor == 1:
-            return False
+    # def _fit_naive_multiscale(self, alpha_loop=0):
+    #     """Fit structure to counts data, given current alpha. TODO
+    #     """
 
-        if self.epsilon is None and (self.multiscale_variances is None or self.multiscale_variances == 0):
-            return False
+    #     if self.multiscale_factor == 1:
+    #         return False
 
-        if not self.multiscale_reform:
-            return False
+    #     if self.epsilon is None and (self.multiscale_variances is None or self.multiscale_variances == 0):
+    #         return False
 
-        _print_code_header(
-            "Inferring with naive multiscale", max_length=50, blank_lines=1)
+    #     if not self.multiscale_reform:
+    #         return False
 
-        self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(
-            counts=self.counts,
-            init_X=self.X_.flatten(),
-            alpha=self.alpha_,
-            lengths=self.lengths,
-            ploidy=self.ploidy,
-            bias=self.bias,
-            constraints=self.constraints,
-            multiscale_factor=self.multiscale_factor,
-            multiscale_variances=None,
-            epsilon=None,
-            epsilon_bounds=None,
-            max_iter=self.max_iter,
-            factr=self.factr,
-            pgtol=self.pgtol,
-            callback=self.callback,
-            alpha_loop=alpha_loop,
-            epsilon_loop=-1,
-            reorienter=self.reorienter,
-            mixture_coefs=self.mixture_coefs,
-            verbose=self.verbose,
-            mods=self.mods)
+    #     _print_code_header(
+    #         "Inferring with naive multiscale", max_length=50, blank_lines=1)
 
-        if self.callback.epsilon_true is not None:
-            self.history_['epsilon_nrmse'] = [None] * len(self.history_['iter'])
+    #     self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(
+    #         counts=self.counts,
+    #         init_X=self.X_.flatten(),
+    #         alpha=self.alpha_,
+    #         lengths=self.lengths,
+    #         ploidy=self.ploidy,
+    #         bias=self.bias,
+    #         constraints=self.constraints,
+    #         multiscale_factor=self.multiscale_factor,
+    #         multiscale_variances=None,
+    #         epsilon=None,
+    #         epsilon_bounds=None,
+    #         max_iter=self.max_iter,
+    #         factr=self.factr,
+    #         pgtol=self.pgtol,
+    #         callback=self.callback,
+    #         alpha_loop=alpha_loop,
+    #         epsilon_loop=-1,
+    #         reorienter=self.reorienter,
+    #         mixture_coefs=self.mixture_coefs,
+    #         verbose=self.verbose,
+    #         mods=self.mods)
 
-        return True
+    #     if self.callback.epsilon_true is not None:
+    #         self.history_['epsilon_nrmse'] = [None] * len(self.history_['iter'])
+
+    #     return True
 
     def _fit_struct_alpha_jointly(self, time_start, infer_structure_first=True):
         """Jointly fit structure & alpha to counts data.
@@ -1055,22 +1074,21 @@ class PastisPM(object):
 
         prev_alpha_obj = None
         for alpha_loop in range(1, self.max_alpha_loop + 1):
-            time_current = str(
-                timedelta(seconds=round(timer() - time_start)))
-            _print_code_header([
-                "Jointly inferring structure & alpha",
-                f"Inferring ALPHA #{alpha_loop},"
-                f" total time={time_current}"], max_length=50)
+            # time_current = str(
+            #     timedelta(seconds=round(timer() - time_start)))
+            # _print_code_header([
+            #     "Jointly inferring structure & alpha",
+            #     f"Inferring ALPHA #{alpha_loop},"
+            #     f" total time={time_current}"], max_length=50)
             self._fit_alpha(alpha_loop=alpha_loop)
-            self.beta_ = self._infer_beta()
-            if not self.converged_:
+            if not self.alpha_converged_:
                 break
-            time_current = str(
-                timedelta(seconds=round(timer() - time_start)))
-            _print_code_header([
-                "Jointly inferring structure & alpha",
-                f"Inferring STRUCTURE #{alpha_loop},"
-                f" total time={time_current}"], max_length=50)
+            # time_current = str(
+            #     timedelta(seconds=round(timer() - time_start)))
+            # _print_code_header([
+            #     "Jointly inferring structure & alpha",
+            #     f"Inferring STRUCTURE #{alpha_loop},"
+            #     f" total time={time_current}"], max_length=50)
             self._fit_structure(alpha_loop=alpha_loop)
             if not self.converged_:
                 break
@@ -1080,74 +1098,77 @@ class PastisPM(object):
                 break
             prev_alpha_obj = self.alpha_obj_
 
-    def _fit_struct_epsilon_jointly(self, time_start, alpha_loop=0,
-                                    infer_structure_first=True):
-        """Jointly fit structure & epsilon to counts data.
-        """
+    # def _fit_struct_epsilon_jointly(self, time_start, alpha_loop=0,
+    #                                 infer_structure_first=True):
+    #     """Jointly fit structure & epsilon to counts data.
+    #     """
+    #     # FIXME this is obviously temporary...
+    #     self.max_epsilon_loop = max_alpha_loop
+    #     self.epsilon_factr = alpha_factr
 
-        if self.multiscale_reform and self.verbose:
-            print(f"Epsilon init = {self.epsilon:.3g}, bounds = ["
-                  f"{self.epsilon_bounds[0]:.3g},"
-                  f" {self.epsilon_bounds[1]:.3g}]", flush=True)
+    #     if self.multiscale_reform and self.verbose:
+    #         print(f"Epsilon init = {self.epsilon:.3g}, bounds = ["
+    #               f"{self.epsilon_bounds[0]:.3g},"
+    #               f" {self.epsilon_bounds[1]:.3g}]", flush=True)
 
-        fit_naive_multiscale = 'naive1st' in self.mods
-        if fit_naive_multiscale:
-            fit_naive_multiscale = self._fit_naive_multiscale()
+    #     fit_naive_multiscale = 'naive1st' in self.mods
+    #     if fit_naive_multiscale:
+    #         fit_naive_multiscale = self._fit_naive_multiscale()
 
-        if not (self.multiscale_reform and self.epsilon_coord_descent):
-            if fit_naive_multiscale:
-                _print_code_header(
-                    "Inferring with NegBinom multiscale", max_length=50,
-                    blank_lines=1)
-            self._fit_structure()
-            return
+    #     if not (self.multiscale_reform and self.epsilon_coord_descent):
+    #         if fit_naive_multiscale:
+    #             _print_code_header(
+    #                 "Inferring with NegBinom multiscale", max_length=50,
+    #                 blank_lines=1)
+    #         self._fit_structure()
+    #         return
 
-        only_infer_epsilon_once = False
-        if only_infer_epsilon_once:
-            self._fit_epsilon(
-                inferring_epsilon=True, alpha_loop=alpha_loop,
-                epsilon_loop=1)
-            return
+    #     only_infer_epsilon_once = False
+    #     if only_infer_epsilon_once:
+    #         self._fit_epsilon(
+    #             inferring_epsilon=True, alpha_loop=alpha_loop,
+    #             epsilon_loop=1)
+    #         return
 
-        if infer_structure_first and not fit_naive_multiscale:
-            _print_code_header([
-                "Jointly inferring structure & epsilon",
-                f"Inferring STRUCTURE #0, initial epsilon={self.epsilon:.3g}"],
-                max_length=50)
-            self._fit_epsilon(
-                inferring_epsilon=False, alpha_loop=alpha_loop, epsilon_loop=0)
-            if not self.converged_:
-                return
+    #     if infer_structure_first and not fit_naive_multiscale:
+    #         _print_code_header([
+    #             "Jointly inferring structure & epsilon",
+    #             f"Inferring STRUCTURE #0, initial epsilon={self.epsilon:.3g}"],
+    #             max_length=50)
+    #         self._fit_epsilon(
+    #             inferring_epsilon=False, alpha_loop=alpha_loop, epsilon_loop=0)
+    #         if not self.converged_:
+    #             return
 
-        prev_epsilon_obj = None
-        for epsilon_loop in range(1, self.max_epsilon_loop + 1):
-            time_current = str(
-                timedelta(seconds=round(timer() - time_start)))
-            _print_code_header([
-                "Jointly inferring structure & epsilon",
-                f"Inferring EPSILON #{epsilon_loop},"
-                f" total time={time_current}"], max_length=50)
-            self._fit_epsilon(
-                inferring_epsilon=True, alpha_loop=alpha_loop,
-                epsilon_loop=epsilon_loop)
-            if not self.converged_:
-                break
-            time_current = str(
-                timedelta(seconds=round(timer() - time_start)))
-            _print_code_header([
-                "Jointly inferring structure & epsilon",
-                f"Inferring STRUCTURE #{epsilon_loop},"
-                f" total time={time_current}"], max_length=50)
-            self._fit_epsilon(
-                inferring_epsilon=False, alpha_loop=alpha_loop,
-                epsilon_loop=epsilon_loop)
-            if not self.converged_:
-                break
-            if _convergence_criteria(
-                    f_k=prev_epsilon_obj, f_kplus1=self.epsilon_obj_,
-                    factr=self.epsilon_factr):
-                break
-            prev_epsilon_obj = self.epsilon_obj_
+    #     prev_epsilon_obj = None
+    #     for epsilon_loop in range(1, self.max_epsilon_loop + 1):
+    #         time_current = str(
+    #             timedelta(seconds=round(timer() - time_start)))
+    #         _print_code_header([
+    #             "Jointly inferring structure & epsilon",
+    #             f"Inferring EPSILON #{epsilon_loop},"
+    #             f" total time={time_current}"], max_length=50)
+    #         self._fit_epsilon(
+    #             inferring_epsilon=True, alpha_loop=alpha_loop,
+    #             epsilon_loop=epsilon_loop)
+    #         if not self.converged_:
+    #             break
+    #         time_current = str(
+    #             timedelta(seconds=round(timer() - time_start)))
+    #         _print_code_header([
+    #             "Jointly inferring structure & epsilon",
+    #             f"Inferring STRUCTURE #{epsilon_loop},"
+    #             f" total time={time_current}"], max_length=50)
+    #         self._fit_epsilon(
+    #             inferring_epsilon=False, alpha_loop=alpha_loop,
+    #             epsilon_loop=epsilon_loop)
+    #         if not self.converged_:
+    #             break
+    #         if _convergence_criteria(
+    #                 f_k=prev_epsilon_obj, f_kplus1=self.epsilon_obj_,
+    #                 factr=self.epsilon_factr):
+    #             break
+    #         prev_epsilon_obj = self.epsilon_obj_
 
     def fit(self):
         """Fit structure to counts data, optionally estimate alpha & epsilon.
@@ -1167,11 +1188,11 @@ class PastisPM(object):
         print(f"OPTIMIZATION AT {self.multiscale_factor}X RESOLUTION COMPLETE,"
               f" TOTAL ELAPSED TIME={time_current}", flush=True)
 
-        if self.reorienter.reorient:
-            self.orientation_ = self.X_
-            self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
-                0].reshape(-1, 3)
-        else:
-            self.struct_ = self.X_.reshape(-1, 3)
+        # if self.reorienter.reorient:
+        #     self.orientation_ = self.X_
+        #     self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
+        #         0].reshape(-1, 3)
+        # else:
+        #     self.struct_ = self.X_.reshape(-1, 3)
 
         return self
