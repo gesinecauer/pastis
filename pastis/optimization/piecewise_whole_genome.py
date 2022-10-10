@@ -424,7 +424,7 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
     """Infer whole genome 3D structures piecewise, first inferring chromosomes.
     """
 
-    counts_raw, lengths, chromosomes, _, _, struct_true = load_data(
+    counts_raw, bias, lengths, chromosomes, _, _, struct_true = load_data(
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         chrom_full=chromosomes, chrom_subset=chrom_subset,
         exclude_zeros=exclude_zeros, struct_true=struct_true)
@@ -566,10 +566,10 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
             _print_code_header(
                 'CHROMOSOME %s' % chrom, max_length=70, blank_lines=1)
 
-            chrom_lengths, _, chrom_counts, chrom_struct_true = subset_chrom_of_data(
+            chrom_lengths, _, chrom_counts, chrom_bias, chrom_struct_true = subset_chrom_of_data(
                 counts=counts_raw, ploidy=ploidy, lengths_full=lengths,
                 chrom_full=chromosomes, chrom_subset=chrom,
-                exclude_zeros=exclude_zeros, struct_true=struct_true)
+                exclude_zeros=exclude_zeros, bias=bias, struct_true=struct_true)
             index = subset_chrom(
                 lengths_full=lengths, chrom_full=chromosomes,
                 chrom_subset=chrom)[-1]

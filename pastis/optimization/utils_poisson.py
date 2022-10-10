@@ -444,9 +444,9 @@ def subset_chrom(lengths_full, chrom_full, chrom_subset=None):
     return lengths_subset, chrom_subset, subset_index
 
 
-# TODO add on main branch - subset_chrom->subset_chrom_of_data & _get_chrom_subset_index->subset_chrom
 def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
-                         counts=None, structures=None, exclude_zeros=False):
+                         counts=None, bias=None, structures=None,
+                         exclude_zeros=False):
     """Return data for selected chromosomes only.
 
     If `chrom_subset` is None, return original data. Otherwise, only return
@@ -499,6 +499,9 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
             counts, lengths=lengths_full, ploidy=ploidy,
             exclude_zeros=exclude_zeros, chrom_subset_index=subset_index)
 
+    if subset_index is not None and bias is not None:
+        bias = bias[subset_index]
+
     if subset_index is not None and structures is not None:
         if isinstance(structures, list):
             for i in range(len(structures)):
@@ -508,7 +511,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
             structures = structures.reshape(-1, 3)[subset_index].reshape(
                 *structures.shape)
 
-    return lengths_subset, chrom_subset, counts, structures
+    return lengths_subset, chrom_subset, counts, bias, structures
 
 
 def _intra_mask(data, lengths_at_res):
@@ -546,10 +549,10 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
     from .counts import _check_counts_matrix, _row_and_col
 
     sections = sections.lower()
-    options = ['inter', 'intra', 'near diag', 'lowres nghbr']
+    options = ['inter', 'intra', 'near diag']
     if sections not in options:
         raise ValueError(f"Options: {', '.join(options)}.")
-    if sections in ('near diag', 'lowres nghbr') and nbins is None:
+    if sections == 'near diag' and nbins is None:
         raise ValueError("Must input nbins.")
 
     counts = _check_counts_matrix(
@@ -571,22 +574,22 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
             col[col >= n] -= n
         mask_near_diag = np.abs(row - col) <= nbins
         mask = mask_intra & mask_near_diag
-    elif sections == 'lowres nghbr':
-        row, col = _row_and_col(counts)
-        row = row.copy()
-        col = col.copy()
-        if counts.shape[0] != counts.shape[1]:
-            n = lengths_at_res.sum()
-            row[row >= n] -= n
-            col[col >= n] -= n
-        lengths_tiled = np.tile(lengths_at_res, ploidy)
-        for i in np.flip(np.arange(1, lengths_tiled.size)):
-            l = lengths_tiled[:i].sum()
-            row[row >= l] -= lengths_tiled[i - 1]
-            col[col >= l] -= lengths_tiled[i - 1]
-        mask_lowres_nghbr = np.abs(np.floor(row / nbins) - np.floor(
-            col / nbins)) == 1
-        mask = mask_intra & mask_lowres_nghbr
+    # elif sections == 'lowres nghbr':
+    #     row, col = _row_and_col(counts)
+    #     row = row.copy()
+    #     col = col.copy()
+    #     if counts.shape[0] != counts.shape[1]:
+    #         n = lengths_at_res.sum()
+    #         row[row >= n] -= n
+    #         col[col >= n] -= n
+    #     lengths_tiled = np.tile(lengths_at_res, ploidy)
+    #     for i in np.flip(np.arange(1, lengths_tiled.size)):
+    #         l = lengths_tiled[:i].sum()
+    #         row[row >= l] -= lengths_tiled[i - 1]
+    #         col[col >= l] -= lengths_tiled[i - 1]
+    #     mask_lowres_nghbr = np.abs(np.floor(row / nbins) - np.floor(
+    #         col / nbins)) == 1
+    #     mask = mask_intra & mask_lowres_nghbr
 
     if exclude_zeros:
         return sparse.coo_matrix(

@@ -316,14 +316,12 @@ def check_counts(counts, lengths, ploidy, exclude_zeros=False,
 
 
 def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
-                      normalize=True, filter_threshold=0.04, beta=None,
-                      excluded_counts=None, mixture_coefs=None,
+                      beta=None, excluded_counts=None, mixture_coefs=None,
                       exclude_zeros=False, input_weight=None, verbose=True,
-                      diploid_to_unambig=False, mods=[]):
+                      simple_diploid=False, mods=[]):
     """Check counts, reformat, reduce resolution, filter, and compute bias.
 
-    Preprocessing options include reducing resolution, computing bias (if
-    `normalize`), and filering. Counts matrices are also checked and reformatted
+    Optionally reduce resolution. Counts are also checked and reformatted
     for inference. Final matrices are stored as CountsMatrix subclass instances.
 
     Parameters
@@ -337,12 +335,6 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    normalize : bool, optional
-        Perform ICE normalization on the counts prior to optimization.
-        Normalization is reccomended.
-    filter_threshold : float, optional
-        Ratio of non-zero beads to be filtered out. Filtering is
-        reccomended.
     beta : array_like of float, optional
         Scaling parameter that determines the size of the structure, relative to
         each counts matrix. There should be one beta per counts matrix. If None,
@@ -360,11 +352,26 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         Beads that should be removed (set to NaN) in the structure.
     """
 
-    # Prep counts at full-res
-    counts_prepped, bias = _prep_counts(
-        counts_raw, lengths=lengths, ploidy=ploidy, multiscale_factor=1,
-        normalize=normalize, filter_threshold=filter_threshold,
-        exclude_zeros=exclude_zeros, verbose=verbose)
+    # FIXME what about if betas are different?
+    # if all([isinstance(c, CountsMatrix) for c in counts]):
+
+    if simple_diploid:
+        if ploidy != 2:
+            raise ValueError("Ploidy is not 2, but simple_diploid specified.")
+        counts_raw = check_counts(
+            counts_raw, lengths=lengths, ploidy=2, exclude_zeros=exclude_zeros)
+        beta = 2 * _ambiguate_beta(
+            beta, counts=counts_raw, lengths=lengths, ploidy=2)
+        counts_raw = [ambiguate_counts(
+            counts=counts_raw, lengths=lengths, ploidy=2,
+            exclude_zeros=exclude_zeros)]
+        ploidy = 1
+
+    # # Filter counts and compute bias
+    # counts_prepped, bias = _prep_counts(
+    #     counts_raw, lengths=lengths, ploidy=ploidy, normalize=normalize,
+    #     filter_threshold=filter_threshold, exclude_zeros=exclude_zeros,
+    #     verbose=verbose)
 
     # Beads to remove from full-res structure
     if multiscale_factor == 1:
@@ -386,7 +393,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             counts_prepped = [_counts_near_diag(
                 c, lengths_at_res=lengths, ploidy=ploidy, nbins=excluded_counts,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
-            # print(((counts_prepped[0] != 0) & ~np.isnan(counts_prepped[0])).astype(int)[:20, :20]) # TODO
+            # print(np.array2string((~np.isnan(counts_prepped[0])).astype(int)[:80, :80], max_line_width=np.inf, threshold=np.inf).replace('0', '□').replace('1', '■')); exit(1) # TODO
         elif excluded_counts.lower() == 'intra':
             counts_prepped = [_inter_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy,
@@ -395,70 +402,9 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             counts_prepped = [_intra_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy,
                 exclude_zeros=exclude_zeros) for c in counts_prepped]
-        elif excluded_counts.lower() == 'intra8':  # TODO
-            nbins = 8
-
-            counts_prepped = [_intra_counts(
-                c, lengths_at_res=lengths, ploidy=ploidy,
-                exclude_zeros=exclude_zeros) for c in counts_prepped]
-
-            # from .multiscale_optimization import _count_fullres_per_lowres_bead
-            # tmp = _count_fullres_per_lowres_bead(
-            #     multiscale_factor=nbins, lengths=lengths, ploidy=1)
-            # counts_prepped = [_inter_counts(
-            #     c, lengths_at_res=tmp, ploidy=ploidy,
-            #     exclude_zeros=exclude_zeros) for c in counts_prepped]
-
-            counts_prepped = counts_prepped[0]
-            row, col = _row_and_col(counts_prepped)
-            if counts_prepped.shape[0] != counts_prepped.shape[1]:
-                row = row.copy()
-                col = col.copy()
-                n = lengths.sum()
-                row[row >= n] -= n
-                col[col >= n] -= n
-
-            row = row.copy()
-            col = col.copy()
-            lengths_tiled = np.tile(lengths, ploidy)
-            for i in np.flip(np.arange(1, lengths_tiled.size)):
-                l = lengths_tiled[:i].sum()
-                row[row >= l] -= lengths_tiled[i - 1]
-                col[col >= l] -= lengths_tiled[i - 1]
-
-            mask = np.abs(np.floor(row / nbins) - np.floor(col / nbins)) == 1
-            if exclude_zeros:
-                counts_prepped = sparse.coo_matrix(
-                    (counts_prepped.data[mask], (
-                        counts_prepped.row[mask], counts_prepped.col[mask])),
-                    shape=counts_prepped.shape)
-            else:
-                row, col = _row_and_col(counts_prepped)
-                row = row[mask]
-                col = col[mask]
-                counts_prepped_new = np.full_like(counts_prepped, np.nan)
-                counts_prepped_new[row, col] = counts_prepped[row, col]
-                counts_prepped = counts_prepped_new
-            counts_prepped = [counts_prepped]
-
-            # print(np.array2string((~np.isnan(counts_prepped[0])).astype(int)[:80, :80], max_line_width=np.inf, threshold=np.inf).replace('0', '□').replace('1', '■')); exit(1) # TODO
         else:
             raise ValueError(
                 "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
-
-    # Optionally "convert" ambiguous counts to unambigous
-    if diploid_to_unambig and ploidy == 2:
-        beta = 2 * _ambiguate_beta(
-            beta, counts=counts_raw, lengths=lengths, ploidy=ploidy)
-        counts_prepped = ambiguate_counts(
-            counts=counts_prepped, lengths=lengths, ploidy=ploidy,
-            exclude_zeros=True)
-        n = lengths.sum()
-        row = np.concatenate([counts_prepped.row, counts_prepped.row + n])
-        col = np.concatenate([counts_prepped.col, counts_prepped.col + n])
-        counts_prepped = [sparse.coo_matrix(
-            (np.tile(counts_prepped.data, 2), (row, col)),
-            shape=(n * 2, n * 2))]
 
     # Format counts as CountsMatrix objects
     counts = _format_counts(
@@ -476,7 +422,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         struct_nan_mask[struct_nan] = True
         struct_nan = np.where(np.tile(struct_nan_mask, len(mixture_coefs)))[0]
 
-    return counts, bias, struct_nan, fullres_struct_nan
+    return counts, struct_nan, fullres_struct_nan
 
 
 def _percent_nan_beads(counts):
@@ -489,8 +435,8 @@ def _percent_nan_beads(counts):
 
 
 def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
-                 normalize=True, filter_threshold=0.04, exclude_zeros=True,
-                 verbose=True):
+                 filter_threshold=0.04, normalize=True, bias=None,
+                 exclude_zeros=True, verbose=True):
     """Copy counts, check matrix, reduce resolution, filter, and compute bias.
     """
 
@@ -525,16 +471,14 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                 ploidy=ploidy)
 
     # Optionally filter counts
-    if filter_threshold is None:
-        filter_threshold = 0
-    if filter_threshold and len(counts_list) > 1:
+    if filter_threshold is not None and filter_threshold > 0:
         # If there are multiple counts matrices, filter them together.
         # Counts will be ambiguated for deciding which beads to remove.
         # For diploid, any beads that are filtered out will be removed from both
         # homologs.
         if verbose:
             print("FILTERING LOW COUNTS: manually filtering all counts together"
-                  " by %g" % filter_threshold, flush=True)
+                  f" by {filter_threshold}", flush=True)
         all_counts_ambiguated = ambiguate_counts(
             list(counts_dict.values()), lengths=lengths_lowres, ploidy=ploidy,
             exclude_zeros=True)
@@ -564,67 +508,9 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                 int(counts.shape[1] / struct_nan_mask.shape[0]))] = 0.
             counts = sparse.coo_matrix(counts)
             counts_dict[counts_type] = counts
-    elif filter_threshold:
-        # If there is just one counts matrix, filter the full, non-ambiguated
-        # counts matrix.
-        # For diploid unambiguous or partially ambigous counts, it is possible
-        # that a bead will be filtered out on one homolog but not another.
-        individual_counts_struct_nans = np.full((lengths_lowres.sum(),), False)
-        for counts_type, counts in counts_dict.items():
-            if verbose:
-                print('FILTERING LOW COUNTS: manually filtering %s counts by %g'
-                      % (counts_type.upper(), filter_threshold), flush=True)
-            initial_zero_beads = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
-                lengths=lengths, ploidy=1,
-                multiscale_factor=multiscale_factor).sum()
-            if counts_type == 'pa':
-                if sparse.issparse(counts):
-                    counts = counts.toarray()
-                counts_filtered = np.zeros_like(counts)
-                homo1_upper = np.triu(counts[:min(counts.shape), :], 1)
-                homo1_lower = np.triu(counts[:min(counts.shape), :].T, 1)
-                homo2_upper = np.triu(counts[min(counts.shape):, :], 1)
-                homo2_lower = np.triu(counts[min(counts.shape):, :].T, 1)
-                counts_filtered[:min(counts.shape), :] += filter_low_counts(
-                    sparse.coo_matrix(homo1_upper), sparsity=False,
-                    percentage=filter_threshold + _percent_nan_beads(
-                        homo1_upper)).toarray()
-                counts_filtered[:min(counts.shape), :] += filter_low_counts(
-                    sparse.coo_matrix(homo1_lower), sparsity=False,
-                    percentage=filter_threshold + _percent_nan_beads(
-                        homo1_lower)).toarray().T
-                counts_filtered[min(counts.shape):, :] += filter_low_counts(
-                    sparse.coo_matrix(homo2_upper), sparsity=False,
-                    percentage=filter_threshold + _percent_nan_beads(
-                        homo2_upper)).toarray()
-                counts_filtered[min(counts.shape):, :] += filter_low_counts(
-                    sparse.coo_matrix(homo2_lower), sparsity=False,
-                    percentage=filter_threshold + _percent_nan_beads(
-                        homo2_lower)).toarray().T
-                counts = counts_filtered
-            else:
-                counts = filter_low_counts(
-                    sparse.coo_matrix(counts), sparsity=False,
-                    percentage=filter_threshold + _percent_nan_beads(
-                        counts)).tocoo()
-            struct_nan = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
-                lengths=lengths, ploidy=1,
-                multiscale_factor=multiscale_factor)
-            struct_nan_mask = np.full(lengths_lowres * ploidy, False)
-            struct_nan_mask[struct_nan] = True
-            if verbose:
-                print('                      removing %d beads' %
-                      (struct_nan_mask.sum() - initial_zero_beads), flush=True)
-            individual_counts_struct_nans = (
-                individual_counts_struct_nans | struct_nan_mask)
-            counts = sparse.coo_matrix(counts)
-            counts_dict[counts_type] = counts
 
     # Optionally normalize counts
-    bias = None
-    if normalize:
+    if normalize and bias is None:
         if verbose:
             print('COMPUTING BIAS: all counts together', flush=True)
         bias = ICE_normalization(
@@ -632,7 +518,9 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
                 list(counts_dict.values()), lengths=lengths_lowres,
                 ploidy=ploidy, exclude_zeros=True),
             max_iter=300, output_bias=True)[1].flatten()
-        # In each counts matrix, zero out counts for which bias is NaN
+
+    # In each counts matrix, zero out counts for which bias is NaN
+    if bias is not None
         for counts_type, counts in counts_dict.items():
             initial_zero_beads = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
@@ -722,19 +610,19 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
         counts, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
     if beta is not None:
-        if not (isinstance(beta, list) or isinstance(beta, np.ndarray)):
+        if not isinstance(beta, (list, np.ndarray)):
             beta = [beta]
         if len(beta) != len(counts):
-            raise ValueError("beta needs to contain as many scaling factors"
-                             " as there are datasets (%d). It is of length (%d)"
-                             % (len(counts), len(beta)))
+            raise ValueError(
+                "Beta needs to contain as many scaling factors as there are "
+                f"datasets ({len(counts)}). It is of length ({len(beta)})")
     else:
         _, beta = _set_initial_beta(
             counts, lengths=lengths, ploidy=ploidy, bias=bias,
             exclude_zeros=exclude_zeros)
 
     if input_weight is not None:
-        if not (isinstance(input_weight, list) or isinstance(input_weight, np.ndarray)):
+        if not isinstance(input_weight, (list, np.ndarray)):
             input_weight = [input_weight]
         if len(input_weight) != len(counts):
             raise ValueError("input_weights needs to contain as many weighting"

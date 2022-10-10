@@ -7,7 +7,6 @@ import os
 from .mds import estimate_X
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _struct_replace_nan, _format_structures
-from .counts import _prep_counts
 
 
 def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,

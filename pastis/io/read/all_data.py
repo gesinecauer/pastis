@@ -4,19 +4,43 @@ from scipy import sparse
 from iced.io import load_lengths
 from .hiclib import load_hiclib_counts
 from ...optimization.utils_poisson import subset_chrom_of_data
+from ...optimization.counts import _prep_counts
 
 
 def _get_lengths(lengths):
     """Load chromosome lengths from file, or reformat lengths object.
     """
 
+    if lengths is None:
+        raise ValueError("Must input chromosome lengths")
     if isinstance(lengths, str) and os.path.exists(lengths):
         lengths = load_lengths(lengths)
-    elif lengths is not None and (isinstance(lengths, list) or isinstance(lengths, np.ndarray)):
-        if len(lengths) == 1 and isinstance(lengths[0], str) and os.path.exists(lengths[0]):
+    elif isinstance(lengths, (list, np.ndarray)):
+        if len(lengths) == 1 and isinstance(lengths[0], str) and os.path.exists(
+                lengths[0]):
             lengths = load_lengths(lengths[0])
-    lengths = np.array(lengths).astype(int)
+    lengths = np.array(lengths, dtype=int, ndmin=1, copy=False).flatten()
     return lengths
+
+
+def _get_bias(bias, lengths):
+    """Load bias from file, or reformat lengths object."""
+
+    if bias is None:
+        return None
+    lengths = _get_lengths(lengths)
+    if isinstance(bias, str) and os.path.exists(bias):
+        bias = np.loadtxt(bias)
+    elif isinstance(bias, (list, np.ndarray)):
+        if len(bias) == 1 and isinstance(bias[0], str) and os.path.exists(
+                bias[0]):
+            bias = np.loadtxt(bias[0])
+    bias = np.array(bias, dtype=float, ndmin=1, copy=False).flatten()
+    if bias.size != lengths.sum():
+        raise ValueError("Bias size must be equal to the sum of the chromosome "
+                         f"lengths ({lengths.sum}). It is of size {bias.size}.")
+    return bias
+
 
 
 def _get_chrom(chrom, lengths):
@@ -26,12 +50,13 @@ def _get_chrom(chrom, lengths):
     lengths = _get_lengths(lengths)
     if isinstance(chrom, str) and os.path.exists(chrom):
         chrom = np.array(np.genfromtxt(chrom, dtype='str')).reshape(-1)
-    elif chrom is not None and (isinstance(chrom, list) or isinstance(chrom, np.ndarray)):
-        if len(chrom) == 1 and isinstance(chrom[0], str) and os.path.exists(chrom[0]):
-            chrom = np.array(np.genfromtxt(chrom[0], dtype='str')).reshape(-1)
-        chrom = np.array(chrom)
+    elif chrom is not None and isinstance(chrom, (list, np.ndarray)):
+        if len(chrom) == 1 and isinstance(chrom[0], str) and os.path.exists(
+                chrom[0]):
+            chrom = np.array(np.genfromtxt(chrom[0], dtype=str)).reshape(-1)
+        chrom = np.array(chrom, dtype=str, ndmin=1, copy=False).flatten()
     else:
-        chrom = np.array(['num%d' % i for i in range(1, len(lengths) + 1)])
+        chrom = np.array([f'num{i}' for i in range(1, lengths.size + 1)])
     return chrom
 
 
@@ -62,7 +87,8 @@ def _get_counts(counts, lengths):
 
 
 def load_data(counts, lengths_full, ploidy, chrom_full=None,
-              chrom_subset=None, exclude_zeros=False, struct_true=None):
+              chrom_subset=None, filter_threshold=0.04, normalize=True,
+              bias=None, exclude_zeros=False, struct_true=None, verbose=False):
     """Load all input data from files, and/or reformat data objects.
 
     If files are provided, load data from files. Also reformats data objects.
@@ -82,6 +108,12 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     chrom_subset : list of str, optional
         Label for each chromosome to be excised from the full data; labels of
         chromosomes for which inference should be performed.
+    normalize : bool, optional
+        Perform ICE normalization on the counts prior to optimization.
+        Normalization is reccomended.
+    filter_threshold : float, optional
+        Ratio of non-zero beads to be filtered out. Filtering is
+        reccomended.
 
     Returns
     -------
@@ -104,17 +136,26 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
         specified chromosomes are returned.
     """
 
+    # Load
     lengths_full = _get_lengths(lengths_full)
-    chrom_full = _get_chrom(chrom_full, lengths_full)
-    counts = _get_counts(counts, lengths_full)
-
+    chrom_full = _get_chrom(chrom_full, lengths=lengths_full)
+    counts = _get_counts(counts, lengths=lengths_full)
+    bias = _get_bias(bias, lengths=lengths_full)
     if struct_true is not None and isinstance(struct_true, str):
-        struct_true = np.loadtxt(struct_true)
+        struct_true = np.loadtxt(struct_true).reshape(-1, 3)
 
-    lengths_subset, chrom_subset, counts, struct_true = subset_chrom_of_data(
+    # Optionally limit the data to the specified chromosomes
+    subset = subset_chrom_of_data(
         ploidy=ploidy, lengths_full=lengths_full, chrom_full=chrom_full,
-        chrom_subset=chrom_subset, counts=counts, structures=struct_true,
-        exclude_zeros=exclude_zeros)
+        chrom_subset=chrom_subset, counts=counts, bias=bias,
+        structures=struct_true, exclude_zeros=exclude_zeros)
+    lengths_subset, chrom_subset, counts, bias, struct_true = subset
 
-    return (counts, lengths_subset, chrom_subset, lengths_full, chrom_full,
-            struct_true)
+    # Filter counts and compute bias
+    counts, bias = _prep_counts(
+        counts, lengths=lengths_subset, ploidy=ploidy,
+        filter_threshold=filter_threshold, normalize=normalize, bias=bias,
+        exclude_zeros=exclude_zeros, verbose=verbose)
+
+    return (counts, bias, lengths_subset, chrom_subset, lengths_full,
+            chrom_full, struct_true)
