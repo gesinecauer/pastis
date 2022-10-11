@@ -151,11 +151,11 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 
         elif struct_length > lengths_lowres.sum() * ploidy:
             resize_factor = int(np.ceil(
-                struct_length / (lengths_lowres.sum() * ploidy)))  # TODO fix bug on main branch too
+                struct_length / (lengths_lowres.sum() * ploidy)))
             if verbose:
                 print('INITIALIZATION: decreasing resolution of structure by'
                       ' %d' % resize_factor, flush=True)
-            structures[i] = decrease_struct_res( # TODO change lengths=lengths (not lengths_lowres) on main branch too
+            structures[i] = decrease_struct_res(
                 structures[i], multiscale_factor=resize_factor, lengths=lengths,
                 ploidy=ploidy)
 

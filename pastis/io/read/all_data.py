@@ -145,11 +145,13 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
         struct_true = np.loadtxt(struct_true).reshape(-1, 3)
 
     # Optionally limit the data to the specified chromosomes
-    subset = subset_chrom_of_data(
+    lengths_subset, chrom_subset, data_subset = subset_chrom_of_data(
         ploidy=ploidy, lengths_full=lengths_full, chrom_full=chrom_full,
         chrom_subset=chrom_subset, counts=counts, bias=bias,
         structures=struct_true, exclude_zeros=exclude_zeros)
-    lengths_subset, chrom_subset, counts, bias, struct_true = subset
+    counts = data_subset['counts']
+    bias = data_subset['bias']
+    struct_true = data_subset['struct']
 
     # Filter counts and compute bias
     counts, bias = _prep_counts(

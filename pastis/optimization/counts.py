@@ -122,7 +122,7 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
         if counts[i].shape[0] == counts[i].shape[1]:
             beta.append(beta_ambig * counts[i].sum() / total_counts)
         else:
-            beta.append(beta_ambig * counts[i].sum() / total_counts / 2)  # TODO double check, make unit tests
+            beta.append(beta_ambig * counts[i].sum() / total_counts / 2)  # FIXME double check, make unit tests
     return beta
 
 
@@ -368,7 +368,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         ploidy = 1
 
     # # Filter counts and compute bias
-    # counts_prepped, bias = _prep_counts(
+    # counts_raw, bias = _prep_counts(
     #     counts_raw, lengths=lengths, ploidy=ploidy, normalize=normalize,
     #     filter_threshold=filter_threshold, exclude_zeros=exclude_zeros,
     #     verbose=verbose)
@@ -378,7 +378,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         fullres_struct_nan = None
     else:
         fullres_struct_nan = find_beads_to_remove(
-            counts_prepped, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
+            counts_raw, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
 
     # Optionally exclude certain counts
     if excluded_counts is not None:
@@ -390,25 +390,25 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                 r'[0-9]+(\.0){0,1}', excluded_counts):
             excluded_counts = int(excluded_counts)
         if isinstance(excluded_counts, int):
-            counts_prepped = [_counts_near_diag(
+            counts_raw = [_counts_near_diag(
                 c, lengths_at_res=lengths, ploidy=ploidy, nbins=excluded_counts,
-                exclude_zeros=exclude_zeros) for c in counts_prepped]
-            # print(np.array2string((~np.isnan(counts_prepped[0])).astype(int)[:80, :80], max_line_width=np.inf, threshold=np.inf).replace('0', '□').replace('1', '■')); exit(1) # TODO
+                exclude_zeros=exclude_zeros) for c in counts_raw]
+            # print(np.array2string((~np.isnan(counts_raw[0])).astype(int)[:80, :80], max_line_width=np.inf, threshold=np.inf).replace('0', '□').replace('1', '■')); exit(1) # TODO
         elif excluded_counts.lower() == 'intra':
-            counts_prepped = [_inter_counts(
+            counts_raw = [_inter_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy,
-                exclude_zeros=exclude_zeros) for c in counts_prepped]
+                exclude_zeros=exclude_zeros) for c in counts_raw]
         elif excluded_counts.lower() == 'inter':
-            counts_prepped = [_intra_counts(
+            counts_raw = [_intra_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy,
-                exclude_zeros=exclude_zeros) for c in counts_prepped]
+                exclude_zeros=exclude_zeros) for c in counts_raw]
         else:
             raise ValueError(
                 "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
 
     # Format counts as CountsMatrix objects
     counts = _format_counts(
-        counts_prepped, beta=beta, input_weight=input_weight,
+        counts_raw, beta=beta, input_weight=input_weight,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
         multiscale_factor=multiscale_factor)
 
@@ -520,7 +520,7 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
             max_iter=300, output_bias=True)[1].flatten()
 
     # In each counts matrix, zero out counts for which bias is NaN
-    if bias is not None
+    if bias is not None:
         for counts_type, counts in counts_dict.items():
             initial_zero_beads = find_beads_to_remove(
                 ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),

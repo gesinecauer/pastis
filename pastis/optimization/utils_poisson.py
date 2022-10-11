@@ -23,8 +23,8 @@ def _setup_jax():
     #     ),
     #     XLA_PYTHON_CLIENT_PREALLOCATE='false',
     # )
-    # # jax_config.update("jax_debug_nans", True)
-    # # jax_config.update("jax_debug_infs", True)
+    # jax_config.update("jax_debug_nans", True)
+    # jax_config.update("jax_debug_infs", True)
     # jax_config.update("jax_check_tracer_leaks", True)
 
 _setup_jax()
@@ -102,7 +102,9 @@ def _load_infer_param(infer_param_file):
             infer_param[key] = np.array(infer_param[key].split(), dtype=float)
     convert_type_fxns = {
         'alpha': [float], 'converged': [strtobool], 'seed': [float, int],
-        'multiscale_variances': [float], 'obj': [float], 'time': [float]}
+        'multiscale_variances': [float], 'obj': [float], 'time': [float],
+        'alpha_converged': [strtobool], 'alpha_obj': [float],
+        'alpha_loop': [int], 'rescale_by': [float]}
     for key, type_fxns in convert_type_fxns.items():
         if key in infer_param:
             for type_fxn in type_fxns:
@@ -511,7 +513,8 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
             structures = structures.reshape(-1, 3)[subset_index].reshape(
                 *structures.shape)
 
-    return lengths_subset, chrom_subset, counts, bias, structures
+    data_subset = {'counts': counts, 'bias': bias, 'struct': structures}
+    return lengths_subset, chrom_subset, data_subset
 
 
 def _intra_mask(data, lengths_at_res):

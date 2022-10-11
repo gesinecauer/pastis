@@ -805,9 +805,10 @@ class PastisPM(object):
                 multiscale_factor=multiscale_factor,
                 multiscale_reform=(epsilon is not None),
                 frequency={'print': 100, 'history': 100, 'save': None})
-        if reorienter is None:
-            reorienter = ChromReorienter(lengths=lengths, ploidy=ploidy)
-        reorienter.set_multiscale_factor(multiscale_factor)
+        # if reorienter is None:
+        #     reorienter = ChromReorienter(lengths=lengths, ploidy=ploidy)
+        if reorienter is not None:
+            reorienter.set_multiscale_factor(multiscale_factor)
 
         self.counts = counts
         self.lengths = lengths
@@ -892,10 +893,10 @@ class PastisPM(object):
         """Fit structure to counts data, given current alpha.
         """
 
-        if alpha_loop is not None:
-            _print_code_header([
-                "Jointly inferring structure & alpha",
-                f"Inferring STRUCTURE #{alpha_loop}"], max_length=50)
+        # if alpha_loop is not None:
+        #     _print_code_header([
+        #         "Jointly inferring structure & alpha",
+        #         f"Inferring STRUCTURE #{alpha_loop}"], max_length=50)
 
         time_start = timer()
         self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(
@@ -924,7 +925,7 @@ class PastisPM(object):
         if self.multiscale_reform and self.multiscale_factor > 1:
             self.epsilon_ = self.X_[-1]
             self.X_ = self.X_[:-1]
-        if self.reorienter.reorient:
+        if self.reorienter is not None and self.reorienter.reorient:
             self.orientation_ = self.X_
             self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
                 0].reshape(-1, 3)
@@ -937,10 +938,10 @@ class PastisPM(object):
 
         from .estimate_alpha_beta import estimate_alpha
 
-        if alpha_loop is not None:
-            _print_code_header([
-                "Jointly inferring structure & alpha",
-                f"Inferring ALPHA #{alpha_loop}"], max_length=50)
+        # if alpha_loop is not None:
+        #     _print_code_header([
+        #         "Jointly inferring structure & alpha",
+        #         f"Inferring ALPHA #{alpha_loop}"], max_length=50)
 
         time_start = timer()
         self.alpha_, self.alpha_obj_, self.alpha_converged_, self.history_, self.conv_desc_ = estimate_alpha(

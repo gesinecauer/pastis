@@ -21,6 +21,7 @@ from .utils_poisson import _inter_counts, _counts_near_diag, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta
 from .likelihoods import poisson_nll, gamma_poisson_nll, negbinom_nll
 from .poisson import get_gamma_params, get_gamma_moments
+from ..io.read import load_data
 
 
 class Constraint(object):
@@ -1048,7 +1049,7 @@ def relu_max(x1, x2):  # TODO move to likelihoods.py
 
 def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
                      bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
-                     hsc_version='2019', counts_interchrom=None,
+                     hsc_version='2019', counts_inter_mv=None,
                      est_hmlg_sep=None, hsc_perc_diff=None,
                      fullres_struct_nan=None, verbose=True, mods=[]):
     """TODO"""
@@ -1068,11 +1069,12 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
         hsc_version = '2019'
     hsc_version = str(hsc_version)
 
+    counts_interchrom = counts_inter_mv
     counts_interchrom_var = 0
     gamma_theta = 0
     if (bcc_lambda != 0 and bcc_version == '2022') or (
             hsc_lambda != 0 and hsc_version == '2022'):
-        if counts_interchrom is None:
+        if counts_inter_mv is None:
             counts_interchrom = get_counts_interchrom(
                 counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor,
@@ -1117,23 +1119,6 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
                     lim = int(mods_numeric[0])
                     counts_interchrom = counts_interchrom[:lim]  # FIXME (out of 22500)
 
-        # if isinstance(counts_interchrom, np.ndarray):  # FIXME
-        #     rng = np.random.default_rng(0)
-        #     size = 50
-        #     tmp = rng.choice(counts_interchrom, size=size, replace=False)
-        #     i = 0
-        #     print(counts_interchrom.mean(), counts_interchrom.var())
-        #     while i < 200 and not (np.isclose(
-        #             counts_interchrom.mean(), tmp.mean(), rtol=1e-01) and np.isclose(
-        #             counts_interchrom.var(), tmp.var(), rtol=1e-01)):
-        #         tmp = rng.choice(counts_interchrom, size=size, replace=False)
-        #         i += 1
-        #         print(i)
-        #     print(tmp.mean(), tmp.var())
-        #     if i == 200:
-        #         print("ran out of i", flush=True)
-        #         exit(1)
-        #     counts_interchrom = tmp
 
     bcc_class = {
         '2019': BeadChainConnectivity2019, '2021': BeadChainConnectivity2021,
@@ -1219,6 +1204,63 @@ def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1,
         print(f"Inter-chromosomal counts μ={counts_interchrom.mean():.3g}"
               f"  σ²={counts_interchrom.var():.3g}", flush=True)
     return counts_interchrom
+
+
+def calc_counts_interchrom(counts, lengths, ploidy, multiscale_rounds=1,
+                           filter_threshold=0.04, normalize=True, bias=None):
+    """TODO"""
+
+    counts, bias, lengths, _, _, _, _ = load_data(
+        counts=counts, lengths_full=lengths, ploidy=ploidy,
+        filter_threshold=filter_threshold, normalize=normalize, bias=bias,
+        exclude_zeros=False, verbose=False)
+    if lengths.size == 1:
+        raise ValueError(
+            "Must input counts_interchrom if inferring a single chromosome.")
+    if bias is not None and bias.size != lengths.sum() * ploidy:
+        raise ValueError("Length of bias vector does not match the counts")
+
+    # Get normalized inter-chromosomal counts
+    counts_ambig = ambiguate_counts(
+        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
+    counts_interchrom = _inter_counts(
+        counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
+    if bias is not None:
+        counts_ambig /= bias.reshape(1, -1)
+        counts_ambig /= bias.reshape(-1, 1)
+
+    # Get mean & var of full-res normalized inter-chromosomal counts
+    counts_interchrom_mv = {}
+    tmp = counts_interchrom[~np.isnan(counts_interchrom)] / 4
+    counts_interchrom_mv[1] = {'mean': tmp.mean(), 'var': tmp.var()}
+
+    # Get mean & var of low-res normalized inter-chromosomal counts
+    if multiscale_rounds > 1:
+        fullres_struct_nan = find_beads_to_remove(
+            counts_ambig, lengths=lengths, ploidy=1, multiscale_factor=1)
+    all_multiscale_factors = 2 ** np.arange(multiscale_rounds)
+    for multiscale_factor in all_multiscale_factors[1:]:
+        counts_interchrom = decrease_counts_res(
+            counts_interchrom, multiscale_factor=2, lengths=lengths,
+            ploidy=ploidy)
+
+        fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+            multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=1, fullres_struct_nan=fullres_struct_nan)
+        mask = (fullres_per_lowres_bead == multiscale_factor)
+        counts_interchrom[~mask, :] = np.nan
+        counts_interchrom[:, ~mask] = np.nan
+
+        tmp = counts_interchrom[~np.isnan(counts_interchrom)] / 4
+        counts_interchrom_mv[multiscale_factor] = {
+            'mean': tmp.mean(), 'var': tmp.var()}
+
+    return counts_interchrom_mv
+
+
+
+
+
 
 
 def taylor_approx_ndc(x, beta=1, alpha=-3, order=1):

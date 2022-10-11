@@ -5,9 +5,9 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
 
-from .utils_poisson import _setup_jax
-_setup_jax()
-import jax.numpy as ag_np
+# from .utils_poisson import _setup_jax
+# _setup_jax()
+# import jax.numpy as ag_np
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
@@ -603,7 +603,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
         idx[struct_nan_mask] = 0
 
     # Apply to struct, and set incorrect idx to np.nan
-    grouped_struct = ag_np.where(
+    grouped_struct = np.where(
         np.repeat(bad_idx.reshape(-1, 1), 3, axis=1), np.nan,
         struct.reshape(-1, 3)[idx.flatten(), :]).reshape(
         multiscale_factor, -1, 3)
@@ -643,7 +643,7 @@ def decrease_struct_res(struct, multiscale_factor, lengths, ploidy,
         struct, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy, idx=idx, fullres_struct_nan=fullres_struct_nan)
 
-    return ag_np.nanmean(grouped_struct, axis=0)
+    return np.nanmean(grouped_struct, axis=0)
 
 
 def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,

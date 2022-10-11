@@ -4,9 +4,7 @@ from datetime import timedelta
 import os
 from .utils_poisson import find_beads_to_remove
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
-
-
-# TODO renamed epoch to iter, change on main branch as well
+from .multiscale_optimization import get_multiscale_epsilon_from_struct
 
 
 class Callback(object):
@@ -126,12 +124,9 @@ class Callback(object):
         (for `opt_type` == "chrom_reorient").
     time_start : timeit.default_timer instance
         Time at which optimization began.
-
-    # TODO add counts, lengths vs lengths_lowres, bias, constraints
-
     """
 
-    def __init__(self, lengths, ploidy, counts=None, bias=None,
+    def __init__(self, lengths, ploidy, counts=None, bias=None, beta_init=None,
                  multiscale_factor=1, multiscale_reform=False,
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
@@ -142,22 +137,23 @@ class Callback(object):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.epsilon = None
-        self.lengths = lengths  # TODO add to main branch
-        self.lengths_lowres = decrease_lengths_res(  # FIXME TODO lengths_lowres, change to main branch
+        self.lengths = lengths
+        self.lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
-        self.bias = bias  # TODO add to main branch
-        self.counts = counts  # TODO add to main branch
+        self.bias = bias
+        self.beta_init = beta_init
+        self.counts = counts
         if counts is None:
             self.struct_nan = np.array([])
         else:
             self.struct_nan = find_beads_to_remove(
                 counts, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor)
-        self.constraints = constraints  # TODO add to main branch
-        self.multiscale_reform = multiscale_reform  # TODO add to main branch
-        self.multiscale_variances = multiscale_variances  # TODO add to main branch
-        self.mixture_coefs = mixture_coefs  # TODO add to main branch
-        self.mods = mods  # TODO add to main branch
+        self.constraints = constraints
+        self.multiscale_reform = multiscale_reform
+        self.multiscale_variances = multiscale_variances
+        self.mixture_coefs = mixture_coefs
+        self.mods = mods
 
         self.analysis_function = analysis_function
         if frequency is None or isinstance(frequency, int):
