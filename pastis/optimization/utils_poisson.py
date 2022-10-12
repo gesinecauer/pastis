@@ -344,6 +344,12 @@ def relu_min(x1, x2):
     return - (relu((-x1) - (-x2)) + (-x2))
 
 
+def relu_max(x1, x2):
+    # TODO this is temporary, remove this and switch to jax_max
+    # returns max(x1, x2)
+    return (relu((x1) - (x2)) + (x2))
+
+
 @custom_jvp
 def jax_max(x1: Array, x2: Array) -> Array:
     """Element-wise maximum of array elements.

@@ -494,7 +494,10 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # GET RESCALING FACTOR: RE-SCALES STRUCTURE TO MATCH ORIGINAL BETA
     beta_current = _ambiguate_beta(
         pm.beta_, counts=counts, lengths=lengths, ploidy=ploidy)
-    rescale_by = beta_init / beta_current
+    if beta_init is None:
+        rescale_by = None
+    else:
+        rescale_by = beta_init / beta_current
 
     # SAVE RESULTS
     infer_param = {
@@ -593,7 +596,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts_inter_mv = calc_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
             multiscale_rounds=multiscale_rounds,
-            filter_threshold=filter_threshold, normalize=normalize, bias=bias)
+            filter_threshold=filter_threshold, normalize=normalize, bias=bias,
+            verbose=verbose, mods=mods)
     # No need to repeatedly re-load if inferring with single-res
     if multiscale_rounds == 1:
         counts = _counts
