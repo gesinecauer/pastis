@@ -146,19 +146,29 @@ log_modified_bessel_1st_kind.defjvps(  # FIXME check this
 #     lambda g2, ans, v, z: grad_mean_log_bessel_ive(z, v=v) * g2)
 
 
-def invgamma_nll(data, a, b):
-    tmp1 = -(a * ag_np.log(b)).mean()
-    tmp2 = gammaln(a).mean()
-    tmp3 = ((a + 1) * ag_np.log(data)).mean()
-    tmp4 = (b / data).mean()
-    obj = tmp1 + tmp2 + tmp3 + tmp4
+# def invgamma_nll(data, a, b):
+#     tmp1 = -(a * ag_np.log(b)).mean()
+#     tmp2 = gammaln(a).mean()
+#     tmp3 = ((a + 1) * ag_np.log(data)).mean()
+#     tmp4 = (b / data).mean()
+#     obj = tmp1 + tmp2 + tmp3 + tmp4
 
-    # if type(obj).__name__ in ('ndarray', 'float', 'DeviceArray'):
-    #     from scipy.stats import invgamma
-    #     test_obj = - invgamma.logpdf(data._value, a=a, scale=b).mean()
-    #     if not ag_np.isclose(obj, test_obj):
-    #         print("ugh invgamma is wrong"); exit(1)
-    return obj
+#     # if type(obj).__name__ in ('ndarray', 'float', 'DeviceArray'):
+#     #     from scipy.stats import invgamma
+#     #     test_obj = - invgamma.logpdf(data._value, a=a, scale=b).mean()
+#     #     if not ag_np.isclose(obj, test_obj):
+#     #         print("ugh invgamma is wrong"); exit(1)
+#     return obj
+
+
+# def gengamma_nll(data, a, d, p):
+#     tmp1 = - ag_np.log(p).mean()
+#     tmp2 = (d * ag_np.log(a)).mean()
+#     tmp3 = - (d * ag_np.log(data)).mean()
+#     tmp4 = ag_np.power(data / a, p).mean()
+#     tmp5 = gammaln(d / p).mean()
+#     obj = tmp1 + tmp2 + tmp3 + tmp4
+#     return obj
 
 
 def skellam_nll(data, mu1, mu2, mods=[]):
