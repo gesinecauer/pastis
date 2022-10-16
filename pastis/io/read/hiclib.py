@@ -27,7 +27,10 @@ def _get_counts_shape(row_max, col_max, lengths=None):
     row_factor = np.ceil(nrows / (n / 2)) / 2
     col_factor = np.ceil(ncols / (n / 2)) / 2
     if {row_factor, col_factor} not in ({2}, {1}, {1, 2}):
-        raise ValueError("Counts matrix shape does not match chrom lengths.")
+        raise ValueError(
+            f"Counts matrix shape does not match chrom lengths.\nThere are {n}"
+            f" beads per homolog, and counts matrix has at least {nrows:g} rows"
+            f" and {ncols:g} columns.")
     nrows = int(n * row_factor)
     ncols = int(n * col_factor)
 
