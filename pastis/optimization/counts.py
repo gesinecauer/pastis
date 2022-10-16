@@ -418,20 +418,11 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         multiscale_factor=multiscale_factor)
     if mixture_coefs is not None and len(mixture_coefs) > 1:
         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        struct_nan_mask = np.full(lengths_lowres * ploidy, False)
+        struct_nan_mask = np.full(lengths_lowres.sum() * ploidy, False)
         struct_nan_mask[struct_nan] = True
         struct_nan = np.where(np.tile(struct_nan_mask, len(mixture_coefs)))[0]
 
     return counts, struct_nan, fullres_struct_nan
-
-
-def _percent_nan_beads(counts):
-    """Return percent of beads that would be NaN for current counts matrix.
-    """
-
-    struct_nan = find_beads_to_remove(
-        counts, lengths=np.array([max(counts.shape)]), ploidy=1)
-    return struct_nan.shape / max(counts.shape)
 
 
 def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
@@ -477,70 +468,88 @@ def _prep_counts(counts_list, lengths, ploidy=1, multiscale_factor=1,
         # For diploid, any beads that are filtered out will be removed from both
         # homologs.
         if verbose:
-            print("FILTERING LOW COUNTS: manually filtering all counts together"
-                  f" by {filter_threshold}", flush=True)
-        all_counts_ambiguated = ambiguate_counts(
+            print("FILTERING LOW COUNTS: manually filtering counts"
+                  f" by {filter_threshold * 100:g}%", flush=True)
+
+        # Ambiguate counts
+        counts_ambig = ambiguate_counts(
             list(counts_dict.values()), lengths=lengths_lowres, ploidy=ploidy,
             exclude_zeros=True)
-        initial_zero_beads = find_beads_to_remove(
-            all_counts_ambiguated, lengths=lengths, ploidy=1,
-            multiscale_factor=multiscale_factor).sum()
+
+        # How many beads are initially zero?
+        initial_zero_num = find_beads_to_remove(
+            counts_ambig, lengths=lengths, ploidy=1,
+            multiscale_factor=multiscale_factor).size
+        initial_zero_perc = initial_zero_num / lengths.sum()
+
+        # Filter ambiguated counts, and get mask of beads that are NaN
         all_counts_filtered = filter_low_counts(
-            sparse.coo_matrix(all_counts_ambiguated), sparsity=False,
-            percentage=filter_threshold + _percent_nan_beads(
-                all_counts_ambiguated)).tocoo()
+            sparse.coo_matrix(counts_ambig), sparsity=False,
+            percentage=filter_threshold + initial_zero_perc).tocoo()
         struct_nan = find_beads_to_remove(
             all_counts_filtered, lengths=lengths, ploidy=1,
             multiscale_factor=multiscale_factor)
-        struct_nan_mask = np.full(lengths_lowres * ploidy, False)
+        struct_nan_mask = np.full(lengths_lowres.sum(), False)
         struct_nan_mask[struct_nan] = True
         if verbose:
-            print('                      removing %d beads' %
-                  (struct_nan_mask.sum() - initial_zero_beads), flush=True)
+            if initial_zero_num > 0:
+                print(f"{' ' * 22}{initial_zero_num} beads are already zero",
+                      flush=True)
+            num_removed = struct_nan.size - initial_zero_num
+            print(f"{' ' * 22}Removed {num_removed} bead(s)", flush=True)
+
+        # Remove the NaN beads from all counts matrices
         for counts_type, counts in counts_dict.items():
             if sparse.issparse(counts):
                 counts = counts.toarray()
             counts[np.tile(
                 struct_nan_mask,
-                int(counts.shape[0] / struct_nan_mask.shape[0])), :] = 0.
+                int(counts.shape[0] / struct_nan_mask.size)), :] = 0
             counts[:, np.tile(
                 struct_nan_mask,
-                int(counts.shape[1] / struct_nan_mask.shape[0]))] = 0.
+                int(counts.shape[1] / struct_nan_mask.size))] = 0
             counts = sparse.coo_matrix(counts)
             counts_dict[counts_type] = counts
 
     # Optionally normalize counts
+    # Normalization is done on ambiguated counts
     if normalize and bias is None:
         if verbose:
-            print('COMPUTING BIAS: all counts together', flush=True)
+            print('COMPUTING BIAS', flush=True)
+        counts_ambig = ambiguate_counts(
+            list(counts_dict.values()), lengths=lengths_lowres,
+            ploidy=ploidy, exclude_zeros=True)
         bias = ICE_normalization(
-            ambiguate_counts(
-                list(counts_dict.values()), lengths=lengths_lowres,
-                ploidy=ploidy, exclude_zeros=True),
-            max_iter=300, output_bias=True)[1].flatten()
+            counts_ambig, max_iter=300, output_bias=True)[1].flatten()
 
     # In each counts matrix, zero out counts for which bias is NaN
     if bias is not None:
         for counts_type, counts in counts_dict.items():
-            initial_zero_beads = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
-                lengths=lengths, ploidy=1,
-                multiscale_factor=multiscale_factor).sum()
+            # How many beads are initially zero?
+            counts_ambig = ambiguate_counts(
+                counts, lengths=lengths_lowres, ploidy=ploidy)
+            initial_zero_num = find_beads_to_remove(
+                counts_ambig, lengths=lengths, ploidy=1,
+                multiscale_factor=multiscale_factor).size
+
+            # Remove beads with bias=NaN from counts
             if sparse.issparse(counts):
                 counts = counts.toarray()
-            counts[np.tile(np.isnan(bias), int(counts.shape[0] /
-                                               bias.shape[0])), :] = 0.
-            counts[:, np.tile(np.isnan(bias), int(counts.shape[1] /
-                                                  bias.shape[0]))] = 0.
+            counts[np.tile(
+                np.isnan(bias), int(counts.shape[0] / bias.size)), :] = 0
+            counts[:, np.tile(
+                np.isnan(bias), int(counts.shape[1] / bias.size))] = 0
             counts = sparse.coo_matrix(counts)
             counts_dict[counts_type] = counts
-            struct_nan = find_beads_to_remove(
-                ambiguate_counts(counts, lengths=lengths_lowres, ploidy=ploidy),
-                lengths=lengths, ploidy=1, multiscale_factor=multiscale_factor)
-            if verbose and struct_nan.shape - initial_zero_beads > 0:
-                print('                removing %d additional beads from %s' %
-                      (struct_nan.shape - initial_zero_beads, counts_type),
-                      flush=True)
+
+            if verbose:
+                struct_nan = find_beads_to_remove(
+                    counts_ambig, lengths=lengths, ploidy=1,
+                    multiscale_factor=multiscale_factor)
+                num_removed = struct_nan.size - initial_zero_num
+                if num_removed > 0:
+                    print(f"{' ' * 22}Removing {num_removed} additional "
+                          f"bead(s) from {counts_type}", flush=True)
 
     output_counts = check_counts(
         list(counts_dict.values()), lengths=lengths_lowres, ploidy=ploidy,
