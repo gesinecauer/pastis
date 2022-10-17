@@ -22,23 +22,37 @@ from .polynomial import _approx_ln_f
 from .likelihoods import _stirling, _masksum
 
 
+
+def get_epsilon_per_bin(epsilon, stretch_fullres_beads, row3d, col3d,
+                        mean_fullres_nghbr_dis, multiscale_factor):
+
+
+    if ag_np.asarray(epsilon).size == 1:
+        epsilon_per_bead = ag_np.full(consec_fullres_beads.size, epsilon)
+    else:
+        epsilon_per_bead = epsilon
+
+    epsilon_per_bead = epsilon_per_bead.at[stretch_fullres_beads == 1].set(0)
+    epsilon_per_bead = epsilon_per_bead.at[stretch_fullres_beads == 2].set(
+        mean_fullres_nghbr_dis / np.sqrt(6))
+
+    epsilon_per_bin = ag_np.sqrt(
+        ag_np.square(epsilon_per_bead[row3d]) + ag_np.square(
+            epsilon_per_bead[col3d])) / np.sqrt(2)
+
+    return epsilon_per_bin
+
+
 def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity, return_mean=True,
                       return_var=True, inferring_alpha=False):
 
     # epsilon = 0.73 # FIXME
 
     dis_alpha = ag_np.power(dis, alpha)
-    epsilon_over_dis = epsilon / dis
 
-    ln_f = _approx_ln_f(
-        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha,
+    ln_f_mean, ln_f_var = _approx_ln_f(
+        dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha,
         return_mean=return_mean, return_var=return_var)
-    if return_mean and return_var:
-        ln_f_mean, ln_f_var = ln_f
-    elif return_mean:
-        ln_f_mean = ln_f
-    else:
-        ln_f_var = ln_f
 
     gamma_mean = gamma_var = 0
     if return_mean:
@@ -71,10 +85,9 @@ def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
     # epsilon = 0.73 # FIXME
 
     dis_alpha = ag_np.power(dis, alpha)
-    epsilon_over_dis = epsilon / dis
 
     ln_f_mean, ln_f_var = _approx_ln_f(
-        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
+        dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha)
 
     if ambiguity == 'ua':
         theta_tmp = dis_alpha * ag_np.exp(ln_f_var - ln_f_mean)
@@ -122,15 +135,14 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
         dis_alpha = ag_np.power(dis, alpha)
         if ag_np.asarray(epsilon).size == 1:
-            epsilon_over_dis = epsilon / dis
+            epsilon_per_bin = epsilon
         else:
             epsilon_per_bin = ag_np.sqrt(
                 ag_np.square(epsilon[counts.row3d]) + ag_np.square(
                     epsilon[counts.col3d])) / sqrt_2
-            epsilon_over_dis = epsilon_per_bin / dis
 
         ln_f_mean, ln_f_var = _approx_ln_f(
-            epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
+            dis, epsilon=epsilon_per_bin, alpha=alpha, inferring_alpha=inferring_alpha)
 
         gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha
         gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha)
