@@ -62,7 +62,25 @@ def _polygrid2d(c, *args):
     return c
 
 
-def _approx_ln_f(epsilon_over_dis, alpha, inferring_alpha=False,
+def _approx_ln_f_mean(epsilon_over_dis, alpha, inferring_alpha=False):
+    """TODO"""
+    if alpha == -3 and not inferring_alpha:
+        ln_f_mean = _polyval(epsilon_over_dis, c=coefs_mean_alpha_minus3)
+    else:
+        ln_f_mean = _polygrid2d(coefs_mean, epsilon_over_dis, alpha)
+    return ln_f_mean
+
+
+def _approx_ln_f_var(epsilon_over_dis, alpha, inferring_alpha=False):
+    """TODO"""
+    if alpha == -3 and not inferring_alpha:
+        ln_f_var = _polyval(epsilon_over_dis, c=coefs_var_alpha_minus3)
+    else:
+        ln_f_var = _polygrid2d(coefs_var, epsilon_over_dis, alpha)
+    return ln_f_var
+
+
+def _approx_ln_f(dis, epsilon, alpha, inferring_alpha=False,
                  return_mean=True, return_var=True,
                  max_epsilon_over_dis=25):
     """TODO"""
@@ -70,28 +88,21 @@ def _approx_ln_f(epsilon_over_dis, alpha, inferring_alpha=False,
     if not (return_mean or return_var):
         raise ValueError("Must select return_mean or return_var")
 
+    epsilon_over_dis = epsilon / dis
+
     # TODO temp, verify jax_min
     epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)
     # epsilon_over_dis = jax_min(epsilon_over_dis > max_epsilon_over_dis)
 
-    ln_f_mean = ln_f_var = 0
-    if alpha == -3 and not inferring_alpha:
-        if return_mean:
-            ln_f_mean = _polyval(epsilon_over_dis, c=coefs_mean_alpha_minus3)
-        if return_var:
-            ln_f_var = _polyval(epsilon_over_dis, c=coefs_var_alpha_minus3)
-    else:
-        if return_mean:
-            ln_f_mean = _polygrid2d(coefs_mean, epsilon_over_dis, alpha)
-        if return_var:
-            ln_f_var = _polygrid2d(coefs_var, epsilon_over_dis, alpha)
+    ln_f_mean = ln_f_var = None
+    if return_mean:
+        ln_f_mean = _approx_ln_f_mean(
+            epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
+    if return_var:
+        ln_f_var = _approx_ln_f_var(
+            epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
 
-    if return_mean and return_var:
-        return ln_f_mean, ln_f_var
-    elif return_mean:
-        return ln_f_mean
-    else:
-        return ln_f_var
+    return ln_f_mean, ln_f_var
 
 
 # # ORIGINAL COEFS (Flipped coefs - for numpy.polyval or jax.numpy.polyval)
