@@ -5,9 +5,6 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
 
-# from .utils_poisson import _setup_jax
-# _setup_jax()
-# import jax.numpy as ag_np
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
@@ -361,7 +358,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         excluded from the ouptut by default, unless include_all_nan_groups=True
     include_all_nan_groups : bool, optional
         Whether groups where every single full-res bin is NaN are excluded from
-        the output.
+        the output. # TODO this doesn't even get used...
 
     Returns
     -------
@@ -376,8 +373,6 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     mask : array
         TODO
     """
-
-    # data_grouped, indices, indices3d, shape_lowres, mask
 
     revert_bug_fix = False  # TODO remove junk
     unmask_zeros_in_sparse = False  # TODO remove junk
@@ -423,6 +418,8 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         data_grouped = counts_arr[rows_grp, cols_grp].reshape(
             multiscale_factor ** 2, -1)
         if not unmask_zeros_in_sparse:
+            # If every single full-res bin in a group is either NaN or zero,
+            # exlude that group from the output.
             data_grouped = data_grouped[:, np.nansum(data_grouped, axis=0) != 0]
 
         if revert_bug_fix or unmask_zeros_in_sparse:
@@ -670,6 +667,36 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
     return (~bad_idx).sum(axis=0)
 
 
+def _get_stretch_of_fullres_beads(multiscale_factor, lengths, ploidy,
+                                  fullres_struct_nan=None):
+    """TODO
+    """
+
+    if multiscale_factor == 1:
+        return None
+
+    fullres_idx, bad_idx = _get_struct_index(
+        multiscale_factor=multiscale_factor,
+        lengths=lengths, ploidy=ploidy)
+
+    if fullres_struct_nan is not None and fullres_struct_nan.size != 0:
+        n = lengths.sum()
+        if ploidy == 1 and fullres_struct_nan.max() >= n:
+            fullres_struct_nan[fullres_struct_nan >= n] -= n
+            fullres_struct_nan = np.unique(fullres_struct_nan)
+        if fullres_struct_nan.max() >= ploidy * n:
+            raise ValueError("Inconsistent number of beads.")
+        bad_idx[np.isin(fullres_idx, fullres_struct_nan)] = True
+
+    arr = np.tile(
+        np.arange(bad_idx.shape[0], dtype=float).reshape(-1, 1),
+        (1, bad_idx.shape[1]))
+    arr[bad_idx] = np.nan
+    output = np.nanmax(arr, axis=0) - np.nanmin(arr, axis=0) + 1
+
+    return output
+
+
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
                                          mixture_coefs=None, replace_nan=True,
                                          verbose=True):
@@ -865,7 +892,7 @@ def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
     inputted full-resolution structure(s). Multiscale epsilons are defined as
     follows: for each low-resolution bead, the variances of the distances
     between all high-resolution beads that correspond to that low-resolution
-    bead. FIXME
+    bead. TODO update
 
     Parameters
     ----------
