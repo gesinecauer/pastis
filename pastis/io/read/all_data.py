@@ -49,11 +49,11 @@ def _get_chrom(chrom, lengths):
 
     lengths = _get_lengths(lengths)
     if isinstance(chrom, str) and os.path.exists(chrom):
-        chrom = np.array(np.genfromtxt(chrom, dtype='str')).reshape(-1)
+        chrom = np.loadtxt(chrom, dtype='str')
     elif chrom is not None and isinstance(chrom, (list, np.ndarray)):
         if len(chrom) == 1 and isinstance(chrom[0], str) and os.path.exists(
                 chrom[0]):
-            chrom = np.array(np.genfromtxt(chrom[0], dtype=str)).reshape(-1)
+            chrom = np.loadtxt(chrom[0], dtype='str')
         chrom = np.array(chrom, dtype=str, ndmin=1, copy=False).flatten()
     else:
         chrom = np.array([f'num{i}' for i in range(1, lengths.size + 1)])
