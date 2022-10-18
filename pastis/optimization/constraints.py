@@ -12,7 +12,7 @@ import jax.numpy as ag_np
 from jax.nn import relu
 from jax.scipy.stats.gamma import logpdf as logpdf_gamma
 from jax.scipy.stats.norm import logpdf as logpdf_norm
-# from jax.scipy.special import gammaln
+from jax.scipy.special import gammaln
 
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
@@ -792,7 +792,7 @@ class HomologSeparating2022(Constraint):
                     print(f"c={counts_inter_mean:.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}{tmp}", flush=True)
                 else:
                     print(f"c={counts_inter_mean:.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  ε={epsilon:.2g}{tmp}", flush=True)
-        elif ('hsc_gamma' in self.mods) or ('hsc_invgamma' in self.mods) or ('hsc_normal' in self.mods):
+        elif ('hsc_gamma' in self.mods) or ('hsc_invgamma' in self.mods) or ('hsc_gengamma' in self.mods) or ('hsc_normal' in self.mods):
             # NOTE: DON'T MULTIPLY lambda_interhmlg BY square(multiscale_factor)... and use highres counts_inter mean & var for all
             if 'div4' in self.mods or 'try1' in self.mods:
                 lambda_interhmlg = var['beta'] * ag_np.power(dis_interhmlg, alpha)
@@ -812,15 +812,21 @@ class HomologSeparating2022(Constraint):
             k = counts_inter_mv['est_gamma_k']
             theta = counts_inter_mv['est_gamma_theta']
 
+            if 'div4' in self.mods:
+                div_by = var['beta']
+            else:
+                div_by = 4 * var['beta']
             if 'hsc_invgamma' in self.mods:
-                if 'div4' in self.mods:
-                    div_by = var['beta']
-                else:
-                    div_by = 4 * var['beta']
                 k, theta = gamma_to_invgamma_to_gamma(
-                    k=k, theta=theta, scale=1 / div_by, verbose=False)
+                    k=k, theta=theta, scale=(1 / div_by), verbose=False)
                 obj = -logpdf_gamma(
                     ag_np.power(dis_interhmlg, -alpha), a=k, scale=theta).mean()
+            elif 'hsc_gengamma' in self.mods:
+                k, theta = gamma_to_gengamma_to_gamma(
+                    k=k, theta=theta, q=ag_np.abs(1 / alpha),
+                    scale=(1 / div_by), verbose=False)
+                obj = -logpdf_gamma(
+                    ag_np.power(dis_interhmlg, -1), a=k, scale=theta).mean()
             elif 'hsc_normal' in self.mods:
                 obj = -logpdf_norm(
                     lambda_interhmlg, loc=mean, scale=np.sqrt(variance)).mean()
@@ -838,6 +844,11 @@ class HomologSeparating2022(Constraint):
                     var2 = k * (theta ** 2)
                     lam2 = ag_np.power(dis_interhmlg, -alpha)
                     to_print += f"\t   ... 𝔼[c]={mean2:.2g}\t   μ={lam2.mean():.2g}\t   var={var2:.2g}\t   σ²={lam2.var():.2g}"
+                if 'hsc_gengamma' in self.mods:
+                    mean2 = k * theta
+                    var2 = k * (theta ** 2)
+                    lam2 = ag_np.power(dis_interhmlg, -1)
+                    to_print += f"\t   ... 𝔼[c]={mean2:.2g}\t   μ={lam2.mean():.2g}\t   var={var2:.2g}\t   σ²={lam2.var():.2g} ..."
 
                 # k = ag_np.square(lambda_interhmlg.mean()) / lambda_interhmlg.var()
                 # theta = lambda_interhmlg.var() / lambda_interhmlg.mean()
@@ -1053,11 +1064,25 @@ def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1,
     return counts_interchrom
 
 
-# def gamma_to_gengamma_to_gamma(k, theta, q, scale=1):
-#     theta = theta * scale
-#     p = 1 / q
-#     d = k / q
-#     a = ag_np.power(theta, q)
+def gamma_to_gengamma_to_gamma(k, theta, q, scale=1, verbose=False):
+    # Scale original gamma distribution
+    theta = theta * scale
+    # Get GenGamma params
+    p = 1 / q
+    d = k / q
+    a = ag_np.power(theta, q)
+    # Get GenGamma moments
+    mean = a * ag_np.exp(gammaln((d + 1) / p) - gammaln(d / p))
+    var = ag_np.square(a) * ag_np.exp(
+        gammaln((d + 2) / p) - gammaln(d / p)) - ag_np.square(mean)
+    # Get params of new gamma distribution
+    theta_new = var / mean
+    k_new = (mean ** 2) / var
+    if verbose:
+        print(f"OLD: μ={k * theta:.2g}\t    σ²={k * (theta ** 2):.2g}", flush=True)
+        print(f"NEW: μ={mean:.2g}\t    σ²={var:.2g}", flush=True)
+    return k_new, theta_new
+
 
 
 def gamma_to_invgamma_to_gamma(k, theta, scale=1, verbose=False):  # FIXME FIXME2
