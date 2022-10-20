@@ -80,9 +80,9 @@ def get_epsilon_per_bin(epsilon, row3d, col3d, multiscale_factor,
     return epsilon_per_bin
 
 
-def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d, ambiguity,
-                      stretch_fullres_beads=None, return_mean=True,
-                      return_var=True, inferring_alpha=False):
+def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
+                      ambiguity='ua', stretch_fullres_beads=None,
+                      return_mean=True, return_var=True, inferring_alpha=False):
 
     dis = ag_np.sqrt((ag_np.square(
         struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
@@ -117,7 +117,7 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d, ambiguity,
         return gamma_var
 
 
-def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity,
+def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity='ua',
                      stretch_fullres_beads=None, inferring_alpha=False):
 
     dis = ag_np.sqrt((ag_np.square(

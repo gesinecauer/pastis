@@ -593,13 +593,12 @@ class BeadChainConnectivity2022(Constraint):
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self._setup(counts=counts, bias=bias)
 
-        nghbr_dis = _euclidean_distance(
-            struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
-
         counts_inter_mean = self.hparams['counts_inter_mv']['mean']
         lambda_interchrom = counts_inter_mean / 2
 
         if self.multiscale_factor == 1:
+            nghbr_dis = _euclidean_distance(
+                struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
             lambda_nghbr = (2 * var['beta']) * var['bias_nghbr'] * ag_np.power(
                 nghbr_dis, alpha)
             lambda_nghbr = lambda_nghbr + lambda_interchrom
@@ -607,8 +606,9 @@ class BeadChainConnectivity2022(Constraint):
                 np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_nghbr)
         else:
             gamma_mean, gamma_var = get_gamma_moments(
-                dis=nghbr_dis, epsilon=epsilon, alpha=alpha,
-                beta=(2 * var['beta']), ambiguity='ua')
+                struct=struct, epsilon=epsilon, alpha=alpha,
+                beta=(2 * var['beta']), row3d=var['row_nghbr'],
+                col3d=var['row_nghbr'] + 1)
 
             # Add lambda_interchrom (increases gamma mean & Poisson variance)
             # FIXME TODO we want fullres lambda_interchrom, right?
@@ -747,8 +747,8 @@ class HomologSeparating2022(Constraint):
         if 'mse' in self.mods:
             if 'use_gmean' in self.mods and self.multiscale_factor > 1:
                 lambda_interhmlg, _ = get_gamma_moments(
-                    dis=dis_interhmlg, epsilon=epsilon, alpha=alpha,
-                    beta=4 * var['beta'], ambiguity='ua')  # FIXME
+                    struct=struct, epsilon=epsilon, alpha=alpha,
+                    beta=4 * var['beta'], row3d=row, col3d=col + n)  # FIXME
             else:
                 dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
                 lambda_interhmlg = (4 * var['beta']) * dis_alpha_interhmlg
