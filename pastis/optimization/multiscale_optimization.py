@@ -692,9 +692,9 @@ def _get_stretch_of_fullres_beads(multiscale_factor, lengths, ploidy,
         np.arange(bad_idx.shape[0], dtype=float).reshape(-1, 1),
         (1, bad_idx.shape[1]))
     arr[bad_idx] = np.nan
-    output = np.nanmax(arr, axis=0) - np.nanmin(arr, axis=0) + 1
+    stretch_fullres_beads = np.nanmax(arr, axis=0) - np.nanmin(arr, axis=0) + 1
 
-    return output
+    return stretch_fullres_beads
 
 
 def get_multiscale_variances_from_struct(structures, lengths, multiscale_factor,
