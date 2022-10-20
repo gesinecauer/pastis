@@ -19,7 +19,7 @@ from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
 from .callbacks import Callback
 from .utils_poisson import _print_code_header, relu_min
 from .polynomial import _approx_ln_f
-from .likelihoods import _stirling, _masksum
+from .likelihoods import _masksum, gamma_poisson_nll
 
 
 def get_eps_types(stretch_fullres_beads):
@@ -80,12 +80,12 @@ def get_epsilon_per_bin(epsilon, row3d, col3d, multiscale_factor,
     return epsilon_per_bin
 
 
-def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
+def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d, ambiguity,
                       stretch_fullres_beads=None, return_mean=True,
                       return_var=True, inferring_alpha=False):
 
-    # epsilon = 0.73 # FIXME
-
+    dis = ag_np.sqrt((ag_np.square(
+        struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
     dis_alpha = ag_np.power(dis, alpha)
 
     ln_f_mean, ln_f_var = _approx_ln_f(
@@ -117,11 +117,11 @@ def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
         return gamma_var
 
 
-def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
+def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity,
                      stretch_fullres_beads=None, inferring_alpha=False):
 
-    # epsilon = 0.73 # FIXME
-
+    dis = ag_np.sqrt((ag_np.square(
+        struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
     dis_alpha = ag_np.power(dis, alpha)
 
     ln_f_mean, ln_f_var = _approx_ln_f(
@@ -146,7 +146,7 @@ def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
         k = ag_np.square(gamma_mean) / gamma_var
 
     theta = beta * theta_tmp
-    return theta, k
+    return k, theta
 
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
@@ -156,110 +156,27 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     """Computes the multiscale objective function for a given counts matrix.
     """
 
-    ####
-
-    # epsilon = 0.73 # FIXME
-
     num_fullres_per_lowres_bins = counts.fullres_per_lowres_dis().reshape(1, -1)
-
     bias_per_bin = counts.bias_per_bin(bias)  # TODO
 
-    mu = ag_np.zeros((1, counts.nnz))
-    theta = ag_np.zeros((1, counts.nnz))
-    k = ag_np.zeros((1, counts.nnz))
-    for struct, mix_coef in zip(structures, mixture_coefs):
-        dis = ag_np.sqrt((ag_np.square(
-            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
-        dis_alpha = ag_np.power(dis, alpha)
-
-        if ag_np.asarray(epsilon).size == 1:
-            epsilon_per_bin = epsilon
-        else:
-            epsilon_per_bin = ag_np.sqrt(
-                ag_np.square(epsilon[counts.row3d]) + ag_np.square(
-                    epsilon[counts.col3d])) / np.sqrt(2)
-
-        ln_f_mean, ln_f_var = _approx_ln_f(
-            dis, epsilon=epsilon_per_bin, alpha=alpha,
+    obj = 0
+    for struct in structures:
+        k, theta = get_gamma_params(
+            struct, epsilon=epsilon, alpha=alpha, beta=beta, row3d=counts.row3d,
+            col3d=counts.col3d, ambiguity=counts.ambiguity,
+            stretch_fullres_beads=stretch_fullres_beads,
             inferring_alpha=inferring_alpha)
-
-        gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha
-        gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha)
-
-        if counts.ambiguity == 'ua':
-            theta_tmp = dis_alpha * ag_np.exp(ln_f_var - ln_f_mean)
-
-            k_tmp = ag_np.exp(2 * ln_f_mean - ln_f_var)
-        else:
-            if counts.ambiguity != 'ua':
-                # print(ag_np.median(dis.reshape(-1, counts.nnz), axis=1))
-                # print(ag_np.median(epsilon_over_dis.reshape(-1, counts.nnz), axis=1))
-                # print(epsilon_over_dis.reshape(-1, counts.nnz).min(axis=1))
-                # exit(0)
-                gamma_mean = gamma_mean.reshape(-1, counts.nnz).sum(axis=0)
-                gamma_var = gamma_var.reshape(-1, counts.nnz).sum(axis=0)
-
-            theta_tmp = gamma_var / gamma_mean
-            k_tmp = ag_np.square(gamma_mean) / gamma_var
-
-        theta = theta + (mix_coef * counts.beta * theta_tmp)
-        k = k + (mix_coef * k_tmp)
-        # mu = mu + mix_coef * counts.beta * gamma_mean  # Not needed
-
-    # Calculate objective  # TODO use gamma_poisson_nll from likelihoods.py
-    log1p_theta = ag_np.log1p(theta)
-    obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
-    if counts.type == 'zero':
-        obj_tmp_sum = obj_tmp1
-    else:
-        k_plus_1 = k + 1
-        obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k_plus_1)
-        obj_tmp3 = _masksum(_stirling(
-            counts.data + k_plus_1), mask=counts.mask, axis=0)
-        obj_tmp4 = _masksum(counts.data, mask=counts.mask, axis=0) * (
-            ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1)
-        obj_tmp5 = _masksum((counts.data + k + 0.5) * ag_np.log1p(
-            counts.data / k_plus_1), mask=counts.mask, axis=0)
-        obj_tmp6 = -_masksum(
-            ag_np.log1p(counts.data / k), mask=counts.mask, axis=0)
-        obj_tmp_sum = (obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
-
-    if 'ij_sum' not in mods:
-        obj_tmp_sum = obj_tmp_sum / num_fullres_per_lowres_bins
-
-    obj = ag_np.mean(obj_tmp_sum)  # TODO fix on main branch: mean not sum!
+        obj = obj + gamma_poisson_nll(
+            theta=theta, k=k, data=counts.data,
+            num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
+            bias=bias_per_bin, mask=counts.mask, mods=mods)
 
     if not ag_np.isfinite(obj):
-        from topsy.utils.debug import printvars  # FIXME
-        if type(obj).__name__ == 'JVPTracer':
-            raise ValueError(
-                f"Negative Binomial component of objective function for {counts.name}"
-                f" is {- obj} at {multiscale_factor}x resolution.")
-        if counts.type == 'zero':
-            printvars({
-                'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
-                'ln mean(ΓRV)': ln_f_mean, 'ln var(ΓRV)': ln_f_var,
-                'mean(ΓRV)': ag_np.exp(ln_f_mean), 'var(ΓRV)': ag_np.exp(ln_f_var),
-                'obj_tmp1': obj_tmp1})
-        else:
-            printvars({
-                'ε': epsilon, 'dis': dis, 'ε/dis': epsilon_over_dis, 'θ': theta, 'k': k, 'μ': mu,
-                'ln mean(ΓRV)': ln_f_mean, 'ln var(ΓRV)': ln_f_var,
-                'mean(ΓRV)': ag_np.exp(ln_f_mean), 'var(ΓRV)': ag_np.exp(ln_f_var),
-                'c_ij / k': (counts.data / k),
-                '1 + c_ij / k': (1 + counts.data / k),
-                '<0  1 + c_ij / k': (1 + counts.data / k)[(1 + counts.data / k) < 0],
-                'ln(1 + c_ij / k)': ag_np.sum(ag_np.log1p(counts.data / k), axis=0),
-                'ln(μ)': ag_np.log(mu),
-                'ln(1+θ)': ag_np.log1p(theta),
-                'tmp1': obj_tmp1, 'tmp2': obj_tmp2,
-                'tmp3': obj_tmp3, 'tmp4': obj_tmp4,
-                'tmp5': obj_tmp5, 'obj': obj_tmp_sum})
         raise ValueError(
-            f"Negative Binomial component of objective function for {counts.name}"
-            f" is {- obj} at {multiscale_factor}x resolution.")
+            "Multires (negative binomial) component of objective function for"
+            f" {counts.name} is {obj} at {multiscale_factor}x resolution.")
 
-    return counts.weight * (- obj)
+    return counts.weight * obj
 
 
 def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
@@ -267,18 +184,6 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
                  mixture_coefs=None, mods=[]):
     """Computes the Poisson objective function for a given counts matrix.
     """
-
-    if (bias is not None and bias.sum() == 0) or counts.nnz == 0 or counts.null:
-        return 0.
-    if np.isnan(counts.weight) or np.isinf(counts.weight) or counts.weight == 0:
-        raise ValueError(f"Counts weight may not be {counts.weight}.")
-
-    if mixture_coefs is not None and len(structures) != len(mixture_coefs):
-        raise ValueError("The number of structures (%d) and of mixture"
-                         " coefficents (%d) should be identical." %
-                         (len(structures), len(mixture_coefs)))
-    elif mixture_coefs is None:
-        mixture_coefs = [1.]
 
     if multiscale_variances is not None:
         if isinstance(multiscale_variances, np.ndarray):
@@ -303,22 +208,15 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             bias) * counts.beta * tmp
 
     # Sum main objective function  # TODO use function in likelihoods.py
-    obj = (lambda_intensity * num_fullres_per_lowres_bins).mean()  # TODO fix on main branch: mean not sum!
-
+    obj = (lambda_intensity * num_fullres_per_lowres_bins).mean()
     if counts.type != 'zero':
         if lambda_intensity.shape == counts.data.shape:
             counts_data = counts.data
         else:
             counts_data = _masksum(counts.data, mask=counts.mask, axis=0)
-        obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()  # TODO fix on main branch: mean not sum!
+        obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()
 
     if not ag_np.isfinite(obj):
-        from topsy.utils.debug import printvars
-        if type(dis).__name__ != 'ArrayBox':
-            printvars({
-                'struct': structures[0], 'dis': dis,
-                'lambda_intensity': lambda_intensity,
-                'counts.data': counts.data})
         raise ValueError(
             f"Poisson component of objective function for {counts.name}"
             f" is {obj} at {multiscale_factor}x resolution.")
