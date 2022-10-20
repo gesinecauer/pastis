@@ -21,9 +21,9 @@ from .initialization import initialize
 from .callbacks import Callback
 from .constraints import prep_constraints, distance_between_homologs
 from .constraints import calc_counts_interchrom
-from .poisson import PastisPM, _convergence_criteria
+from .poisson import PastisPM, _convergence_criteria, get_eps_types
 from .multiscale_optimization import get_multiscale_variances_from_struct
-
+from .multiscale_optimization import _get_stretch_of_fullres_beads
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res
 from ..io.read import load_data
@@ -277,6 +277,19 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     else:
         epsilon = None
 
+    # SETUP MULTI-RES
+    if multiscale_reform and False:
+        stretch_fullres_beads = _get_stretch_of_fullres_beads(
+            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
+            fullres_struct_nan=fullres_struct_nan)
+        eps_types = get_eps_types(stretch_fullres_beads)
+        if eps_types.size == 1 and eps_types[0] == multiscale_factor:
+            stretch_fullres_beads = eps_types = None
+        else:
+            epsilon = np.append(epsilon, random_state.rand(eps_types.size - 1))
+    else:
+        stretch_fullres_beads = None
+
     # SETUP CONSTRAINTS
     constraints = prep_constraints(
         counts=counts, lengths=lengths, ploidy=ploidy,
@@ -306,7 +319,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
-            multiscale_variances, epsilon)
+            multiscale_variances, epsilon, stretch_fullres_beads)
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -446,8 +459,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     prepped = _prep_inference(
         counts, lengths=lengths, ploidy=ploidy, outdir=outdir, alpha=alpha,
         seed=seed, filter_threshold=filter_threshold, normalize=normalize,
-        bias=bias, alpha_init=alpha_init, max_alpha_loop=max_alpha_loop, beta=beta,
-        multiscale_factor=multiscale_factor,
+        bias=bias, alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
+        beta=beta, multiscale_factor=multiscale_factor,
         use_multiscale_variance=use_multiscale_variance, beta_init=beta_init, init=init,
         max_iter=max_iter, factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
@@ -463,7 +476,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
         outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, bias, struct_nan, struct_init, constraints, callback,
-        multiscale_variances, epsilon) = prepped
+        multiscale_variances, epsilon, stretch_fullres_beads) = prepped
 
     # INFER STRUCTURE
     # original_counts_beta = [c.beta for c in counts if c.sum() != 0]
@@ -473,6 +486,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         callback=callback, multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances, epsilon=epsilon,
         epsilon_bounds=[epsilon_min, epsilon_max],
+        stretch_fullres_beads=stretch_fullres_beads,
         epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
         max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
         pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
@@ -595,8 +609,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             hsc_lambda > 0 and hsc_version == '2022')):
         counts_inter_mv = calc_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
-            multiscale_rounds=multiscale_rounds,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
+            alpha=alpha, beta=beta,
             verbose=verbose, mods=mods)
     # No need to repeatedly re-load if inferring with single-res
     if multiscale_rounds == 1:
