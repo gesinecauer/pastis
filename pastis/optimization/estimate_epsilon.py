@@ -78,7 +78,7 @@ def objective_wrapper_epsilon(X, counts, alpha, lengths, ploidy,
     if structures is not None and epsilon is not None:
         raise ValueError("Either structures or epsilon must be None")
 
-    new_obj, obj_logs, structures, alpha = objective_epsilon(
+    new_obj, obj_logs, structures, alpha, _ = objective_epsilon(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, structures=structures, epsilon=epsilon,
         constraints=constraints, reorienter=reorienter,

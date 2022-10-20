@@ -22,28 +22,66 @@ from .polynomial import _approx_ln_f
 from .likelihoods import _stirling, _masksum
 
 
+def get_eps_types(stretch_fullres_beads):
+    if multiscale_factor == 1 or stretch_fullres_beads is None:
+        return None
+    eps_types = np.flip(np.sort(np.unique(stretch_fullres_beads)))
+    mask = np.isin(eps_types, [1, 2], assume_unique=True, invert=True)
+    eps_types = eps_types[mask]
+    return eps_types
 
-def get_epsilon_per_bin(epsilon, stretch_fullres_beads, row3d, col3d,
-                        mean_fullres_nghbr_dis, multiscale_factor):
 
+def get_epsilon_per_bin(epsilon, row3d, col3d, multiscale_factor,
+                        stretch_fullres_beads=None,
+                        mean_fullres_nghbr_dis=None):
 
+    if stretch_fullres_beads is None:
+        if ag_np.asarray(epsilon).size == 1:
+            return epsilon
+        else:
+            epsilon_per_bin = ag_np.sqrt(
+                ag_np.square(epsilon[row3d]) + ag_np.square(
+                    epsilon[col3d])) / np.sqrt(2)
+            return epsilon_per_bin
+
+    # Setup epsilon per low-res BEAD
     if ag_np.asarray(epsilon).size == 1:
-        epsilon_per_bead = ag_np.full(consec_fullres_beads.size, epsilon)
-    else:
+        epsilon_per_bead = ag_np.full(stretch_fullres_beads.size, epsilon)
+        adjusted_eps = None
+    elif epsilon.size == stretch_fullres_beads.size:
         epsilon_per_bead = epsilon
+        adjusted_eps = None
+    else:
+        epsilon_per_bead = ag_np.full(stretch_fullres_beads.size, epsilon[0])
+        adjusted_eps = epsilon[1:]
 
+    # If there's only 1 full-res bead per low-res bead:
+    # epsilon for that low-res bead is 0
     epsilon_per_bead = epsilon_per_bead.at[stretch_fullres_beads == 1].set(0)
-    epsilon_per_bead = epsilon_per_bead.at[stretch_fullres_beads == 2].set(
-        mean_fullres_nghbr_dis / np.sqrt(6))
 
+    # If there's 2 consecutive full-res beads per low-res beads:
+    # epsilon for that low-res bead is set via the mean dis btwn full-res nghbr
+    if multiscale_factor != 2 and mean_fullres_nghbr_dis is not None:
+        epsilon_per_bead = epsilon_per_bead.at[stretch_fullres_beads == 2].set(
+            mean_fullres_nghbr_dis / np.sqrt(6))
+
+    # If there's > 2 but < multiscale_factor^2 full-res beads per low-res beads:
+    # epsilon for that low-res bead is set via adjusted inferred epsilon
+    if adjusted_eps is not None:
+        eps_types = get_eps_types(stretch_fullres_beads)[1:]
+        for i in range(eps_types.size):
+            epsilon_per_bead = epsilon_per_bead.at[
+                stretch_fullres_beads == eps_types[i]].set(adjusted_eps[i])
+
+    # Get epsilon per low-res distance matrix BIN
     epsilon_per_bin = ag_np.sqrt(
         ag_np.square(epsilon_per_bead[row3d]) + ag_np.square(
             epsilon_per_bead[col3d])) / np.sqrt(2)
-
     return epsilon_per_bin
 
 
-def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity, return_mean=True,
+def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity,
+                      stretch_fullres_beads=None, return_mean=True,
                       return_var=True, inferring_alpha=False):
 
     # epsilon = 0.73 # FIXME
@@ -80,7 +118,7 @@ def get_gamma_moments(dis, epsilon, alpha, beta, ambiguity, return_mean=True,
 
 
 def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
-                     inferring_alpha=False):
+                     stretch_fullres_beads=None, inferring_alpha=False):
 
     # epsilon = 0.73 # FIXME
 
@@ -113,7 +151,8 @@ def get_gamma_params(dis, epsilon, alpha, beta, ambiguity,
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            bias=None, multiscale_factor=1,
-                           inferring_alpha=False, mixture_coefs=None, mods=[]):
+                           inferring_alpha=False, stretch_fullres_beads=None,
+                           mixture_coefs=None, mods=[]):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
@@ -125,8 +164,6 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     bias_per_bin = counts.bias_per_bin(bias)  # TODO
 
-    sqrt_2 = ag_np.sqrt(2)
-
     mu = ag_np.zeros((1, counts.nnz))
     theta = ag_np.zeros((1, counts.nnz))
     k = ag_np.zeros((1, counts.nnz))
@@ -134,15 +171,17 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
         dis_alpha = ag_np.power(dis, alpha)
+
         if ag_np.asarray(epsilon).size == 1:
             epsilon_per_bin = epsilon
         else:
             epsilon_per_bin = ag_np.sqrt(
                 ag_np.square(epsilon[counts.row3d]) + ag_np.square(
-                    epsilon[counts.col3d])) / sqrt_2
+                    epsilon[counts.col3d])) / np.sqrt(2)
 
         ln_f_mean, ln_f_var = _approx_ln_f(
-            dis, epsilon=epsilon_per_bin, alpha=alpha, inferring_alpha=inferring_alpha)
+            dis, epsilon=epsilon_per_bin, alpha=alpha,
+            inferring_alpha=inferring_alpha)
 
         gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha
         gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha)
@@ -289,7 +328,8 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
 
 def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                inferring_alpha=False, mixture_coefs=None, mods=[]):
+                inferring_alpha=False, stretch_fullres_beads=None,
+                mixture_coefs=None, mods=[]):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -317,6 +357,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor,
+            stretch_fullres_beads=stretch_fullres_beads,
             inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
             mods=mods)
         if 'msv' in mods:
@@ -336,7 +377,8 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
 def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
               reorienter=None, multiscale_factor=1, multiscale_variances=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False, epsilon=None, mods=[]):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+              inferring_alpha=False, stretch_fullres_beads=None,
+              epsilon=None, mods=[]):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -388,9 +430,11 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     # Format X
     if reorienter is None or (not reorienter.reorient):
         X, epsilon, mixture_coefs = _format_X(
-            X, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-            multiscale_reform=multiscale_reform, epsilon=epsilon,
-            mixture_coefs=mixture_coefs, mods=mods)
+            X, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor,
+            multiscale_reform=multiscale_reform,
+            stretch_fullres_beads=stretch_fullres_beads,
+            epsilon=epsilon, mixture_coefs=mixture_coefs, mods=mods)
 
     # Optionally translate & rotate structures
     if reorienter is not None and reorienter.reorient:
@@ -429,6 +473,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances, epsilon=epsilon,
+            stretch_fullres_beads=stretch_fullres_beads,
             inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
             mods=mods)
         obj_poisson[f"obj_{counts_maps.name}"] = obj_counts
@@ -447,13 +492,14 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     if return_extras:
         obj_logs = {**obj_poisson, **obj_constraints,
                     **{'obj': obj, 'obj_poisson': obj_poisson_mean}}
-        return obj, obj_logs, structures, alpha
+        return obj, obj_logs, structures, alpha, epsilon
     else:
         return obj
 
 
 def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
-              multiscale_reform=False, epsilon=None, mixture_coefs=None, mods=[]):
+              multiscale_reform=False, stretch_fullres_beads=None, epsilon=None,
+              mixture_coefs=None, mods=[]):
     """Reformat and check X.
     """
     # TODO epsilon shouldn't be inputted to here unless inferring struct/eps separately
@@ -461,6 +507,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
     if mixture_coefs is None:
         mixture_coefs = [1]
 
+    # Get number of beads
     if lengths is None or ploidy is None:
         nbeads = None
     else:
@@ -468,15 +515,26 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
             lengths, multiscale_factor=multiscale_factor)
         nbeads = lengths_lowres.sum() * ploidy
 
+    # Get epsilon
     if multiscale_factor > 1 and multiscale_reform and epsilon is None:  # TODO epsilon
         if nbeads is None:
             raise ValueError("Must input `lengths` and `ploidy`.")
+        eps_types = get_eps_types(stretch_fullres_beads)
+
         if X.size == nbeads * 3 * len(mixture_coefs) + 1:
-            epsilon = X[-1]
             X = X[:-1]
+            epsilon = X[-1]
         elif X.size == nbeads * 3 * len(mixture_coefs) + nbeads:
-            epsilon = X[-nbeads]
             X = X[:-nbeads]
+            epsilon = X[-nbeads:]
+        elif eps_types is not None and (
+                X.size == nbeads * 3 * len(mixture_coefs) + eps_types.size):
+            X = X[:-eps_types.size]
+            tmp = X[-eps_types.size:]
+            epsilon_primary = tmp[1]
+            epsilon_adjust = ag_np.cumprod(tmp[1:])
+            epsilon = ag_np.append(
+                epsilon_primary, epsilon_adjust * epsilon_primary)
         else:
             raise ValueError(
                 f"Epsilon must be of length 1 or equal to the number of beads"
@@ -508,23 +566,21 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
                       multiscale_variances=None, multiscale_reform=False,
-                      mixture_coefs=None, callback=None, mods=[]):
+                      stretch_fullres_beads=None, callback=None,
+                      mixture_coefs=None, mods=[]):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
-    new_obj, obj_logs, structures, alpha = objective(
+    new_obj, obj_logs, structures, alpha, epsilon = objective(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform,
+        stretch_fullres_beads=stretch_fullres_beads,
         mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
 
     if callback is not None:
-        if multiscale_reform and multiscale_factor > 1:
-            epsilon = X[-1]
-        else:
-            epsilon = None
         callback.on_iter_end(obj_logs=obj_logs, structures=structures,
                              alpha=alpha, Xi=X, epsilon=epsilon)
 
@@ -537,7 +593,8 @@ gradient = grad(objective)
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    constraints=None, reorienter=None, multiscale_factor=1,
                    multiscale_variances=None, multiscale_reform=False,
-                   mixture_coefs=None, callback=None, mods=[]):
+                   stretch_fullres_beads=None, callback=None,
+                   mixture_coefs=None, mods=[]):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
@@ -551,6 +608,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             multiscale_reform=multiscale_reform,
+            stretch_fullres_beads=stretch_fullres_beads,
             mixture_coefs=mixture_coefs, mods=mods)).flatten()
 
     return new_grad
@@ -558,9 +616,11 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
 
 def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                constraints=None, multiscale_factor=1, multiscale_variances=None,
-               epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
+               epsilon=None, epsilon_bounds=None, stretch_fullres_beads=None,
+               max_iter=30000, max_fun=None,
                factr=1e7, pgtol=1e-05, callback=None, alpha_loop=0, epsilon_loop=0,
-               reorienter=None, mixture_coefs=None, verbose=True, mods=[]):
+               reorienter=None, mixture_coefs=None,
+               verbose=True, mods=[]):
     """Estimates a 3D structure, given current alpha.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -656,8 +716,9 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
-            multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
-            callback=callback, mods=mods)
+            multiscale_reform=multiscale_reform,
+            stretch_fullres_beads=stretch_fullres_beads, callback=callback,
+            mixture_coefs=mixture_coefs, mods=mods)
     else:
         obj = np.nan
 
@@ -688,7 +749,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, bias, constraints,
                   reorienter, multiscale_factor, multiscale_variances,
-                  multiscale_reform, mixture_coefs, callback, mods))
+                  multiscale_reform, stretch_fullres_beads, callback,
+                  mixture_coefs, mods))
         X, obj, d = results
         converged = d['warnflag'] == 0
         # TODO add conv_desc to main branch
@@ -707,6 +769,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                 X, lengths=lengths, ploidy=ploidy,
                 multiscale_factor=multiscale_factor,
                 multiscale_reform=multiscale_reform,
+                stretch_fullres_beads=stretch_fullres_beads,
                 mixture_coefs=mixture_coefs, mods=mods)
             print(f'INIT EPSILON: {np.asarray(epsilon).mean():.3g},'
                   f'  FINAL EPSILON: {np.asarray(final_epsilon).mean():.3g}',
@@ -800,6 +863,7 @@ class PastisPM(object):
     def __init__(self, counts, lengths, ploidy, alpha, init, bias=None,
                  constraints=None, callback=None, multiscale_factor=1,
                  multiscale_variances=None, epsilon=None, epsilon_bounds=None,
+                 stretch_fullres_beads=None,
                  epsilon_coord_descent=False, alpha_init=-3, max_alpha_loop=20, max_iter=30000,
                  factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                  reorienter=None, null=False, mixture_coefs=None, verbose=True,
@@ -835,6 +899,7 @@ class PastisPM(object):
         self.multiscale_reform = multiscale_factor > 1 and epsilon is not None
         self.epsilon = epsilon
         self.epsilon_bounds = epsilon_bounds
+        self.stretch_fullres_beads = stretch_fullres_beads
         self.epsilon_coord_descent = epsilon_coord_descent
         self.alpha_init = alpha_init
         self.max_alpha_loop = max_alpha_loop
@@ -923,6 +988,7 @@ class PastisPM(object):
             multiscale_variances=self.multiscale_variances,
             epsilon=self.epsilon_,
             epsilon_bounds=self.epsilon_bounds,
+            stretch_fullres_beads=self.stretch_fullres_beads,
             max_iter=self.max_iter,
             factr=self.factr,
             pgtol=self.pgtol,
@@ -935,8 +1001,12 @@ class PastisPM(object):
         self.time_elapsed_ += timer() - time_start
 
         if self.multiscale_reform and self.multiscale_factor > 1:
-            self.epsilon_ = self.X_[-1]
-            self.X_ = self.X_[:-1]
+            self.X_, self.epsilon_, _ = _format_X(
+                self.X_, lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor,
+                multiscale_reform=self.multiscale_reform,
+                stretch_fullres_beads=self.stretch_fullres_beads,
+                mixture_coefs=self.mixture_coefs, mods=self.mods)
         if self.reorienter is not None and self.reorienter.reorient:
             self.orientation_ = self.X_
             self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
@@ -1007,6 +1077,7 @@ class PastisPM(object):
     #         epsilon=epsilon,
     #         structures=structures,
     #         epsilon_bounds=self.epsilon_bounds,
+    #         stretch_fullres_beads=self.stretch_fullres_beads,
     #         max_iter=self.max_iter,
     #         factr=self.factr,
     #         pgtol=self.pgtol,
@@ -1053,6 +1124,7 @@ class PastisPM(object):
     #         multiscale_variances=None,
     #         epsilon=None,
     #         epsilon_bounds=None,
+    #         stretch_fullres_beads=self.stretch_fullres_beads,
     #         max_iter=self.max_iter,
     #         factr=self.factr,
     #         pgtol=self.pgtol,

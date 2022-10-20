@@ -204,7 +204,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs)
     counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
 
-    new_obj, obj_logs, structures, alpha = objective_alpha(
+    new_obj, obj_logs, structures, alpha, epsilon = objective_alpha(
         alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy, bias=bias,
         constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor,
@@ -213,10 +213,6 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
 
     if callback is not None:
-        if multiscale_reform and multiscale_factor > 1:
-            epsilon = X[-1]
-        else:
-            epsilon = None
         callback.on_iter_end(
             obj_logs=obj_logs, structures=structures, alpha=alpha, Xi=X,
             epsilon=epsilon)
