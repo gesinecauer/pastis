@@ -22,7 +22,7 @@ from .utils_poisson import relu_min, relu_max
 from .utils_poisson import _inter_counts, _counts_near_diag, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta
 from .likelihoods import poisson_nll, gamma_poisson_nll
-from .poisson import get_gamma_params, get_gamma_moments
+from .poisson import get_gamma_moments
 from ..io.read import load_data
 
 
@@ -596,7 +596,7 @@ class BeadChainConnectivity2022(Constraint):
         nghbr_dis = _euclidean_distance(
             struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
 
-        counts_inter_mean = self.hparams['counts_inter_mv'][1]['mean']
+        counts_inter_mean = self.hparams['counts_inter_mv']['mean']
         lambda_interchrom = counts_inter_mean / 2
 
         if self.multiscale_factor == 1:
@@ -741,7 +741,7 @@ class HomologSeparating2022(Constraint):
             # exit(0)
         dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
 
-        counts_inter_mv = self.hparams['counts_inter_mv'][self.multiscale_factor]
+        counts_inter_mv = self.hparams['counts_inter_mv']
         counts_inter_mean = counts_inter_mv['mean']
 
         if 'mse' in self.mods:
@@ -792,14 +792,14 @@ class HomologSeparating2022(Constraint):
                     print(f"c={counts_inter_mean:.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}{tmp}", flush=True)
                 else:
                     print(f"c={counts_inter_mean:.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  ε={epsilon:.2g}{tmp}", flush=True)
-        elif ('hsc_gamma' in self.mods) or ('hsc_invgamma' in self.mods) or ('hsc_gengamma' in self.mods) or ('hsc_normal' in self.mods):
+        elif ('hsc_gamma' in self.mods) or ('hsc_invgamma' in self.mods) or ('hsc_gengamma' in self.mods) or ('hsc_normal' in self.mods) or ('hsc_invgengamma' in self.mods):
             # NOTE: DON'T MULTIPLY lambda_interhmlg BY square(multiscale_factor)... and use highres counts_inter mean & var for all
             if 'div4' in self.mods or 'try1' in self.mods:
                 lambda_interhmlg = var['beta'] * ag_np.power(dis_interhmlg, alpha)
             else:
                 lambda_interhmlg = (4 * var['beta']) * ag_np.power(dis_interhmlg, alpha)
 
-            counts_inter_mv = self.hparams['counts_inter_mv'][1]
+            counts_inter_mv = self.hparams['counts_inter_mv']
             mean = counts_inter_mv['est_gamma_mean']
             variance = counts_inter_mv['est_gamma_var']
 
@@ -827,6 +827,15 @@ class HomologSeparating2022(Constraint):
                     scale=(1 / div_by), verbose=False)
                 obj = -logpdf_gamma(
                     ag_np.power(dis_interhmlg, -1), a=k, scale=theta).mean()
+            elif 'hsc_invgengamma' in self.mods:
+                k, theta = gamma_to_gengamma_to_gamma(
+                    k=k, theta=theta, q=ag_np.abs(1 / alpha),
+                    scale=(1 / div_by), verbose=False)
+                k, theta = gamma_to_invgamma_to_gamma(
+                    k=k, theta=theta, scale=1, verbose=False)
+                obj = -logpdf_gamma(
+                    dis_interhmlg, a=k, scale=theta).mean()
+
             elif 'hsc_normal' in self.mods:
                 obj = -logpdf_norm(
                     lambda_interhmlg, loc=mean, scale=np.sqrt(variance)).mean()
@@ -849,6 +858,11 @@ class HomologSeparating2022(Constraint):
                     var2 = k * (theta ** 2)
                     lam2 = ag_np.power(dis_interhmlg, -1)
                     to_print += f"\t   ... 𝔼[c]={mean2:.2g}\t   μ={lam2.mean():.2g}\t   var={var2:.2g}\t   σ²={lam2.var():.2g} ..."
+                if 'hsc_invgengamma' in self.mods:
+                    mean2 = k * theta
+                    var2 = k * (theta ** 2)
+                    lam2 = dis_interhmlg
+                    to_print += f"\t   ... 𝔼[c]={mean2:.2g}\t   μ={lam2.mean():.2g}\t   var={var2:.2g}\t   σ²={lam2.var():.2g} ..."
 
                 # k = ag_np.square(lambda_interhmlg.mean()) / lambda_interhmlg.var()
                 # theta = lambda_interhmlg.var() / lambda_interhmlg.mean()
@@ -860,7 +874,7 @@ class HomologSeparating2022(Constraint):
                 print(to_print, flush=True)
                 # exit(1)
         else:
-            counts_inter_mv = self.hparams['counts_inter_mv'][1]
+            counts_inter_mv = self.hparams['counts_inter_mv']
             counts_inter_mean = counts_inter_mv['mean']
 
             dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
@@ -988,11 +1002,6 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
         '2022': {'counts_inter_mv': counts_inter_mv,
                  'perc_diff': hsc_perc_diff}}
 
-    # _ = get_counts_interchrom(
-    #     counts=counts, lengths=lengths, ploidy=ploidy,
-    #     multiscale_factor=multiscale_factor,
-    #     fullres_struct_nan=fullres_struct_nan, verbose=True)
-
     constraints = []
     if bcc_lambda != 0:
         constraints.append(bcc_class[bcc_version](
@@ -1064,7 +1073,7 @@ def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1,
     return counts_interchrom
 
 
-def gamma_to_gengamma_to_gamma(k, theta, q, scale=1, verbose=False):
+def gamma_to_gengamma_to_gamma(k, theta, q, scale=1, return_moments=False, verbose=False):
     # Scale original gamma distribution
     theta = theta * scale
     # Get GenGamma params
@@ -1075,17 +1084,18 @@ def gamma_to_gengamma_to_gamma(k, theta, q, scale=1, verbose=False):
     mean = a * ag_np.exp(gammaln((d + 1) / p) - gammaln(d / p))
     var = ag_np.square(a) * ag_np.exp(
         gammaln((d + 2) / p) - gammaln(d / p)) - ag_np.square(mean)
-    # Get params of new gamma distribution
-    theta_new = var / mean
-    k_new = (mean ** 2) / var
     if verbose:
         print(f"OLD: μ={k * theta:.2g}\t    σ²={k * (theta ** 2):.2g}", flush=True)
         print(f"NEW: μ={mean:.2g}\t    σ²={var:.2g}", flush=True)
+    if return_moments:
+        return mean, var
+    # Get params of new gamma distribution
+    theta_new = var / mean
+    k_new = (mean ** 2) / var
     return k_new, theta_new
 
 
-
-def gamma_to_invgamma_to_gamma(k, theta, scale=1, verbose=False):  # FIXME FIXME2
+def gamma_to_invgamma_to_gamma(k, theta, scale=1, return_moments=False, verbose=False):  # FIXME FIXME2
     # Scale original gamma distribution
     theta = theta * scale
     # Get InvGamma params
@@ -1094,17 +1104,19 @@ def gamma_to_invgamma_to_gamma(k, theta, scale=1, verbose=False):  # FIXME FIXME
     # Get InvGamma moments
     mean = b / (a - 1)
     var = (mean ** 2) / (a - 2)
-    # Get params of new gamma distribution
-    theta_new = var / mean
-    k_new = (mean ** 2) / var
     if verbose:
         print(f"OLD: μ={k * theta:.2g}\t    σ²={k * (theta ** 2):.2g}", flush=True)
         print(f"NEW: μ={mean:.2g}\t    σ²={var:.2g}", flush=True)
+    if return_moments:
+        return mean, var
+    # Get params of new gamma distribution
+    theta_new = var / mean
+    k_new = (mean ** 2) / var
     return k_new, theta_new
 
 
-def calc_counts_interchrom(counts, lengths, ploidy, multiscale_rounds=1,
-                           filter_threshold=0.04, normalize=True, bias=None,
+def calc_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
+                           normalize=True, bias=None, alpha=None, beta=None,
                            verbose=True, mods=[]):
     """TODO"""
 
@@ -1132,82 +1144,45 @@ def calc_counts_interchrom(counts, lengths, ploidy, multiscale_rounds=1,
     tmp = counts_interchrom[~np.isnan(counts_interchrom)]
     if 'try1' in mods:
         tmp = tmp / 4
-    counts_inter_mv[1] = {'mean': tmp.mean(), 'var': tmp.var()}
+    counts_inter_mv = {'mean': tmp.mean(), 'var': tmp.var()}
 
-    # Get mean & var of low-res normalized inter-chromosomal counts
-    lengths_lowres = lengths
-    if multiscale_rounds > 1:
-        fullres_struct_nan = find_beads_to_remove(
-            counts_ambig, lengths=lengths, ploidy=1, multiscale_factor=1)
-    all_multiscale_factors = 2 ** np.arange(multiscale_rounds)
-    for multiscale_factor in all_multiscale_factors[1:]:
-
-        counts_interchrom = decrease_counts_res(
-            counts_interchrom, multiscale_factor=2, lengths=lengths_lowres,
-            ploidy=ploidy)
-        lengths_lowres = decrease_lengths_res(
-            lengths_lowres, multiscale_factor=2)
-
-        # tmp = counts_interchrom.copy()
-        counts_interchrom = _inter_counts(
-            counts_interchrom, lengths_at_res=lengths_lowres, ploidy=ploidy,
-            exclude_zeros=False)
-        # print((counts_interchrom != tmp).sum())
-
-        fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-            multiscale_factor=multiscale_factor, lengths=lengths,
-            ploidy=1, fullres_struct_nan=fullres_struct_nan)
-        mask = (fullres_per_lowres_bead == multiscale_factor)
-        counts_interchrom[~mask, :] = np.nan
-        counts_interchrom[:, ~mask] = np.nan
-
-        tmp = counts_interchrom[~np.isnan(counts_interchrom)]
-        if 'try1' in mods:
-            tmp = tmp / 4
-        counts_inter_mv[multiscale_factor] = {
-            'mean': tmp.mean(), 'var': tmp.var()}
+    # Get mean of (c_ij / beta) ^ (-1/alpha)
+    beta_ambig = _ambiguate_beta(
+        beta, counts=counts, lengths=lengths, ploidy=ploidy)
+    tmp2 = np.power(tmp / beta_ambig, np.abs(1 / alpha))
+    counts_inter_mv['inv_dis_mean'] = tmp2.mean()
+    print('**********', tmp2.mean())
 
     # Get estimated gamma theta & k for hsc2022
     tmp_factor = 0.01
-    for multiscale_factor in all_multiscale_factors:
-        mean = counts_inter_mv[multiscale_factor]['mean']
-        var = counts_inter_mv[multiscale_factor]['var']
+    mean = counts_inter_mv['mean']
+    var = counts_inter_mv['var']
 
-        gamma_var = var - mean
-        gamma_mean = mean
-        if gamma_var <= 0:
-            gamma_var = tmp_factor * gamma_mean
+    gamma_var = var - mean
+    gamma_mean = mean
+    if gamma_var <= 0:
+        gamma_var = tmp_factor * gamma_mean
 
-        if 'div4' in mods:
-            gamma_var = gamma_var / np.square(4)
-            gamma_mean = gamma_mean / 4
+    if 'div4' in mods:
+        gamma_var = gamma_var / np.square(4)
+        gamma_mean = gamma_mean / 4
 
-        gamma_theta = gamma_var / gamma_mean
-        gamma_k = np.square(gamma_mean) / gamma_var
+    gamma_theta = gamma_var / gamma_mean
+    gamma_k = np.square(gamma_mean) / gamma_var
 
-        counts_inter_mv[multiscale_factor]['est_gamma_mean'] = gamma_mean
-        counts_inter_mv[multiscale_factor]['est_gamma_var'] = gamma_var
-        counts_inter_mv[multiscale_factor]['est_gamma_theta'] = gamma_theta
-        counts_inter_mv[multiscale_factor]['est_gamma_k'] = gamma_k
-
-        # tmp = np.square(mean) / var + 1
-        # counts_inter_mv[multiscale_factor]['est_invgamma_a'] = tmp + 1
-        # counts_inter_mv[multiscale_factor]['est_invgamma_b'] = tmp * mean
-
-        gamma_var_min = gamma_var
-        gamma_var_max = np.mean([mean, gamma_var_min])
-        counts_inter_mv[multiscale_factor]['gamma_var_min'] = gamma_var_min
-        counts_inter_mv[multiscale_factor]['gamma_var_max'] = gamma_var_max
+    counts_inter_mv['est_gamma_mean'] = gamma_mean
+    counts_inter_mv['est_gamma_var'] = gamma_var
+    counts_inter_mv['est_gamma_theta'] = gamma_theta
+    counts_inter_mv['est_gamma_k'] = gamma_k
 
     if verbose:
-        for multiscale_factor in all_multiscale_factors:
-            mean = counts_inter_mv[multiscale_factor]['mean']
-            var = counts_inter_mv[multiscale_factor]['var']
-            gamma_var = counts_inter_mv[multiscale_factor]['est_gamma_var']
-            theta = counts_inter_mv[multiscale_factor]['est_gamma_theta']
-            print(f"INTER-CHROM COUNTS, {multiscale_factor}X:\t  "
-                  f"mean={mean:.3g}\tvar={var:.3g}\tθ={theta:.3g}"
-                  f"\tΓvar={gamma_var:.3g}", flush=True)
+        mean = counts_inter_mv['mean']
+        var = counts_inter_mv['var']
+        gamma_var = counts_inter_mv['est_gamma_var']
+        theta = counts_inter_mv['est_gamma_theta']
+        print(f"INTER-CHROM COUNTS, {1}X:\t  "
+              f"mean={mean:.3g}\tvar={var:.3g}\tθ={theta:.3g}"
+              f"\tΓvar={gamma_var:.3g}", flush=True)
 
     return counts_inter_mv
 
