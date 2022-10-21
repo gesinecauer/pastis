@@ -128,7 +128,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         structures, lengths=lengths_init, ploidy=ploidy,
         mixture_coefs=mixture_coefs)
     structures = [_struct_replace_nan(
-        struct, lengths_init,
+        struct, lengths=lengths_init, ploidy=ploidy,
         random_state=random_state) for struct in structures]
 
     for i in range(len(structures)):
