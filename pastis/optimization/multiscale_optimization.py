@@ -176,8 +176,6 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     idx, bad_idx = _get_struct_index(
         multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    # idx = idx.reshape(multiscale_factor, -1).astype(float)  # TODO remove
-    # idx[bad_idx.reshape(multiscale_factor, -1)] = np.nan
     idx = idx.astype(float)
     idx[bad_idx] = np.nan
 
@@ -251,80 +249,6 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
         begin_lowres = end_lowres
 
     return struct_highres
-
-
-def _convert_indices_to_full_res(rows_lowres, cols_lowres, rows_max, cols_max,
-                                 multiscale_factor, lengths, n, counts_shape,
-                                 ploidy):
-    """Return full-res counts indices grouped by the corresponding low-res bin.
-    """
-
-    if multiscale_factor == 1:
-        return rows_lowres, cols_lowres
-
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-    n = lengths_lowres.sum()  # TODO remove n from args
-
-    # Convert low-res indices to full-res
-    nnz_lowres = len(rows_lowres)
-    x, y = np.indices((multiscale_factor, multiscale_factor))
-    rows = np.repeat(x.flatten(), nnz_lowres)[
-        :nnz_lowres * multiscale_factor ** 2] + \
-        np.tile(rows_lowres * multiscale_factor, multiscale_factor ** 2)
-    cols = np.repeat(y.flatten(), nnz_lowres)[
-        :nnz_lowres * multiscale_factor ** 2] + \
-        np.tile(cols_lowres * multiscale_factor, multiscale_factor ** 2)
-    rows = rows.reshape(multiscale_factor ** 2, -1)
-    cols = cols.reshape(multiscale_factor ** 2, -1)
-    # Figure out which rows / cols are out of bounds
-    bins_for_rows = np.tile(lengths, int(counts_shape[0] / n)).cumsum()
-    bins_for_cols = np.tile(lengths, int(counts_shape[1] / n)).cumsum()
-    for i in range(lengths.shape[0] * ploidy):
-        rows_binned = np.digitize(rows, bins_for_rows)
-        cols_binned = np.digitize(cols, bins_for_cols)
-        rows_good_bin = np.floor(rows_binned.mean(axis=0))
-        cols_good_bin = np.floor(cols_binned.mean(axis=0))
-        incorrect_rows = np.invert(np.equal(rows_binned, rows_good_bin))
-        incorrect_cols = np.invert(np.equal(cols_binned, cols_good_bin))
-        row_mask = rows_good_bin == i
-        col_mask = cols_good_bin == i
-        row_vals = np.unique(rows[:, row_mask][incorrect_rows[:, row_mask]])
-        col_vals = np.unique(cols[:, col_mask][incorrect_cols[:, col_mask]])
-        for val in np.flip(row_vals, axis=0):
-            rows[rows > val] -= 1
-        for val in np.flip(col_vals, axis=0):
-            cols[cols > val] -= 1
-        # Because if the last low-res bin in this homolog of this chromosome is
-        # all zero, that could mess up indices for subsequent
-        # homologs/chromosomes
-        rows_binned = np.digitize(rows, bins_for_rows)
-        rows_good_bin = np.floor(rows_binned.mean(axis=0))
-        row_mask = rows_good_bin == i
-        current_rows = rows[:, row_mask][np.invert(incorrect_rows)[:, row_mask]]
-        if current_rows.shape[0] > 0 and i < bins_for_rows.shape[0]:
-            max_row = current_rows.max()
-            if max_row < bins_for_rows[i] - 1:
-                rows[rows > max_row] -= multiscale_factor - \
-                    (bins_for_rows[i] - max_row - 1)
-        cols_binned = np.digitize(cols, bins_for_cols)
-        cols_good_bin = np.floor(cols_binned.mean(axis=0))
-        col_mask = cols_good_bin == i
-        current_cols = cols[:, col_mask][np.invert(incorrect_cols)[:, col_mask]]
-        if current_cols.shape[0] > 0 and i < bins_for_cols.shape[0]:
-            max_col = current_cols.max()
-            if max_col < bins_for_cols[i] - 1:
-                cols[cols > max_col] -= multiscale_factor - \
-                    (bins_for_cols[i] - max_col - 1)
-
-    bad_idx = incorrect_rows + incorrect_cols + \
-        (rows >= rows_max) + (cols >= cols_max)
-    rows[bad_idx] = 0
-    cols[bad_idx] = 0
-    rows = rows.flatten()
-    cols = cols.flatten()
-    bad_idx = bad_idx.flatten()
-    return rows, cols
 
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
@@ -406,6 +330,9 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         row_lowres = counts_lowres.row
         col_lowres = counts_lowres.col
         shape_lowres = counts_lowres.shape
+
+        print(np.array2string(counts_lowres.toarray().astype(int), max_line_width=np.inf, threshold=np.inf))
+        exit(0)
 
         if unmask_zeros_in_sparse:
             counts_lowres, rows_grp, cols_grp = decrease_counts_res(
@@ -517,27 +444,33 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
 
-    dummy_counts_lowres = np.ones(
-        np.array(counts.shape / lengths.sum() * lengths_lowres.sum()).astype(int))
-    dummy_counts_lowres = _check_counts_matrix(
-        dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-        exclude_zeros=True, remove_diag=remove_diag).toarray().astype(int)
-    dummy_counts_lowres = sparse.coo_matrix(dummy_counts_lowres)
+    counts_lowres_shape = np.array(
+        counts.shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
 
-    rows_lowres, cols_lowres = _row_and_col(dummy_counts_lowres)
+    if False:
+        dummy_counts_lowres = np.ones(counts_lowres_shape)
+        dummy_counts_lowres = _check_counts_matrix(
+            dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
+            exclude_zeros=True, remove_diag=remove_diag).toarray().astype(int)
+        dummy_counts_lowres = sparse.coo_matrix(dummy_counts_lowres)
+        row_lowres, col_lowres = _row_and_col(dummy_counts_lowres)
+        row_fullres, col_fullres = _convert_indices_to_full_res(
+            row_lowres, col_lowres, rows_max=counts.shape[0],
+            cols_max=counts.shape[1], multiscale_factor=multiscale_factor,
+            lengths=lengths, counts_shape=dummy_counts_lowres.shape, ploidy=ploidy)
+    else:
+        idx_fullres, idx_lowres = _get_fullres_counts_index(
+            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
+            counts_fullres_shape=counts.shape, remove_diag=remove_diag)
+        row_fullres, col_fullres, _ = idx_fullres
+        row_lowres, col_lowres = idx_lowres
 
-    rows_fullres, cols_fullres = _convert_indices_to_full_res(
-        rows_lowres, cols_lowres, rows_max=counts.shape[0],
-        cols_max=counts.shape[1], multiscale_factor=multiscale_factor,
-        lengths=lengths, n=lengths_lowres.sum(),
-        counts_shape=dummy_counts_lowres.shape, ploidy=ploidy)
-
-    data_lowres = counts[rows_fullres, cols_fullres].reshape(
+    data_lowres = counts[row_fullres, col_fullres].reshape(
         multiscale_factor ** 2, -1).sum(axis=0)
     counts_lowres = sparse.coo_matrix(
         (data_lowres[data_lowres != 0],
-            (rows_lowres[data_lowres != 0], cols_lowres[data_lowres != 0])),
-        shape=dummy_counts_lowres.shape)
+            (row_lowres[data_lowres != 0], col_lowres[data_lowres != 0])),
+        shape=counts_lowres_shape)
 
     if not input_is_sparse:
         counts_lowres = _check_counts_matrix(
@@ -545,9 +478,209 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
             exclude_zeros=False, remove_diag=remove_diag)
 
     if return_indices:
-        return counts_lowres, rows_fullres, cols_fullres
+        return counts_lowres, row_fullres, col_fullres
     else:
         return counts_lowres
+
+
+def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
+                              counts_fullres_shape, remove_diag=True):
+    """Return full-res counts indices grouped by the corresponding low-res bin.
+    """
+    from .counts import _check_counts_matrix
+
+    lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
+
+    counts_lowres_shape = np.array(
+        counts_fullres_shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
+    dummy_counts_lowres = np.ones(counts_lowres_shape)
+    dummy_counts_lowres = _check_counts_matrix(
+        dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
+        exclude_zeros=True, remove_diag=remove_diag)
+    row_lowres = dummy_counts_lowres.row
+    col_lowres = dummy_counts_lowres.col
+
+    idx, bad_idx = _get_struct_index(
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
+    # print(f"{idx.shape=}") # (8, 10=5+5)
+    # print(np.array2string(idx, max_line_width=np.inf, threshold=np.inf))
+    idx = idx.T
+    bad_idx = bad_idx.T
+
+    row = idx[row_lowres]
+    row = np.repeat(row, multiscale_factor, axis=1)
+    # print("\nrow\n", np.array2string(row[:10], max_line_width=np.inf, threshold=np.inf))
+
+    col = idx[col_lowres]
+    col = np.tile(col, (1, multiscale_factor))
+    # print("\ncol\n", np.array2string(col[:10], max_line_width=np.inf, threshold=np.inf))
+
+
+    bad_row = bad_idx[row_lowres]
+    bad_row = np.repeat(bad_row, multiscale_factor, axis=1)
+    bad_col = bad_idx[col_lowres]
+    bad_col = np.tile(bad_col, (1, multiscale_factor))
+    bad_idx = bad_row | bad_col
+    row[bad_idx] = 0
+    col[bad_idx] = 0
+
+    # print("\nrow\n", np.array2string(row[:10], max_line_width=np.inf, threshold=np.inf))
+    # print("\ncol\n", np.array2string(col[:10], max_line_width=np.inf, threshold=np.inf))
+
+    print(f"{row.shape=}")
+    row = row.T.flatten()
+    col = col.T.flatten()
+    bad_idx = bad_idx.T.flatten()
+
+    return (row, col, bad_idx), (row_lowres, col_lowres)
+
+    raise ValueError("hi")
+
+    dummy_counts_lowres = dummy_counts_lowres.toarray().astype(int)
+    row_lowres, col_lowres = (x.ravel() for x in np.indices(
+        dummy_counts_lowres.shape))
+    mask_lowres = dummy_counts_lowres[row_lowres, col_lowres] != 0
+    print(row_lowres.shape, col_lowres.shape, mask_lowres.shape) # (25,) (25,) (25,)
+    row_lowres = row_lowres[mask_lowres]
+    col_lowres = col_lowres[mask_lowres]
+    print(row_lowres.shape, col_lowres.shape) # (10=triu5,) (10=triu5,)
+
+
+    # idx = idx.ravel()  # XXX
+    # bad_idx = bad_idx.ravel()  # XXX
+    # print(np.array2string(idx.ravel(), max_line_width=np.inf, threshold=np.inf))
+    idx = idx.T.ravel()
+    print(np.array2string(idx, max_line_width=np.inf, threshold=np.inf))
+    bad_idx = bad_idx.T.ravel()
+
+    nrows_fullres, ncols_fullres = counts_fullres_shape
+    idx_mask_row = idx < nrows_fullres
+    idx_mask_col = idx < ncols_fullres
+
+    row = np.tile(idx[idx_mask_row].reshape(-1, 1), (1, idx_mask_col.sum()))
+    col = np.tile(idx[idx_mask_col].reshape(1, -1), (idx_mask_row.sum(), 1))
+
+    # print('\nrow (tiled)'); print(np.array2string(row, max_line_width=np.inf, threshold=np.inf)); print()
+
+    bad_row = np.tile(
+        bad_idx[idx_mask_row].reshape(-1, 1), (1, idx_mask_col.sum()))
+    bad_col = np.tile(
+        bad_idx[idx_mask_col].reshape(1, -1), (idx_mask_row.sum(), 1))
+    bad_idx = bad_row | bad_col
+    row[bad_idx] = 0
+    col[bad_idx] = 0
+
+    # print('\nrow (removed bad idx)'); print(np.array2string(row, max_line_width=np.inf, threshold=np.inf)); print()
+
+    print(lengths.sum(), lengths_lowres.sum()) # 31 5
+    print(counts_fullres_shape, counts_lowres_shape) # (31, 31) [5 5]
+    print(idx.shape) # (80,) (80,)
+    print(idx_mask_row.sum(), idx_mask_col.sum()) # 49 49
+    print(row.shape, col.shape) # (49, 49) (49, 49)... 2,401
+
+    # row = row.reshape(multiscale_factor ** 2, -1).T  # XXX
+    # col = col.reshape(multiscale_factor ** 2, -1).T  # XXX
+    # bad_idx = bad_idx.reshape(multiscale_factor ** 2, -1).T  # XXX
+
+    # row = row[mask_lowres]  # XXX
+    # col = col[mask_lowres]  # XXX
+    # bad_idx = bad_idx[mask_lowres]  # XXX
+
+    # row = row.reshape(multiscale_factor ** 2, -1)  # XXX v2
+    # col = col.reshape(multiscale_factor ** 2, -1)  # XXX v2
+    # bad_idx = bad_idx.reshape(multiscale_factor ** 2, -1)  # XXX v2
+
+    # print('\nrow (reshaped)'); print(np.array2string(row.reshape(-1, multiscale_factor ** 2), max_line_width=np.inf, threshold=np.inf)); print()
+    # print('\nrow (reshaped)'); print(np.array2string(row.T.reshape(-1, multiscale_factor ** 2), max_line_width=np.inf, threshold=np.inf)); print()
+
+    print('\nrow (reshaped)'); print(np.array2string(row.reshape(-1, multiscale_factor, multiscale_factor), max_line_width=np.inf, threshold=np.inf)); print()
+
+    row = row.reshape(-1, multiscale_factor ** 2)  # XXX
+    col = col.reshape(-1, multiscale_factor ** 2)  # XXX
+    bad_idx = bad_idx.reshape(-1, multiscale_factor ** 2)  # XXX
+
+    row = row[:, mask_lowres]
+    col = col[:, mask_lowres]
+    bad_idx = bad_idx[:, mask_lowres]
+
+    print(row.shape, col.shape) # expected: (25, 64) (25, 64)... 1,600
+
+    return (row, col, bad_idx), (row_lowres, col_lowres)
+
+
+def _convert_indices_to_full_res(rows_lowres, cols_lowres, rows_max, cols_max,
+                                 multiscale_factor, lengths, counts_shape,
+                                 ploidy):
+    """Return full-res counts indices grouped by the corresponding low-res bin.
+    """
+
+    if multiscale_factor == 1:
+        return rows_lowres, cols_lowres
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    n = lengths_lowres.sum()
+
+    # Convert low-res indices to full-res
+    nnz_lowres = len(rows_lowres)
+    x, y = np.indices((multiscale_factor, multiscale_factor))
+    rows = np.repeat(x.flatten(), nnz_lowres)[
+        :nnz_lowres * multiscale_factor ** 2] + \
+        np.tile(rows_lowres * multiscale_factor, multiscale_factor ** 2)
+    cols = np.repeat(y.flatten(), nnz_lowres)[
+        :nnz_lowres * multiscale_factor ** 2] + \
+        np.tile(cols_lowres * multiscale_factor, multiscale_factor ** 2)
+    rows = rows.reshape(multiscale_factor ** 2, -1)
+    cols = cols.reshape(multiscale_factor ** 2, -1)
+    # Figure out which rows / cols are out of bounds
+    bins_for_rows = np.tile(lengths, int(counts_shape[0] / n)).cumsum()
+    bins_for_cols = np.tile(lengths, int(counts_shape[1] / n)).cumsum()
+    for i in range(lengths.shape[0] * ploidy):
+        rows_binned = np.digitize(rows, bins_for_rows)
+        cols_binned = np.digitize(cols, bins_for_cols)
+        rows_good_bin = np.floor(rows_binned.mean(axis=0))
+        cols_good_bin = np.floor(cols_binned.mean(axis=0))
+        incorrect_rows = np.invert(np.equal(rows_binned, rows_good_bin))
+        incorrect_cols = np.invert(np.equal(cols_binned, cols_good_bin))
+        row_mask = rows_good_bin == i
+        col_mask = cols_good_bin == i
+        row_vals = np.unique(rows[:, row_mask][incorrect_rows[:, row_mask]])
+        col_vals = np.unique(cols[:, col_mask][incorrect_cols[:, col_mask]])
+        for val in np.flip(row_vals, axis=0):
+            rows[rows > val] -= 1
+        for val in np.flip(col_vals, axis=0):
+            cols[cols > val] -= 1
+        # Because if the last low-res bin in this homolog of this chromosome is
+        # all zero, that could mess up indices for subsequent
+        # homologs/chromosomes
+        rows_binned = np.digitize(rows, bins_for_rows)
+        rows_good_bin = np.floor(rows_binned.mean(axis=0))
+        row_mask = rows_good_bin == i
+        current_rows = rows[:, row_mask][np.invert(incorrect_rows)[:, row_mask]]
+        if current_rows.shape[0] > 0 and i < bins_for_rows.shape[0]:
+            max_row = current_rows.max()
+            if max_row < bins_for_rows[i] - 1:
+                rows[rows > max_row] -= multiscale_factor - \
+                    (bins_for_rows[i] - max_row - 1)
+        cols_binned = np.digitize(cols, bins_for_cols)
+        cols_good_bin = np.floor(cols_binned.mean(axis=0))
+        col_mask = cols_good_bin == i
+        current_cols = cols[:, col_mask][np.invert(incorrect_cols)[:, col_mask]]
+        if current_cols.shape[0] > 0 and i < bins_for_cols.shape[0]:
+            max_col = current_cols.max()
+            if max_col < bins_for_cols[i] - 1:
+                cols[cols > max_col] -= multiscale_factor - \
+                    (bins_for_cols[i] - max_col - 1)
+
+    bad_idx = incorrect_rows + incorrect_cols + \
+        (rows >= rows_max) + (cols >= cols_max)
+    rows[bad_idx] = 0
+    cols[bad_idx] = 0
+    rows = rows.flatten()
+    cols = cols.flatten()
+    bad_idx = bad_idx.flatten()
+    return rows, cols
 
 
 def _get_struct_index(multiscale_factor, lengths, ploidy):
@@ -576,7 +709,7 @@ def _get_struct_index(multiscale_factor, lengths, ploidy):
 
 
 def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
-                          idx=None, fullres_struct_nan=None):
+                          fullres_struct_nan=None):
     """Group beads of full-res struct by the low-res bead they correspond to.
 
     Axes of final array:
@@ -588,11 +721,8 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
     if multiscale_factor == 1:
         return struct.reshape(1, -1, 3)
 
-    if idx is None:
-        idx, bad_idx = _get_struct_index(
-            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
-    else:
-        raise NotImplementedError  # TODO
+    idx, bad_idx = _get_struct_index(
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
 
     if fullres_struct_nan is not None and fullres_struct_nan.shape != 0:
         struct_nan_mask = np.isin(idx, fullres_struct_nan)
@@ -609,7 +739,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
 
 
 def decrease_struct_res(struct, multiscale_factor, lengths, ploidy,
-                        idx=None, fullres_struct_nan=None):
+                        fullres_struct_nan=None):
     """Decrease resolution of structure by averaging adjacent beads.
 
     Decrease the resolution of the 3D chromatin structure. Each bead in the
@@ -638,7 +768,7 @@ def decrease_struct_res(struct, multiscale_factor, lengths, ploidy,
 
     grouped_struct = _group_highres_struct(
         struct, multiscale_factor=multiscale_factor, lengths=lengths,
-        ploidy=ploidy, idx=idx, fullres_struct_nan=fullres_struct_nan)
+        ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
 
     return np.nanmean(grouped_struct, axis=0)
 
