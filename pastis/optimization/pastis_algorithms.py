@@ -95,10 +95,8 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
             counts=counts, outdir=fullres_outdir, lengths=lengths,
             ploidy=ploidy, alpha=alpha, seed=seed,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-            alpha_init=alpha_init,
-            max_alpha_loop=max_alpha_loop, beta=beta, beta_init=beta_init,
-            init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
-            alpha_factr=alpha_factr, draft=True, simple_diploid=(ploidy == 2),
+            beta=beta, beta_init=beta_init, init=init, max_iter=max_iter,
+            factr=factr, pgtol=pgtol, draft=True, simple_diploid=(ploidy == 2),
             callback_fxns=callback_fxns, callback_freq=callback_freq,
             reorienter=reorienter, multiscale_reform=multiscale_reform,
             alpha_true=alpha_true, struct_true=struct_true,
@@ -197,13 +195,6 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if verbose and outfiles is not None:
         print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
 
-    # # LOAD DATA
-    # counts, bias, lengths, _, _, _, struct_true = load_data(
-    #     counts=counts, lengths_full=lengths, ploidy=ploidy,
-    #     chrom_full=chrom_full, chrom_subset=chrom_subset,
-    #     filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-    #     exclude_zeros=exclude_zeros, struct_true=struct_true, verbose=verbose)
-
     # MULTISCALE VARIANCES
     if multiscale_factor != 1 and use_multiscale_variance and struct_draft_fullres is not None and not multiscale_reform:
         multiscale_variances = np.median(get_multiscale_variances_from_struct(
@@ -230,7 +221,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         simple_diploid=simple_diploid, mods=mods)
     if simple_diploid:
         ploidy = 1
-        beta_init = beta_init * 2
+        if beta_init is not None:
+            beta_init = beta_init * 2
     if verbose:
         print('BETA: ' + ', '.join(
             [f'{c.ambiguity}={c.beta:.3g}' for c in counts if c.sum() != 0]),
@@ -669,7 +661,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts, lengths=lengths, ploidy=ploidy, outdir=outdir_,
         alpha=alpha, seed=seed, filter_threshold=filter_threshold,
         normalize=normalize, bias=bias, beta=beta,
-        multiscale_rounds=multiscale_rounds,
+        multiscale_rounds=multiscale_rounds, beta_init=beta_init,
         use_multiscale_variance=use_multiscale_variance, init=init,
         max_iter=max_iter, factr=factr, pgtol=pgtol, hsc_lambda=hsc_lambda,
         hsc_version=hsc_version, est_hmlg_sep=est_hmlg_sep,
@@ -898,7 +890,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                      'save': save_freq}
     outdir = _output_subdir(
         outdir=outdir, chrom_full=chromosomes, chrom_subset=chrom_subset,
-        null=null)
+        null=null, lengths=lengths)
 
     if piecewise and (chrom_subset is None or len(chrom_subset) > 1):
         from .piecewise_whole_genome import infer_piecewise
