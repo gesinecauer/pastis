@@ -7,6 +7,8 @@ import textwrap
 import pandas as pd
 from scipy import sparse
 from distutils.util import strtobool
+from scipy.interpolate import interp1d
+import warnings
 
 
 def _setup_jax():
@@ -117,14 +119,16 @@ def _load_infer_param(infer_param_file):
 
 
 def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,
-                   piecewise_step=None):
+                   piecewise_step=None, lengths=None):
     """Returns subdirectory for inference output files.
     """
+    from ..io.read import _get_chrom
 
     if null:
         outdir = os.path.join(outdir, 'null')
 
     if chrom_subset is not None and chrom_full is not None:
+        chrom_full = _get_chrom(chrom_full, lengths=lengths)
         if len(chrom_subset) != len(chrom_full):
             outdir = os.path.join(outdir, '.'.join(chrom_subset))
 
@@ -256,86 +260,85 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
 
     struct_nan_mask = ~ inverse_struct_nan_mask.astype(bool)
     struct_nan = np.where(struct_nan_mask)[0]
+    print(f'\n++++++++++++++++++++++++++ torm @ {multiscale_factor}x', struct_nan)
     return struct_nan
 
 
-def _struct_replace_nan(struct, lengths, kind='linear', random_state=None):
+def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
+                        random_state=None):
     """Replace NaNs in structure via linear interpolation.
     """
 
-    from scipy.interpolate import interp1d
-    from warnings import warn
-    from sklearn.utils import check_random_state
-
     if random_state is None:
         random_state = np.random.RandomState(seed=0)
-    random_state = check_random_state(random_state)
-
-    if isinstance(struct, str):
-        struct = np.loadtxt(struct)
-    else:
-        struct = struct.copy()
-    struct = struct.reshape(-1, 3)
-    lengths = np.array(lengths).astype(int)
-
-    ploidy = 1
-    if len(struct) > lengths.sum():
-        ploidy = 2
 
     if not np.isnan(struct).any():
-        return(struct)
-    else:
-        nan_chroms = []
-        mask = np.invert(np.isnan(struct[:, 0]))
-        interpolated_struct = np.zeros(struct.shape)
-        begin, end = 0, 0
-        for j, length in enumerate(np.tile(lengths, ploidy)):
-            end += length
-            to_rm = mask[begin:end]
-            if to_rm.sum() <= 1:
-                interpolated_chr = (
-                    1 - 2 * random_state.rand(length * 3)).reshape(-1, 3)
-                if ploidy == 1:
-                    nan_chroms.append(str(j + 1))
-                else:
-                    nan_chroms.append(
-                        str(j + 1) + '_homo1' if j < lengths.shape[0] else str(j / 2 + 1) + '_homo2')
+        return struct
+
+    struct = struct.reshape(-1, 3)
+    lengths = np.array(lengths, dtype=int, ndmin=1, copy=False)
+
+    if struct.shape[0] != lengths.sum() * ploidy:
+        raise ValueError("Structure shape inconsistent with nbeads")
+
+    nan_chroms = []
+    mask = np.invert(np.isnan(struct[:, 0]))
+    interp_struct = struct.copy()
+    begin, end = 0, 0
+    for j, length in enumerate(np.tile(lengths, ploidy)):
+        end += length
+        mask_chrom = mask[begin:end]
+        if (~mask_chrom).sum() == 0:
+            pass
+        elif mask_chrom.sum() == 0:
+            random_chr = (
+                1 - 2 * random_state.rand(length * 3)).reshape(-1, 3)
+            interp_struct[begin:end, :] = random_chr
+            if ploidy == 1:
+                nan_chroms.append(f'chr{j + 1:g}')
+            elif j < lengths.size:
+                nan_chroms.append(f'chr{j + 1:g}_hmlg1')
             else:
-                m = np.arange(length)[to_rm]
-                beads2interpolate = np.arange(m.min(), m.max() + 1, 1)
+                nan_chroms.append(f'chr{j + 1 - lengths.size:g}_hmlg2')
+        elif mask_chrom.sum() == 1:
+            interpolated_chr = interp_struct[begin:end, :][mask_chrom]
+            interp_struct[begin:end, :] = interpolated_chr
+        else:
+            m = np.arange(length)[mask_chrom]
+            beads2interp = np.arange(m.min(), m.max() + 1, 1)
 
-                interpolated_chr = np.full_like(struct[begin:end, :], np.nan)
-                interpolated_chr[beads2interpolate, 0] = interp1d(
-                    m, struct[begin:end, 0][to_rm], kind=kind)(beads2interpolate)
-                interpolated_chr[beads2interpolate, 1] = interp1d(
-                    m, struct[begin:end, 1][to_rm], kind=kind)(beads2interpolate)
-                interpolated_chr[beads2interpolate, 2] = interp1d(
-                    m, struct[begin:end, 2][to_rm], kind=kind)(beads2interpolate)
+            interpolated_chr = np.full_like(struct[begin:end, :], np.nan)
+            interpolated_chr[beads2interp, 0] = interp1d(
+                m, struct[begin:end, 0][mask_chrom], kind=kind)(beads2interp)
+            interpolated_chr[beads2interp, 1] = interp1d(
+                m, struct[begin:end, 1][mask_chrom], kind=kind)(beads2interp)
+            interpolated_chr[beads2interp, 2] = interp1d(
+                m, struct[begin:end, 2][mask_chrom], kind=kind)(beads2interp)
 
-                # Fill in beads at start
-                diff_beads_at_chr_start = interpolated_chr[beads2interpolate[
-                    1], :] - interpolated_chr[beads2interpolate[0], :]
-                how_far = 1
-                for j in reversed(range(min(beads2interpolate))):
-                    interpolated_chr[j, :] = interpolated_chr[
-                        beads2interpolate[0], :] - diff_beads_at_chr_start * how_far
-                    how_far += 1
-                # Fill in beads at end
-                diff_beads_at_chr_end = interpolated_chr[
-                    beads2interpolate[-2], :] - interpolated_chr[beads2interpolate[-1], :]
-                how_far = 1
-                for j in range(max(beads2interpolate) + 1, length):
-                    interpolated_chr[j, :] = interpolated_chr[
-                        beads2interpolate[-1], :] - diff_beads_at_chr_end * how_far
-                    how_far += 1
+            # Fill in beads at start
+            diff_beads_at_chr_start = interpolated_chr[beads2interp[
+                1], :] - interpolated_chr[beads2interp[0], :]
+            how_far = 1
+            for j in reversed(range(min(beads2interp))):
+                interpolated_chr[j, :] = interpolated_chr[
+                    beads2interp[0], :] - diff_beads_at_chr_start * how_far
+                how_far += 1
+            # Fill in beads at end
+            diff_beads_at_chr_end = interpolated_chr[
+                beads2interp[-2], :] - interpolated_chr[beads2interp[-1], :]
+            how_far = 1
+            for j in range(max(beads2interp) + 1, length):
+                interpolated_chr[j, :] = interpolated_chr[
+                    beads2interp[-1], :] - diff_beads_at_chr_end * how_far
+                how_far += 1
+            interp_struct[begin:end, :] = interpolated_chr
+        begin = end
 
-            interpolated_struct[begin:end, :] = interpolated_chr
-            begin = end
+    if len(nan_chroms) != 0:
+        warnings.warn(
+            'The following chromosomes were all NaN: ' + ' '.join(nan_chroms))
 
-        if len(nan_chroms) != 0:
-            warn('The following chromosomes were all NaN: ' + ' '.join(nan_chroms))
-
-        return(interpolated_struct)
+    return(interp_struct)
 
 
 def relu_min(x1, x2):
@@ -516,8 +519,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
                 structures[i] = structures[i].reshape(-1, 3)[
                     subset_index].reshape(*structures[i].shape)
         else:
-            structures = structures.reshape(-1, 3)[subset_index].reshape(
-                *structures.shape)
+            structures = structures.reshape(-1, 3)[subset_index]
 
     data_subset = {'counts': counts, 'bias': bias, 'struct': structures}
     return lengths_subset, chrom_subset, data_subset
