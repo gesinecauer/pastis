@@ -730,7 +730,7 @@ class HomologSeparating2022(Constraint):
 
         # Get inter-homolog distances
         n = self.lengths_lowres.sum()
-        row, col = (x.flatten() for x in np.indices((n, n)))
+        row, col = (x.ravel() for x in np.indices((n, n)))
         if 'same_locus' in self.mods:
             mask = row == col
             row = row[mask]
@@ -738,13 +738,17 @@ class HomologSeparating2022(Constraint):
         elif 'interhmlg_intrachrom' in self.mods and 'mean' not in self.mods:
             row = row[var['mask_intrachrom']]
             col = col[var['mask_intrachrom']]
-            # exit(0)
         dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
 
+
         counts_inter_mv = self.hparams['counts_inter_mv']
-        counts_inter_mean = counts_inter_mv['mean']
+        if 'div4' in self.mods:
+            div_by = var['beta']
+        else:
+            div_by = 4 * var['beta']
 
         if 'mse' in self.mods:
+            # Get lambda_interhmlg
             if 'use_gmean' in self.mods and self.multiscale_factor > 1:
                 lambda_interhmlg, _ = get_gamma_moments(
                     struct=struct, epsilon=epsilon, alpha=alpha,
@@ -752,7 +756,29 @@ class HomologSeparating2022(Constraint):
             else:
                 dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
                 lambda_interhmlg = (4 * var['beta']) * dis_alpha_interhmlg
-            lambda_interhmlg = lambda_interhmlg * np.square(self.multiscale_factor)  # TODO this is the best option, right?
+
+            # Get mean inter-chrom counts
+            counts_inter_mean = counts_inter_mv['mean']
+            k = counts_inter_mv['est_gamma_k']
+            theta = counts_inter_mv['est_gamma_theta']
+            if 'hsc_inv' in self.mods:
+                counts_inter_mean, var = gamma_to_invgamma_to_gamma(
+                    k=k, theta=theta, scale=(1 / div_by), return_moments=True)
+                lambda_interhmlg = ag_np.power(dis_interhmlg, -alpha)
+            elif 'hsc_gen' in self.mods:
+                counts_inter_mean, var = gamma_to_gengamma_to_gamma(
+                    k=k, theta=theta, q=ag_np.abs(1 / alpha),
+                    scale=(1 / div_by), return_moments=True)
+                lambda_interhmlg = ag_np.power(dis_interhmlg, -1)
+            elif 'hsc_invgen' in self.mods:
+                k, theta = gamma_to_gengamma_to_gamma(
+                    k=k, theta=theta, q=ag_np.abs(1 / alpha),
+                    scale=(1 / div_by), verbose=False)
+                counts_inter_mean, var = gamma_to_invgamma_to_gamma(
+                    k=k, theta=theta, scale=1, return_moments=True)
+                lambda_interhmlg = dis_interhmlg
+
+            # Get mean per pair of chromosomes
             if 'mean' in self.mods:
                 lambda_interhmlg = lambda_interhmlg.reshape(n, n)
                 nchrom = self.lengths.size
@@ -776,6 +802,8 @@ class HomologSeparating2022(Constraint):
                 lambda_interhmlg = interhmlg_mean
                 if 'interhmlg_intrachrom' in self.mods:
                     lambda_interhmlg = lambda_interhmlg[lambda_interhmlg != 0]
+
+            # Optionally only apply obj if |actual-expected| > window
             if 'flex' in self.mods:
                 obj = _mse_flexible(
                     actual=lambda_interhmlg, expected=counts_inter_mean,
@@ -784,14 +812,18 @@ class HomologSeparating2022(Constraint):
                 obj = _mse_outside_of_window(
                     actual=lambda_interhmlg, expected=counts_inter_mean,
                     cutoff=self.hparams['perc_diff'], scale_by_expected=True)
+
             if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-                tmp = f'\t  σ²={lambda_interhmlg.var():.2g}'
+                tmp = f'σ²={lambda_interhmlg.var():.2g}'
                 if 'mean' in self.mods:
-                    tmp = tmp + '\t  λ=' + ', '.join([f"{x:.2g}" for x in lambda_interhmlg._value.ravel().tolist()])
-                if epsilon is None:
-                    print(f"c={counts_inter_mean:.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}{tmp}", flush=True)
-                else:
-                    print(f"c={counts_inter_mean:.3g}\tµ={lambda_interhmlg.mean():.3g}\t  obj={obj:.2g}\t  ε={epsilon:.2g}{tmp}", flush=True)
+                    tmp = tmp + '\t   λ=[' + ' '.join([f"{x:.2g}" for x in lambda_interhmlg._value.ravel().tolist()]) + ']'
+                to_print = f"c={counts_inter_mean:.2g}\t   µ={lambda_interhmlg.mean():.2g}\t   {tmp}"
+                to_print += f"\t   OBJ={obj:.2g}"
+                if epsilon is not None:
+                    to_print += f"\t   ε={epsilon:.2g}"
+                print(to_print, flush=True)
+
+
         elif ('hsc_gamma' in self.mods) or ('hsc_invgamma' in self.mods) or ('hsc_gengamma' in self.mods) or ('hsc_normal' in self.mods) or ('hsc_invgengamma' in self.mods):
             # NOTE: DON'T MULTIPLY lambda_interhmlg BY square(multiscale_factor)... and use highres counts_inter mean & var for all
             if 'div4' in self.mods or 'try1' in self.mods:
@@ -799,23 +831,18 @@ class HomologSeparating2022(Constraint):
             else:
                 lambda_interhmlg = (4 * var['beta']) * ag_np.power(dis_interhmlg, alpha)
 
-            counts_inter_mv = self.hparams['counts_inter_mv']
             mean = counts_inter_mv['est_gamma_mean']
             variance = counts_inter_mv['est_gamma_var']
 
             # variance = lambda_interhmlg.variance()
             # variance = relu_max(variance, counts_inter_mv['gamma_var_min'])
             # variance = relu_min(variance, counts_inter_mv['gamma_var_max'])
-            # theta = variance / counts_inter_mean
-            # k = counts_inter_mean / est_gamma_theta
+            # theta = variance / mean
+            # k = mean / est_gamma_theta
 
             k = counts_inter_mv['est_gamma_k']
             theta = counts_inter_mv['est_gamma_theta']
 
-            if 'div4' in self.mods:
-                div_by = var['beta']
-            else:
-                div_by = 4 * var['beta']
             if 'hsc_invgamma' in self.mods:
                 k, theta = gamma_to_invgamma_to_gamma(
                     k=k, theta=theta, scale=(1 / div_by), verbose=False)
@@ -845,7 +872,6 @@ class HomologSeparating2022(Constraint):
 
             # FIXME FIXME2
             if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-                # \t   Var[c]-𝔼[c]={counts_inter_mv['var'] - counts_inter_mean:.2g}
                 to_print = f"𝔼[c]={mean:.2g}\t   μ={lambda_interhmlg.mean():.2g}\t   var={variance:.2g}\t   σ²={lambda_interhmlg.var():.2g}"
 
                 if 'hsc_invgamma' in self.mods:
@@ -874,7 +900,6 @@ class HomologSeparating2022(Constraint):
                 print(to_print, flush=True)
                 # exit(1)
         else:
-            counts_inter_mv = self.hparams['counts_inter_mv']
             counts_inter_mean = counts_inter_mv['mean']
 
             dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
