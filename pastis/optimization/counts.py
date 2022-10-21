@@ -230,9 +230,10 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
     struct_nan_mask = np.full((max(counts.shape)), False)
     if not exclude_zeros:
         empty_val = np.nan
-        struct_nan_mask = find_beads_to_remove(
+        struct_nan = find_beads_to_remove(
             counts, lengths=lengths,
             ploidy=int(max(counts.shape) / lengths.sum()))
+        struct_nan_mask[struct_nan] = True
         counts = counts.astype(float)
 
     if sparse.issparse(counts) or isinstance(counts, CountsMatrix):
@@ -255,21 +256,21 @@ def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
             counts = counts[chrom_subset_index[:counts.shape[0]], :][
                 :, chrom_subset_index[:counts.shape[1]]]
     elif min(counts.shape) * 2 == max(counts.shape):
-        homo1 = counts[:min(counts.shape), :min(counts.shape)]
-        homo2 = counts[counts.shape[0] -
+        hmlg1 = counts[:min(counts.shape), :min(counts.shape)]
+        hmlg2 = counts[counts.shape[0] -
                        min(counts.shape):, counts.shape[1] - min(counts.shape):]
         if counts.shape[0] == min(counts.shape):
-            homo1 = homo1.T
-            homo2 = homo2.T
+            hmlg1 = hmlg1.T
+            hmlg2 = hmlg2.T
         if remove_diag:
-            np.fill_diagonal(homo1, empty_val)
-            np.fill_diagonal(homo2, empty_val)
-        homo1[:, struct_nan_mask[:min(counts.shape)] | struct_nan_mask[
+            np.fill_diagonal(hmlg1, empty_val)
+            np.fill_diagonal(hmlg2, empty_val)
+        hmlg1[:, struct_nan_mask[:min(counts.shape)] | struct_nan_mask[
             min(counts.shape):]] = empty_val
-        homo2[:, struct_nan_mask[:min(counts.shape)] | struct_nan_mask[
+        hmlg2[:, struct_nan_mask[:min(counts.shape)] | struct_nan_mask[
             min(counts.shape):]] = empty_val
         # axis=0 is vertical concat
-        counts = np.concatenate([homo1, homo2], axis=0)
+        counts = np.concatenate([hmlg1, hmlg2], axis=0)
         counts[struct_nan_mask, :] = empty_val
         if chrom_subset_index is not None:
             counts = counts[chrom_subset_index[:counts.shape[0]], :][
@@ -406,11 +407,15 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             raise ValueError(
                 "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
 
+    print("\n++++++++++++++++++++++++++ _format_counts".upper())
+
     # Format counts as CountsMatrix objects
     counts = _format_counts(
         counts_raw, beta=beta, input_weight=input_weight,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
         multiscale_factor=multiscale_factor)
+
+    print("\n++++++++++++++++++++++++++ find_beads_to_remove".upper())
 
     # Identify beads to be removed from the final structure
     struct_nan = find_beads_to_remove(
@@ -877,6 +882,7 @@ class SparseCountsMatrix(CountsMatrix):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
 
+        print(f'\n++++++++++++++++++++++++++ _group_counts_multiscale SPARSE')
         tmp = _group_counts_multiscale(
             _counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor)
@@ -1031,6 +1037,7 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
 
+        print(f'\n++++++++++++++++++++++++++ _group_counts_multiscale ZEROS')
         tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, dummy=True,
