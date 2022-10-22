@@ -4,6 +4,7 @@ import warnings
 from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
+from .utils_poisson import _struct_replace_nan
 
 
 if sys.version_info[0] < 3:
@@ -39,8 +40,8 @@ def decrease_lengths_res(lengths, multiscale_factor):
 
 
 def increase_struct_res_gaussian(struct, current_multiscale_factor,
-                                 final_multiscale_factor, lengths, std_dev,
-                                 random_state=None):
+                                 final_multiscale_factor, lengths, ploidy,
+                                 std_dev, random_state=None):
     """Estimate a high-resolution structure from a low-resolution structure.
 
     Increase resolution of a structure by assuming that the difference between
@@ -59,6 +60,8 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     lengths : array_like of int
         Number of beads per homolog of each chromosome at FULL resolution
         (at multiscale_factor of 1).
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     std_dev : float
         Standard deviation of the normal distributions.
     seed : int, optional
@@ -87,20 +90,16 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     struct = struct.reshape(-1, 3)
     if isinstance(lengths, str):
         lengths = load_lengths(lengths)
-
     lengths = np.array(lengths).astype(int)
     lengths_current = decrease_lengths_res(
         lengths=lengths, multiscale_factor=current_multiscale_factor)
-
-    ploidy = struct.shape[0] / lengths_current.sum()
-    if ploidy != 1 and ploidy != 2:
-        raise ValueError("Not consistent with haploid or diploid... struct has"
-                         f" {struct.reshape(-1, 3).shape[0]} beads (and 3 cols)"
-                         f", sum of lengths is {lengths_current.sum()}")
-    ploidy = int(ploidy)
-
     if random_state is None:
         random_state = np.random.RandomState(0)
+
+    # Replace NaN in low-res struct via linear interpolation
+    struct = _struct_replace_nan(
+        struct, lengths=lengths, ploidy=ploidy, kind='linear',
+        random_state=random_state)
 
     # Estimate full-resolution structure
     grouped_idx, bad_idx = _get_struct_index(
@@ -112,8 +111,6 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     struct_fullres = []
     for i in range(struct.shape[0]):
         lowres_bead = struct[i]
-        if np.isnan(lowres_bead[0]):  # Linearly interpolate lowres bead if NaN
-            lowres_bead = np.nanmean(struct[(i - 1):(i + 2)], axis=0)
         num_highres_beads = np.invert(np.isnan(grouped_idx[:, i])).sum()
         highres_beads = random_state.normal(
             lowres_bead, std_dev, (num_highres_beads, 3))
@@ -130,7 +127,8 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     return struct_highres
 
 
-def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
+def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
+                        random_state=None):
     """Linearly interpolate structure to increase resolution.
 
     Increase resolution of structure via linear interpolation between beads.
@@ -145,6 +143,8 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     lengths : array_like of int
         Number of beads per homolog of each chromosome at increased resolution
         (the desired resolution of the output structure).
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
 
     Returns
     -------
@@ -152,6 +152,9 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
         3D chromatin structure that has been linearly interpolated to the
         specified high resolution.
     """
+
+    if random_state is None:
+        random_state = np.random.RandomState(seed=0)
 
     if int(multiscale_factor) != multiscale_factor:
         raise ValueError('The multiscale_factor must be an integer')
@@ -166,12 +169,6 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
     lengths = np.array(lengths).astype(int)
     lengths_lowres = decrease_lengths_res(
         lengths=lengths, multiscale_factor=multiscale_factor)
-    ploidy = struct.shape[0] / lengths_lowres.sum()
-    if ploidy != 1 and ploidy != 2:
-        raise ValueError("Not consistent with haploid or diploid... struct is"
-                         " %d beads (and 3 cols), sum of lengths is %d" %
-                         (struct.reshape(-1, 3).shape[0], lengths_lowres.sum()))
-    ploidy = int(ploidy)
 
     idx, bad_idx = _get_struct_index(
         multiscale_factor=multiscale_factor, lengths=lengths,
@@ -184,67 +181,98 @@ def increase_struct_res(struct, multiscale_factor, lengths, mask=None):
 
     struct_highres = np.full((lengths.sum() * ploidy, 3), np.nan)
     begin_lowres = end_lowres = 0
+    lengths_tiled = np.tile(lengths_lowres, ploidy)
     for i in range(lengths.shape[0] * ploidy):
-        end_lowres += np.tile(lengths_lowres, ploidy)[i]
+        end_lowres += lengths_tiled[i]
 
         # Beads of struct that are NaN
         struct_nan_mask = np.isnan(struct[begin_lowres:end_lowres, 0])
 
-        # Get index for this chrom at low & high res
-        chrom_indices = idx[:, begin_lowres:end_lowres]
-        chrom_indices[:, struct_nan_mask] = np.nan
-        chrom_indices_lowres = np.nanmean(chrom_indices, axis=0)
-        chrom_indices_highres = chrom_indices.T.flatten()
+        # Get index for this molecule at low & high res
+        chrom_idx = idx[:, begin_lowres:end_lowres]
+        chrom_idx[:, struct_nan_mask] = np.nan
+        chrom_idx_lowres = np.nanmean(chrom_idx, axis=0)  # float, may have NaNs
+        chrom_idx_highres = chrom_idx.T.flatten()  # float, may have NaNs
 
-        # Note which beads are unknown
-        highres_mask = ~np.isnan(chrom_indices_highres)
-        highres_mask[highres_mask] = (chrom_indices_highres[highres_mask] >=
-                                      np.nanmin(chrom_indices_lowres)) & (chrom_indices_highres[highres_mask] <= np.nanmax(chrom_indices_lowres))
-        unknown_beads = np.where(~highres_mask)[
-            0] + np.tile(lengths, ploidy)[:i].sum()
-        unknown_beads = unknown_beads[unknown_beads < np.tile(lengths, ploidy)[
-            :i + 1].sum()]
-        unknown_beads_at_begin = [unknown_beads[k] for k in range(len(unknown_beads)) if unknown_beads[
-            k] == unknown_beads.min() or all([unknown_beads[k] - j == unknown_beads[k - j] for j in range(k + 1)])]
-        if len(unknown_beads) - len(unknown_beads_at_begin) > 0:
-            unknown_beads_at_end = [unknown_beads[k] for k in range(len(unknown_beads)) if unknown_beads[k] == unknown_beads.max(
-            ) or all([unknown_beads[k] + j == unknown_beads[k + j] for j in range(len(unknown_beads) - k)])]
-            chrom_indices_highres = np.arange(
-                max(unknown_beads_at_begin) + 1, min(unknown_beads_at_end))
-        else:
-            unknown_beads_at_end = []
-            chrom_indices_highres = np.arange(
-                max(unknown_beads_at_begin) + 1, int(np.nanmax(chrom_indices_highres)) + 1)
+        # print(f'\tchr{i}... {begin_lowres}:{end_lowres}')
 
-        struct_highres[chrom_indices_highres, 0] = interp1d(
-            chrom_indices_lowres[~struct_nan_mask],
+        # If there's less than 2 non-NaN beads in lowres molecule
+        if (~struct_nan_mask).sum() == 0:
+            chrom_idx_highres = chrom_idx_highres[
+                ~np.isnan(chrom_idx_highres)].astype(int)
+            random_chrom = random_state.uniform(
+                low=-1, high=1, size=(chrom_idx_highres.size, 3))
+            struct_highres[chrom_idx_highres] = random_chrom
+            begin_lowres = end_lowres
+            continue
+        if (~struct_nan_mask).sum() == 1:
+            chrom_idx_highres = chrom_idx_highres[
+                ~np.isnan(chrom_idx_highres)].astype(int)
+            lowres_bead = struct[
+                begin_lowres:end_lowres][~struct_nan_mask]
+            struct_highres[chrom_idx_highres] = random_state.normal(
+                lowres_bead, 1, (chrom_idx_highres.size, 3))
+            begin_lowres = end_lowres
+            continue
+
+        # # Note which beads are unknown
+        # highres_mask = ~np.isnan(chrom_idx_highres)
+        # highres_mask[highres_mask] = (
+        #     chrom_idx_highres[highres_mask] >= np.nanmin(chrom_idx_lowres)) & (
+        #     chrom_idx_highres[highres_mask] <= np.nanmax(chrom_idx_lowres))
+        # unknown = np.where(~highres_mask)[0] + lengths_tiled[:i].sum()
+        # unknown = unknown[unknown < lengths_tiled[:i + 1].sum()]
+        # unknown_at_begin = [unknown[k] for k in range(len(unknown)) if unknown[
+        #     k] == unknown.min() or all(
+        #         [unknown[k] - j == unknown[k - j] for j in range(k + 1)])]
+        # if len(unknown) - len(unknown_at_begin) > 0:
+        #     # There are unknown beads at the end
+        #     unknown_at_end = [unknown[k] for k in range(
+        #         len(unknown)) if unknown[k] == unknown.max() or all(
+        #         [unknown[k] + j == unknown[k + j] for j in range(
+        #             len(unknown) - k)])]
+        #     chrom_idx_highres = np.arange(
+        #         max(unknown_at_begin) + 1, min(unknown_at_end))
+        # else:
+        #     # There are NOT unknown beads at the end
+        #     unknown_at_end = []
+        #     chrom_idx_highres = np.arange(
+        #         max(unknown_at_begin) + 1,
+        #         int(np.nanmax(chrom_idx_highres)) + 1)
+
+        chrom_idx_highres = chrom_idx_highres[
+                ~np.isnan(chrom_idx_highres)].astype(int)
+
+        struct_highres[chrom_idx_highres, 0] = interp1d(
+            chrom_idx_lowres[~struct_nan_mask],
             struct[begin_lowres:end_lowres, 0][~struct_nan_mask],
-            kind="linear")(chrom_indices_highres)
-        struct_highres[chrom_indices_highres, 1] = interp1d(
-            chrom_indices_lowres[~struct_nan_mask],
+            kind="linear", fill_value="extrapolate")(chrom_idx_highres)
+        struct_highres[chrom_idx_highres, 1] = interp1d(
+            chrom_idx_lowres[~struct_nan_mask],
             struct[begin_lowres:end_lowres, 1][~struct_nan_mask],
-            kind="linear")(chrom_indices_highres)
-        struct_highres[chrom_indices_highres, 2] = interp1d(
-            chrom_indices_lowres[~struct_nan_mask],
+            kind="linear", fill_value="extrapolate")(chrom_idx_highres)
+        struct_highres[chrom_idx_highres, 2] = interp1d(
+            chrom_idx_lowres[~struct_nan_mask],
             struct[begin_lowres:end_lowres, 2][~struct_nan_mask],
-            kind="linear")(chrom_indices_highres)
+            kind="linear", fill_value="extrapolate")(chrom_idx_highres)
 
-        # Fill in beads at start
-        diff_beads_at_chr_start = struct_highres[chrom_indices_highres[
-            1], :] - struct_highres[chrom_indices_highres[0], :]
-        how_far = 1
-        for j in reversed(unknown_beads_at_begin):
-            struct_highres[j, :] = struct_highres[chrom_indices_highres[
-                0], :] - diff_beads_at_chr_start * how_far
-            how_far += 1
-        # Fill in beads at end
-        diff_beads_at_chr_end = struct_highres[
-            chrom_indices_highres[-2], :] - struct_highres[chrom_indices_highres[-1], :]
-        how_far = 1
-        for j in unknown_beads_at_end:
-            struct_highres[j, :] = struct_highres[
-                chrom_indices_highres[-1], :] - diff_beads_at_chr_end * how_far
-            how_far += 1
+        # # Fill in beads at start
+        # diff_beads_at_chr_start = struct_highres[chrom_idx_highres[
+        #     1], :] - struct_highres[chrom_idx_highres[0], :]
+        # how_far = 1
+        # for j in reversed(unknown_at_begin):
+        #     struct_highres[j, :] = struct_highres[chrom_idx_highres[
+        #         0], :] - diff_beads_at_chr_start * how_far
+        #     how_far += 1
+        # # Fill in beads at end
+        # diff_beads_at_chr_end = struct_highres[
+        #     chrom_idx_highres[-2], :] - struct_highres[
+        #     chrom_idx_highres[-1], :]
+        # how_far = 1
+        # for j in unknown_at_end:
+        #     struct_highres[j, :] = struct_highres[
+        #         chrom_idx_highres[-1], :] - diff_beads_at_chr_end * how_far
+        #     how_far += 1
 
         begin_lowres = end_lowres
 
@@ -330,9 +358,6 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         row_lowres = counts_lowres.row
         col_lowres = counts_lowres.col
         shape_lowres = counts_lowres.shape
-
-        print(np.array2string(counts_lowres.toarray().astype(int), max_line_width=np.inf, threshold=np.inf))
-        exit(0)
 
         if unmask_zeros_in_sparse:
             counts_lowres, rows_grp, cols_grp = decrease_counts_res(
@@ -425,8 +450,6 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
         `multiscale_factor`.
     """
 
-    # TODO refactor this fxn & _convert_indices_to_full_res to be similar to new _get_struct_index
-
     from .counts import _row_and_col, _check_counts_matrix
 
     if multiscale_factor == 1:
@@ -447,23 +470,11 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
     counts_lowres_shape = np.array(
         counts.shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
 
-    if False:
-        dummy_counts_lowres = np.ones(counts_lowres_shape)
-        dummy_counts_lowres = _check_counts_matrix(
-            dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-            exclude_zeros=True, remove_diag=remove_diag).toarray().astype(int)
-        dummy_counts_lowres = sparse.coo_matrix(dummy_counts_lowres)
-        row_lowres, col_lowres = _row_and_col(dummy_counts_lowres)
-        row_fullres, col_fullres = _convert_indices_to_full_res(
-            row_lowres, col_lowres, rows_max=counts.shape[0],
-            cols_max=counts.shape[1], multiscale_factor=multiscale_factor,
-            lengths=lengths, counts_shape=dummy_counts_lowres.shape, ploidy=ploidy)
-    else:
-        idx_fullres, idx_lowres = _get_fullres_counts_index(
-            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
-            counts_fullres_shape=counts.shape, remove_diag=remove_diag)
-        row_fullres, col_fullres, _ = idx_fullres
-        row_lowres, col_lowres = idx_lowres
+    idx_fullres, idx_lowres = _get_fullres_counts_index(
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
+        counts_fullres_shape=counts.shape, remove_diag=remove_diag)
+    row_fullres, col_fullres, _ = idx_fullres
+    row_lowres, col_lowres = idx_lowres
 
     data_lowres = counts[row_fullres, col_fullres].reshape(
         multiscale_factor ** 2, -1).sum(axis=0)
@@ -489,9 +500,9 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
     """
     from .counts import _check_counts_matrix
 
+    # Get rows & cols of dummy low-res counts matrix
     lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
-
     counts_lowres_shape = np.array(
         counts_fullres_shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
     dummy_counts_lowres = np.ones(counts_lowres_shape)
@@ -501,22 +512,17 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
     row_lowres = dummy_counts_lowres.row
     col_lowres = dummy_counts_lowres.col
 
+    # Get high-res bead indices, grouped by low-res bead
     idx, bad_idx = _get_struct_index(
         multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
-    # print(f"{idx.shape=}") # (8, 10=5+5)
-    # print(np.array2string(idx, max_line_width=np.inf, threshold=np.inf))
     idx = idx.T
     bad_idx = bad_idx.T
 
+    # Create high-res counts indices, grouped by low-res counts bin
     row = idx[row_lowres]
     row = np.repeat(row, multiscale_factor, axis=1)
-    # print("\nrow\n", np.array2string(row[:10], max_line_width=np.inf, threshold=np.inf))
-
     col = idx[col_lowres]
     col = np.tile(col, (1, multiscale_factor))
-    # print("\ncol\n", np.array2string(col[:10], max_line_width=np.inf, threshold=np.inf))
-
-
     bad_row = bad_idx[row_lowres]
     bad_row = np.repeat(bad_row, multiscale_factor, axis=1)
     bad_col = bad_idx[col_lowres]
@@ -525,162 +531,10 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
     row[bad_idx] = 0
     col[bad_idx] = 0
 
-    # print("\nrow\n", np.array2string(row[:10], max_line_width=np.inf, threshold=np.inf))
-    # print("\ncol\n", np.array2string(col[:10], max_line_width=np.inf, threshold=np.inf))
-
-    print(f"{row.shape=}")
     row = row.T.flatten()
     col = col.T.flatten()
     bad_idx = bad_idx.T.flatten()
-
     return (row, col, bad_idx), (row_lowres, col_lowres)
-
-    raise ValueError("hi")
-
-    dummy_counts_lowres = dummy_counts_lowres.toarray().astype(int)
-    row_lowres, col_lowres = (x.ravel() for x in np.indices(
-        dummy_counts_lowres.shape))
-    mask_lowres = dummy_counts_lowres[row_lowres, col_lowres] != 0
-    print(row_lowres.shape, col_lowres.shape, mask_lowres.shape) # (25,) (25,) (25,)
-    row_lowres = row_lowres[mask_lowres]
-    col_lowres = col_lowres[mask_lowres]
-    print(row_lowres.shape, col_lowres.shape) # (10=triu5,) (10=triu5,)
-
-
-    # idx = idx.ravel()  # XXX
-    # bad_idx = bad_idx.ravel()  # XXX
-    # print(np.array2string(idx.ravel(), max_line_width=np.inf, threshold=np.inf))
-    idx = idx.T.ravel()
-    print(np.array2string(idx, max_line_width=np.inf, threshold=np.inf))
-    bad_idx = bad_idx.T.ravel()
-
-    nrows_fullres, ncols_fullres = counts_fullres_shape
-    idx_mask_row = idx < nrows_fullres
-    idx_mask_col = idx < ncols_fullres
-
-    row = np.tile(idx[idx_mask_row].reshape(-1, 1), (1, idx_mask_col.sum()))
-    col = np.tile(idx[idx_mask_col].reshape(1, -1), (idx_mask_row.sum(), 1))
-
-    # print('\nrow (tiled)'); print(np.array2string(row, max_line_width=np.inf, threshold=np.inf)); print()
-
-    bad_row = np.tile(
-        bad_idx[idx_mask_row].reshape(-1, 1), (1, idx_mask_col.sum()))
-    bad_col = np.tile(
-        bad_idx[idx_mask_col].reshape(1, -1), (idx_mask_row.sum(), 1))
-    bad_idx = bad_row | bad_col
-    row[bad_idx] = 0
-    col[bad_idx] = 0
-
-    # print('\nrow (removed bad idx)'); print(np.array2string(row, max_line_width=np.inf, threshold=np.inf)); print()
-
-    print(lengths.sum(), lengths_lowres.sum()) # 31 5
-    print(counts_fullres_shape, counts_lowres_shape) # (31, 31) [5 5]
-    print(idx.shape) # (80,) (80,)
-    print(idx_mask_row.sum(), idx_mask_col.sum()) # 49 49
-    print(row.shape, col.shape) # (49, 49) (49, 49)... 2,401
-
-    # row = row.reshape(multiscale_factor ** 2, -1).T  # XXX
-    # col = col.reshape(multiscale_factor ** 2, -1).T  # XXX
-    # bad_idx = bad_idx.reshape(multiscale_factor ** 2, -1).T  # XXX
-
-    # row = row[mask_lowres]  # XXX
-    # col = col[mask_lowres]  # XXX
-    # bad_idx = bad_idx[mask_lowres]  # XXX
-
-    # row = row.reshape(multiscale_factor ** 2, -1)  # XXX v2
-    # col = col.reshape(multiscale_factor ** 2, -1)  # XXX v2
-    # bad_idx = bad_idx.reshape(multiscale_factor ** 2, -1)  # XXX v2
-
-    # print('\nrow (reshaped)'); print(np.array2string(row.reshape(-1, multiscale_factor ** 2), max_line_width=np.inf, threshold=np.inf)); print()
-    # print('\nrow (reshaped)'); print(np.array2string(row.T.reshape(-1, multiscale_factor ** 2), max_line_width=np.inf, threshold=np.inf)); print()
-
-    print('\nrow (reshaped)'); print(np.array2string(row.reshape(-1, multiscale_factor, multiscale_factor), max_line_width=np.inf, threshold=np.inf)); print()
-
-    row = row.reshape(-1, multiscale_factor ** 2)  # XXX
-    col = col.reshape(-1, multiscale_factor ** 2)  # XXX
-    bad_idx = bad_idx.reshape(-1, multiscale_factor ** 2)  # XXX
-
-    row = row[:, mask_lowres]
-    col = col[:, mask_lowres]
-    bad_idx = bad_idx[:, mask_lowres]
-
-    print(row.shape, col.shape) # expected: (25, 64) (25, 64)... 1,600
-
-    return (row, col, bad_idx), (row_lowres, col_lowres)
-
-
-def _convert_indices_to_full_res(rows_lowres, cols_lowres, rows_max, cols_max,
-                                 multiscale_factor, lengths, counts_shape,
-                                 ploidy):
-    """Return full-res counts indices grouped by the corresponding low-res bin.
-    """
-
-    if multiscale_factor == 1:
-        return rows_lowres, cols_lowres
-
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-    n = lengths_lowres.sum()
-
-    # Convert low-res indices to full-res
-    nnz_lowres = len(rows_lowres)
-    x, y = np.indices((multiscale_factor, multiscale_factor))
-    rows = np.repeat(x.flatten(), nnz_lowres)[
-        :nnz_lowres * multiscale_factor ** 2] + \
-        np.tile(rows_lowres * multiscale_factor, multiscale_factor ** 2)
-    cols = np.repeat(y.flatten(), nnz_lowres)[
-        :nnz_lowres * multiscale_factor ** 2] + \
-        np.tile(cols_lowres * multiscale_factor, multiscale_factor ** 2)
-    rows = rows.reshape(multiscale_factor ** 2, -1)
-    cols = cols.reshape(multiscale_factor ** 2, -1)
-    # Figure out which rows / cols are out of bounds
-    bins_for_rows = np.tile(lengths, int(counts_shape[0] / n)).cumsum()
-    bins_for_cols = np.tile(lengths, int(counts_shape[1] / n)).cumsum()
-    for i in range(lengths.shape[0] * ploidy):
-        rows_binned = np.digitize(rows, bins_for_rows)
-        cols_binned = np.digitize(cols, bins_for_cols)
-        rows_good_bin = np.floor(rows_binned.mean(axis=0))
-        cols_good_bin = np.floor(cols_binned.mean(axis=0))
-        incorrect_rows = np.invert(np.equal(rows_binned, rows_good_bin))
-        incorrect_cols = np.invert(np.equal(cols_binned, cols_good_bin))
-        row_mask = rows_good_bin == i
-        col_mask = cols_good_bin == i
-        row_vals = np.unique(rows[:, row_mask][incorrect_rows[:, row_mask]])
-        col_vals = np.unique(cols[:, col_mask][incorrect_cols[:, col_mask]])
-        for val in np.flip(row_vals, axis=0):
-            rows[rows > val] -= 1
-        for val in np.flip(col_vals, axis=0):
-            cols[cols > val] -= 1
-        # Because if the last low-res bin in this homolog of this chromosome is
-        # all zero, that could mess up indices for subsequent
-        # homologs/chromosomes
-        rows_binned = np.digitize(rows, bins_for_rows)
-        rows_good_bin = np.floor(rows_binned.mean(axis=0))
-        row_mask = rows_good_bin == i
-        current_rows = rows[:, row_mask][np.invert(incorrect_rows)[:, row_mask]]
-        if current_rows.shape[0] > 0 and i < bins_for_rows.shape[0]:
-            max_row = current_rows.max()
-            if max_row < bins_for_rows[i] - 1:
-                rows[rows > max_row] -= multiscale_factor - \
-                    (bins_for_rows[i] - max_row - 1)
-        cols_binned = np.digitize(cols, bins_for_cols)
-        cols_good_bin = np.floor(cols_binned.mean(axis=0))
-        col_mask = cols_good_bin == i
-        current_cols = cols[:, col_mask][np.invert(incorrect_cols)[:, col_mask]]
-        if current_cols.shape[0] > 0 and i < bins_for_cols.shape[0]:
-            max_col = current_cols.max()
-            if max_col < bins_for_cols[i] - 1:
-                cols[cols > max_col] -= multiscale_factor - \
-                    (bins_for_cols[i] - max_col - 1)
-
-    bad_idx = incorrect_rows + incorrect_cols + \
-        (rows >= rows_max) + (cols >= cols_max)
-    rows[bad_idx] = 0
-    cols[bad_idx] = 0
-    rows = rows.flatten()
-    cols = cols.flatten()
-    bad_idx = bad_idx.flatten()
-    return rows, cols
 
 
 def _get_struct_index(multiscale_factor, lengths, ploidy):
