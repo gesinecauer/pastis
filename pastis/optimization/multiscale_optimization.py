@@ -191,10 +191,10 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
         # Get index for this molecule at low & high res
         chrom_idx = idx[:, begin_lowres:end_lowres]
         chrom_idx[:, struct_nan_mask] = np.nan
-        chrom_idx_lowres = np.nanmean(chrom_idx, axis=0)  # float, may have NaNs
-        chrom_idx_highres = chrom_idx.T.flatten()  # float, may have NaNs
-
-        # print(f'\tchr{i}... {begin_lowres}:{end_lowres}')
+        chrom_idx_lowres = np.nanmean(chrom_idx, axis=0)
+        chrom_idx_highres = chrom_idx.T.flatten()
+        chrom_idx_highres = chrom_idx_highres[
+                ~np.isnan(chrom_idx_highres)].astype(int)
 
         # If there's less than 2 non-NaN beads in lowres molecule
         if (~struct_nan_mask).sum() == 0:
@@ -215,34 +215,6 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
             begin_lowres = end_lowres
             continue
 
-        # # Note which beads are unknown
-        # highres_mask = ~np.isnan(chrom_idx_highres)
-        # highres_mask[highres_mask] = (
-        #     chrom_idx_highres[highres_mask] >= np.nanmin(chrom_idx_lowres)) & (
-        #     chrom_idx_highres[highres_mask] <= np.nanmax(chrom_idx_lowres))
-        # unknown = np.where(~highres_mask)[0] + lengths_tiled[:i].sum()
-        # unknown = unknown[unknown < lengths_tiled[:i + 1].sum()]
-        # unknown_at_begin = [unknown[k] for k in range(len(unknown)) if unknown[
-        #     k] == unknown.min() or all(
-        #         [unknown[k] - j == unknown[k - j] for j in range(k + 1)])]
-        # if len(unknown) - len(unknown_at_begin) > 0:
-        #     # There are unknown beads at the end
-        #     unknown_at_end = [unknown[k] for k in range(
-        #         len(unknown)) if unknown[k] == unknown.max() or all(
-        #         [unknown[k] + j == unknown[k + j] for j in range(
-        #             len(unknown) - k)])]
-        #     chrom_idx_highres = np.arange(
-        #         max(unknown_at_begin) + 1, min(unknown_at_end))
-        # else:
-        #     # There are NOT unknown beads at the end
-        #     unknown_at_end = []
-        #     chrom_idx_highres = np.arange(
-        #         max(unknown_at_begin) + 1,
-        #         int(np.nanmax(chrom_idx_highres)) + 1)
-
-        chrom_idx_highres = chrom_idx_highres[
-                ~np.isnan(chrom_idx_highres)].astype(int)
-
         struct_highres[chrom_idx_highres, 0] = interp1d(
             chrom_idx_lowres[~struct_nan_mask],
             struct[begin_lowres:end_lowres, 0][~struct_nan_mask],
@@ -255,24 +227,6 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
             chrom_idx_lowres[~struct_nan_mask],
             struct[begin_lowres:end_lowres, 2][~struct_nan_mask],
             kind="linear", fill_value="extrapolate")(chrom_idx_highres)
-
-        # # Fill in beads at start
-        # diff_beads_at_chr_start = struct_highres[chrom_idx_highres[
-        #     1], :] - struct_highres[chrom_idx_highres[0], :]
-        # how_far = 1
-        # for j in reversed(unknown_at_begin):
-        #     struct_highres[j, :] = struct_highres[chrom_idx_highres[
-        #         0], :] - diff_beads_at_chr_start * how_far
-        #     how_far += 1
-        # # Fill in beads at end
-        # diff_beads_at_chr_end = struct_highres[
-        #     chrom_idx_highres[-2], :] - struct_highres[
-        #     chrom_idx_highres[-1], :]
-        # how_far = 1
-        # for j in unknown_at_end:
-        #     struct_highres[j, :] = struct_highres[
-        #         chrom_idx_highres[-1], :] - diff_beads_at_chr_end * how_far
-        #     how_far += 1
 
         begin_lowres = end_lowres
 

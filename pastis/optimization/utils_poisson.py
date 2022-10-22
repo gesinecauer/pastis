@@ -302,9 +302,7 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
                     nan_chroms.append(f'chr{j + 1 - lengths.size:g}_hmlg2')
         else:
             idx_orig = np.arange(length)[mask_chrom]
-            # idx_interp = np.arange(idx_orig.min(), idx_orig.max() + 1, 1)
             idx_interp = np.arange(length)
-
             interp_chrom = np.full_like(struct[begin:end, :], np.nan)
             interp_chrom[idx_interp, 0] = interp1d(
                 idx_orig, struct[begin:end, 0][mask_chrom], kind=kind,
@@ -315,24 +313,6 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
             interp_chrom[idx_interp, 2] = interp1d(
                 idx_orig, struct[begin:end, 2][mask_chrom], kind=kind,
                 fill_value="extrapolate")(idx_interp)
-
-            # # Fill in beads at start
-            # diff_beads_at_chr_start = interp_chrom[idx_interp[
-            #     1], :] - interp_chrom[idx_interp[0], :]
-            # how_far = 1
-            # for j in reversed(range(min(idx_interp))):
-            #     interp_chrom[j, :] = interp_chrom[
-            #         idx_interp[0], :] - diff_beads_at_chr_start * how_far
-            #     how_far += 1
-            # # Fill in beads at end
-            # diff_beads_at_chr_end = interp_chrom[
-            #     idx_interp[-2], :] - interp_chrom[idx_interp[-1], :]
-            # how_far = 1
-            # for j in range(max(idx_interp) + 1, length):
-            #     interp_chrom[j, :] = interp_chrom[
-            #         idx_interp[-1], :] - diff_beads_at_chr_end * how_far
-            #     how_far += 1
-
             interp_struct[begin:end, :] = interp_chrom
         begin = end
 
