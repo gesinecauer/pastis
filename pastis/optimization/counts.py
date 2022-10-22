@@ -407,15 +407,11 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
             raise ValueError(
                 "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
 
-    print("\n++++++++++++++++++++++++++ _format_counts".upper())
-
     # Format counts as CountsMatrix objects
     counts = _format_counts(
         counts_raw, beta=beta, input_weight=input_weight,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
         multiscale_factor=multiscale_factor)
-
-    print("\n++++++++++++++++++++++++++ find_beads_to_remove".upper())
 
     # Identify beads to be removed from the final structure
     struct_nan = find_beads_to_remove(
@@ -882,7 +878,6 @@ class SparseCountsMatrix(CountsMatrix):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
 
-        print(f'\n++++++++++++++++++++++++++ _group_counts_multiscale SPARSE')
         tmp = _group_counts_multiscale(
             _counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor)
@@ -1037,7 +1032,6 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
 
-        print(f'\n++++++++++++++++++++++++++ _group_counts_multiscale ZEROS')
         tmp = _group_counts_multiscale(
             dummy_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, dummy=True,
