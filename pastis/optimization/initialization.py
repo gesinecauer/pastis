@@ -98,8 +98,9 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     elif isinstance(init, str) and (init.lower() in ("random", "rand", "mds", "mds2")):
         if verbose:
             print('INITIALIZATION: random points', flush=True)
-        structures = [(1 - 2 * random_state.rand(int(
-            lengths_lowres.sum() * ploidy * 3))).reshape(-1, 3) for coef in mixture_coefs]
+        structures = [random_state.uniform(
+            low=-1, high=1, size=(int(
+                lengths_lowres.sum() * ploidy), 3)) for coef in mixture_coefs]
     elif isinstance(init, str) and os.path.exists(init):
         if verbose:
             print('INITIALIZATION: 3D structure, %s' % init, flush=True)
@@ -143,11 +144,12 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                     structures[i],
                     current_multiscale_factor=resize_factor * multiscale_factor,
                     final_multiscale_factor=multiscale_factor, lengths=lengths,
-                    std_dev=std_dev, random_state=random_state)
+                    ploidy=ploidy, std_dev=std_dev, random_state=random_state)
             else:
                 structures[i] = increase_struct_res(
                     structures[i], multiscale_factor=resize_factor,
-                    lengths=lengths_lowres)
+                    lengths=lengths_lowres, ploidy=ploidy,
+                    random_state=random_state)
 
         elif struct_length > lengths_lowres.sum() * ploidy:
             resize_factor = int(np.ceil(
@@ -227,12 +229,12 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
             print('INITIALIZATION: random', flush=True)
             init_reorient = []
             if reorienter.translate:
-                init_reorient.append(1 - 2 * random_state.rand(
-                    lengths_lowres.shape[0] * 3 * (
+                init_reorient.append(random_state.uniform(
+                    low=-1, high=1, size=lengths_lowres.size * 3 * (
                         1 + np.invert(reorienter.fix_homo))))
             if reorienter.rotate:
-                init_reorient.append(random_state.rand(
-                    lengths_lowres.shape[0] * 4 * (
+                init_reorient.append(random_state.uniform(
+                    size=lengths_lowres.shape[0] * 4 * (
                         1 + np.invert(reorienter.fix_homo))))
             init_reorient = np.concatenate(init_reorient)
         return init_reorient

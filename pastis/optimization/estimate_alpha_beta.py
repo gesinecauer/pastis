@@ -337,7 +337,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         random_state = np.random.RandomState(seed=0)
     random_state = check_random_state(random_state)
     if alpha_init is None:
-        alpha_init = (- random_state.randint(1, 100) + random_state.rand(1))[0]
+        alpha_init = random_state.uniform(low=-4, high=-1)
 
     if verbose:
         #print('=' * 30, flush=True)
@@ -369,7 +369,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         maxfun=max_fun,
         pgtol=pgtol,
         factr=factr,
-        bounds=np.array([[-100, -1e-2]]),
+        bounds=np.array([[-4.5, -0.5]]),
         args=(counts, X.flatten(), lengths, ploidy, bias, constraints,
               reorienter, multiscale_factor, multiscale_variances,
               multiscale_reform, mixture_coefs, callback, mods))

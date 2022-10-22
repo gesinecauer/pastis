@@ -163,7 +163,8 @@ def test_increase_struct_res():
     struct_lowres[nan_indices_lowres] = np.nan
 
     struct_highres = multiscale_optimization.increase_struct_res(
-        struct_lowres, multiscale_factor=multiscale_factor, lengths=lengths)
+        struct_lowres, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
     assert_array_almost_equal(
         struct_highres_true, struct_highres)
 
@@ -272,10 +273,6 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
             ua_counts, multiscale_factor=multiscale_factor, lengths=lengths,
             ploidy=ploidy)
         ua_counts_lowres[np.isnan(ua_counts_lowres)] = 0
-
-        # print(np.array2string((ua_counts_lowres_true != 0).astype(int), max_line_width=np.inf, threshold=np.inf).replace('0', '□').replace('1', '■'))
-        # print()
-        # print(np.array2string((ua_counts_lowres != 0).astype(int), max_line_width=np.inf, threshold=np.inf).replace('0', '□').replace('1', '■'))
 
         assert_array_equal(ua_counts_lowres_true != 0, ua_counts_lowres != 0)
         assert_array_equal(ua_counts_lowres_true, ua_counts_lowres)

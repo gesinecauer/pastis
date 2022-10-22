@@ -265,7 +265,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         reorienter=reorienter, std_dev=init_std_dev,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     if multiscale_reform and multiscale_factor != 1:
-        epsilon = random_state.rand()
+        epsilon = random_state.uniform()
     else:
         epsilon = None
 
@@ -278,7 +278,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         if eps_types.size == 1 and eps_types[0] == multiscale_factor:
             stretch_fullres_beads = eps_types = None
         else:
-            epsilon = np.append(epsilon, random_state.rand(eps_types.size - 1))
+            epsilon = np.append(
+                epsilon, random_state.uniform(size=eps_types.size - 1))
     else:
         stretch_fullres_beads = None
 
