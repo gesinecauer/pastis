@@ -113,16 +113,26 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
 
     if not isinstance(counts, list):
         counts = [counts]
-    counts = [c for c in counts if (
-        isinstance(c, np.ndarray) and np.nansum(c) != 0) or c.sum() != 0]
 
-    total_counts = np.sum([c.sum() for c in counts])
+    total_counts = 0
+    for i in range(len(counts)):
+        if isinstance(counts[i], np.ndarray):
+            total_counts += np.nansum(counts[i])
+        else:
+            total_counts += counts[i].sum()
+
     beta = []
     for i in range(len(counts)):
-        if counts[i].shape[0] == counts[i].shape[1]:
-            beta.append(beta_ambig * counts[i].sum() / total_counts)
+        if isinstance(counts[i], np.ndarray):
+            counts_sum = np.nansum(counts[i])
         else:
-            beta.append(beta_ambig * counts[i].sum() / total_counts / 2)  # FIXME double check, make unit tests
+            counts_sum = counts[i].sum()
+        if counts_sum == 0:
+            continue
+        if counts[i].shape[0] == counts[i].shape[1]:
+            beta.append(beta_ambig * counts_sum / total_counts)
+        else:
+            beta.append(beta_ambig * counts_sum / total_counts / 2)  # FIXME double check, make unit tests
     return beta
 
 
