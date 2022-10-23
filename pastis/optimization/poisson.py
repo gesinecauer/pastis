@@ -23,7 +23,7 @@ from .likelihoods import _masksum, gamma_poisson_nll
 
 
 def get_eps_types(stretch_fullres_beads):
-    if multiscale_factor == 1 or stretch_fullres_beads is None:
+    if stretch_fullres_beads is None:
         return None
     eps_types = np.flip(np.sort(np.unique(stretch_fullres_beads)))
     mask = np.isin(eps_types, [1, 2], assume_unique=True, invert=True)
@@ -85,7 +85,7 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
                       return_mean=True, return_var=True, inferring_alpha=False):
 
     dis = ag_np.sqrt((ag_np.square(
-        struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+        struct[row3d] - struct[col3d])).sum(axis=1))
     dis_alpha = ag_np.power(dis, alpha)
 
     ln_f_mean, ln_f_var = _approx_ln_f(
@@ -121,7 +121,7 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity='ua',
                      stretch_fullres_beads=None, inferring_alpha=False):
 
     dis = ag_np.sqrt((ag_np.square(
-        struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+        struct[row3d] - struct[col3d])).sum(axis=1))
     dis_alpha = ag_np.power(dis, alpha)
 
     ln_f_mean, ln_f_var = _approx_ln_f(
@@ -162,8 +162,8 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     obj = 0
     for struct in structures:
         k, theta = get_gamma_params(
-            struct, epsilon=epsilon, alpha=alpha, beta=beta, row3d=counts.row3d,
-            col3d=counts.col3d, ambiguity=counts.ambiguity,
+            struct, epsilon=epsilon, alpha=alpha, beta=counts.beta,
+            row3d=counts.row3d, col3d=counts.col3d, ambiguity=counts.ambiguity,
             stretch_fullres_beads=stretch_fullres_beads,
             inferring_alpha=inferring_alpha)
         obj = obj + gamma_poisson_nll(
@@ -347,7 +347,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     if mixture_coefs is None:
         mixture_coefs = [1.] * len(structures)
     # nbeads = decrease_lengths_res(lengths, multiscale_factor).sum() * ploidy
-    # if structures[0].shape[0] != nbeads:  # TODO fix this & add to main brainch
+    # if structures[0].shape[0] != nbeads:  # TODO fix this
     #     raise ValueError(
     #         f"Expected {nbeads} beads in structure at multiscale_factor="
     #         f"{multiscale_factor}, found {structures[0].shape[0]} beads")
@@ -420,19 +420,19 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
         eps_types = get_eps_types(stretch_fullres_beads)
 
         if X.size == nbeads * 3 * len(mixture_coefs) + 1:
-            X = X[:-1]
             epsilon = X[-1]
+            X = X[:-1]
         elif X.size == nbeads * 3 * len(mixture_coefs) + nbeads:
-            X = X[:-nbeads]
             epsilon = X[-nbeads:]
+            X = X[:-nbeads]
         elif eps_types is not None and (
                 X.size == nbeads * 3 * len(mixture_coefs) + eps_types.size):
-            X = X[:-eps_types.size]
             tmp = X[-eps_types.size:]
             epsilon_primary = tmp[1]
             epsilon_adjust = ag_np.cumprod(tmp[1:])
             epsilon = ag_np.append(
                 epsilon_primary, epsilon_adjust * epsilon_primary)
+            X = X[:-eps_types.size]
         else:
             raise ValueError(
                 f"Epsilon must be of length 1 or equal to the number of beads"
@@ -898,19 +898,21 @@ class PastisPM(object):
             mods=self.mods)
         self.time_elapsed_ += timer() - time_start
 
-        if self.multiscale_reform and self.multiscale_factor > 1:
-            self.X_, self.epsilon_, _ = _format_X(
-                self.X_, lengths=self.lengths, ploidy=self.ploidy,
-                multiscale_factor=self.multiscale_factor,
-                multiscale_reform=self.multiscale_reform,
-                stretch_fullres_beads=self.stretch_fullres_beads,
-                mixture_coefs=self.mixture_coefs, mods=self.mods)
+        self.X_, self.epsilon_, _ = _format_X(
+            self.X_, lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor,
+            multiscale_reform=self.multiscale_reform,
+            stretch_fullres_beads=self.stretch_fullres_beads,
+            mixture_coefs=self.mixture_coefs, mods=self.mods)
+
         if self.reorienter is not None and self.reorienter.reorient:
             self.orientation_ = self.X_
             self.struct_ = self.reorienter.translate_and_rotate(self.X_)[
                 0].reshape(-1, 3)
         else:
-            self.struct_ = self.X_.reshape(-1, 3)
+            self.struct_ = [struct.reshape(-1, 3) for struct in self.X_]
+            if len(self.struct_) == 1:
+                self.struct_ = self.struct_[0]
 
     def _fit_alpha(self, alpha_loop=None):
         """Fit alpha to counts data, given current structure.
