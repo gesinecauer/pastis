@@ -1146,8 +1146,7 @@ def gamma_to_invgamma_to_gamma(k, theta, scale=1, return_moments=False, verbose=
 
 
 def calc_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
-                           normalize=True, bias=None, alpha=None, beta=None,
-                           verbose=True, mods=[]):
+                           normalize=True, bias=None, verbose=True, mods=[]):
     """TODO"""
 
     counts, bias, lengths, _, _, _, _ = load_data(
