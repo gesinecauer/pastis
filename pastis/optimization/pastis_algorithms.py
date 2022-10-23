@@ -174,7 +174,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
     return struct_draft_fullres, est_hmlg_sep, True
 
 
-def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
+def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     filter_threshold=0.04, normalize=True, bias=None, alpha_init=-3,
                     max_alpha_loop=20, beta=None, multiscale_factor=1,
                     use_multiscale_variance=True, beta_init=None,
@@ -214,7 +214,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # PREPARE COUNTS OBJECTS
     counts, struct_nan, fullres_struct_nan = preprocess_counts(
-        counts_raw=counts, lengths=lengths, ploidy=ploidy,
+        counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, exclude_zeros=exclude_zeros,
         beta=beta, input_weight=input_weight, verbose=verbose,
         excluded_counts=excluded_counts, mixture_coefs=mixture_coefs,
@@ -231,6 +231,49 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             print(f'ALPHA: to be inferred, init = {alpha_init:.3g}', flush=True)
         else:
             print(f'ALPHA: {alpha:.3g}', flush=True)
+
+    # SETUP MULTI-RES
+    stretch_fullres_beads = mean_fullres_nghbr_dis = None
+    if multiscale_reform and ('adjust_eps' in mods):
+        if beta is None:
+            mean_fullres_nghbr_dis = 1
+        else:
+            from .constraints import _neighboring_bead_indices
+            from .utils_poisson import _euclidean_distance
+            row_nghbr = _neighboring_bead_indices(
+                lengths=lengths, ploidy=1, multiscale_factor=1)
+            dis_nghbr = _euclidean_distance(struct_true, row=row_nghbr, col=row_nghbr + 1)._value
+            print(f"\n{dis_nghbr.mean()=:.4g}")
+            print(f"{np.power(dis_nghbr, alpha).mean()=:.4g}\n")
+
+            beta_tmp, _ = _set_initial_beta(
+                counts_raw, lengths=lengths, ploidy=ploidy, bias=bias,
+                exclude_zeros=exclude_zeros, neighboring_beads_only=True)
+            beta_ambig = _ambiguate_beta(
+                beta, counts_raw, lengths=lengths, ploidy=ploidy)
+            mean_fullres_nghbr_dis_alpha = np.power(
+                beta_tmp / beta_ambig, 1 / alpha)
+
+            row_nghbr2 = _neighboring_bead_indices(
+                lengths=lengths, ploidy=2, multiscale_factor=1)
+            c = counts_raw[0]
+            c_nghbr = c[row_nghbr2, row_nghbr2 + 1]
+            print(f"{np.nanmean(c_nghbr / beta_ambig)=:.4g}")
+            print(f"{np.nanmean(np.power(c_nghbr / beta_ambig, 1 / alpha))=:.4g}\n")
+
+            mean_fullres_nghbr_dis = beta_tmp / beta_ambig
+            print(f"{mean_fullres_nghbr_dis=:.3g}\n")
+            print(f"{mean_fullres_nghbr_dis_alpha=:.3g}\n")
+            exit(1)
+
+        stretch_fullres_beads = _get_stretch_of_fullres_beads(
+                multiscale_factor=multiscale_factor, lengths=lengths,
+                ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
+        if 'adjust_eps_all' in mods:
+            eps_types = get_eps_types(stretch_fullres_beads)
+            if eps_types.size > 1:
+                epsilon = np.append(
+                    epsilon, random_state.uniform(size=eps_types.size - 1))
 
     # HOMOLOG-SEPARATING CONSTRAINT
     if ploidy == 1 and hsc_lambda > 0:
@@ -269,20 +312,6 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     else:
         epsilon = None
 
-    # SETUP MULTI-RES
-    if multiscale_reform and False:
-        stretch_fullres_beads = _get_stretch_of_fullres_beads(
-            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
-            fullres_struct_nan=fullres_struct_nan)
-        eps_types = get_eps_types(stretch_fullres_beads)
-        if eps_types.size == 1 and eps_types[0] == multiscale_factor:
-            stretch_fullres_beads = None
-        else:
-            epsilon = np.append(
-                epsilon, random_state.uniform(size=eps_types.size - 1))
-    else:
-        stretch_fullres_beads = None
-
     # SETUP CONSTRAINTS
     constraints = prep_constraints(
         counts=counts, lengths=lengths, ploidy=ploidy,
@@ -312,7 +341,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
-            multiscale_variances, epsilon, stretch_fullres_beads)
+            multiscale_variances, epsilon, stretch_fullres_beads,
+            mean_fullres_nghbr_dis)
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -469,7 +499,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
         outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, bias, struct_nan, struct_init, constraints, callback,
-        multiscale_variances, epsilon, stretch_fullres_beads) = prepped
+        multiscale_variances, epsilon, stretch_fullres_beads,
+        mean_fullres_nghbr_dis) = prepped
 
     # INFER STRUCTURE
     # original_counts_beta = [c.beta for c in counts if c.sum() != 0]
@@ -480,6 +511,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_variances=multiscale_variances, epsilon=epsilon,
         epsilon_bounds=[epsilon_min, epsilon_max],
         stretch_fullres_beads=stretch_fullres_beads,
+        mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
         epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
         max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
         pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,

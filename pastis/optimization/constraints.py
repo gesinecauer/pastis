@@ -608,7 +608,10 @@ class BeadChainConnectivity2022(Constraint):
             gamma_mean, gamma_var = get_gamma_moments(
                 struct=struct, epsilon=epsilon, alpha=alpha,
                 beta=(2 * var['beta']), row3d=var['row_nghbr'],
-                col3d=var['row_nghbr'] + 1)
+                col3d=var['row_nghbr'] + 1,
+                stretch_fullres_beads=self.stretch_fullres_beads,
+                mean_fullres_nghbr_dis=self.mean_fullres_nghbr_dis,
+                mods=self.mods)
 
             # Add lambda_interchrom (increases gamma mean & Poisson variance)
             # FIXME TODO we want fullres lambda_interchrom, right?
@@ -752,7 +755,9 @@ class HomologSeparating2022(Constraint):
             if 'use_gmean' in self.mods and self.multiscale_factor > 1:
                 lambda_interhmlg, _ = get_gamma_moments(
                     struct=struct, epsilon=epsilon, alpha=alpha,
-                    beta=4 * var['beta'], row3d=row, col3d=col + n)  # FIXME
+                    beta=4 * var['beta'], row3d=row, col3d=col + n,
+                    stretch_fullres_beads=self.stretch_fullres_beads,
+                    mean_fullres_nghbr_dis=self.mean_fullres_nghbr_dis)  # FIXME
             else:
                 dis_alpha_interhmlg = ag_np.power(dis_interhmlg, alpha)
                 lambda_interhmlg = (4 * var['beta']) * dis_alpha_interhmlg

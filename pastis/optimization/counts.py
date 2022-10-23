@@ -562,19 +562,19 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
                       neighboring_beads_only=True):
     """Estimate compatible betas for each counts matrix."""
 
-    # Set the mean (distance ** alpha) of either
+    # Set the mean (distance ** alpha) for either
     #   (1) the whole structure, or
-    #   (2) distances between beads (default)
+    #   (2) distances between neighboring beads (default)
     # ...to be equal to 1
 
     from .constraints import _neighboring_bead_indices
 
+    # Get reelvant counts
     counts_ambig = ambiguate_counts(
         counts, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
-
     if neighboring_beads_only:
         row_nghbr = _neighboring_bead_indices(
-            lengths=lengths, ploidy=1, multiscale_factor=1)  # ambig so ploidy=1
+            lengths=lengths, ploidy=1, multiscale_factor=1)
         if exclude_zeros:
             mask = np.isin(counts_ambig.row, row_nghbr) & (
                 counts_ambig.col == counts_ambig.row + 1)
@@ -587,8 +587,15 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
             counts_ambig = np.full_like(counts_ambig, np.nan)
             counts_ambig[row_nghbr, row_nghbr + 1] = counts_diag[row_nghbr]
 
+    # Get number of distance bins associated with revant counts
     num_dis_bins = _counts_indices_to_3d_indices(
         counts_ambig, nbeads_lowres=lengths.sum() * ploidy)[0].size
+    if neighboring_beads_only:
+        # Intentionally dividing num_dis_bins / 2 for diploid: we assume that
+        # the contribution of inter-hmlg counts to nghbr counts is negligible
+        num_dis_bins /= ploidy
+
+    # Normalize counts
     if bias is not None:
         if exclude_zeros:
             bias_per_bin = bias[counts_ambig.row] * bias[counts_ambig.col]
@@ -599,11 +606,14 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
         else:
             bias = bias.reshape(-1, 1)
             counts_ambig = counts_ambig / bias / bias.T
+
+    # Get universal/ambiguated beta
     if exclude_zeros:
         beta_ambig = counts_ambig.sum() / num_dis_bins
     else:
         beta_ambig = np.nansum(counts_ambig) / num_dis_bins
 
+    # Assign separate betas to each counts matrix
     beta = _disambiguate_beta(
         beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias)
 
