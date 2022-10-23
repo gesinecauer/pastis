@@ -276,7 +276,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             fullres_struct_nan=fullres_struct_nan)
         eps_types = get_eps_types(stretch_fullres_beads)
         if eps_types.size == 1 and eps_types[0] == multiscale_factor:
-            stretch_fullres_beads = eps_types = None
+            stretch_fullres_beads = None
         else:
             epsilon = np.append(
                 epsilon, random_state.uniform(size=eps_types.size - 1))
