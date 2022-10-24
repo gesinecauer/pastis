@@ -607,8 +607,9 @@ class BeadChainConnectivity2022(Constraint):
         else:
             gamma_mean, gamma_var = get_gamma_moments(
                 struct=struct, epsilon=epsilon, alpha=alpha,
-                beta=(2 * var['beta']), row3d=var['row_nghbr'],
-                col3d=var['row_nghbr'] + 1,
+                beta=(2 * var['beta']),
+                multiscale_factor=self.multiscale_factor,
+                row3d=var['row_nghbr'], col3d=var['row_nghbr'] + 1,
                 stretch_fullres_beads=self.stretch_fullres_beads,
                 mean_fullres_nghbr_dis=self.mean_fullres_nghbr_dis,
                 mods=self.mods)
@@ -755,7 +756,8 @@ class HomologSeparating2022(Constraint):
             if 'use_gmean' in self.mods and self.multiscale_factor > 1:
                 lambda_interhmlg, _ = get_gamma_moments(
                     struct=struct, epsilon=epsilon, alpha=alpha,
-                    beta=4 * var['beta'], row3d=row, col3d=col + n,
+                    beta=4 * var['beta'], multiscale_factor=self.multiscale_factor,
+                    row3d=row, col3d=col + n,
                     stretch_fullres_beads=self.stretch_fullres_beads,
                     mean_fullres_nghbr_dis=self.mean_fullres_nghbr_dis)  # FIXME
             else:
@@ -1001,7 +1003,8 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
                      bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
                      hsc_version='2019', counts_inter_mv=None,
                      est_hmlg_sep=None, hsc_perc_diff=None,
-                     fullres_struct_nan=None, verbose=True, mods=[]):
+                     fullres_struct_nan=None, stretch_fullres_beads=None,
+                     mean_fullres_nghbr_dis=None, verbose=True, mods=[]):
     """TODO"""
 
     # TODO remove
@@ -1026,7 +1029,9 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
         '2019': HomologSeparating2019, '2022': HomologSeparating2022}
     bcc_hparams = {
         '2019': None, '2021': None,
-        '2022': {'counts_inter_mv': counts_inter_mv}}
+        '2022': {'counts_inter_mv': counts_inter_mv,
+                 'stretch_fullres_beads': stretch_fullres_beads,
+                 'mean_fullres_nghbr_dis': mean_fullres_nghbr_dis}}
     hsc_hparams = {
         '2019': {'est_hmlg_sep': est_hmlg_sep, 'perc_diff': hsc_perc_diff},
         '2022': {'counts_inter_mv': counts_inter_mv,

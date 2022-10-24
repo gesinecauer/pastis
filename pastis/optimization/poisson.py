@@ -16,40 +16,31 @@ from datetime import timedelta
 
 from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
-from .callbacks import Callback
 from .utils_poisson import _print_code_header, relu_min
 from .polynomial import _approx_ln_f
-from .likelihoods import _masksum, gamma_poisson_nll
+from .likelihoods import _masksum, gamma_poisson_nll, poisson_nll
 
 
 def get_eps_types(stretch_fullres_beads):
     if stretch_fullres_beads is None:
         return None
     eps_types = np.flip(np.sort(np.unique(stretch_fullres_beads)))
-    mask = np.isin(eps_types, [1, 2], assume_unique=True, invert=True)
+    mask = np.isin(eps_types, [0, 1, 2], assume_unique=True, invert=True)
     eps_types = eps_types[mask]
     return eps_types
 
 
-def get_epsilon_per_bin(epsilon, row3d, col3d, multiscale_factor,
-                        stretch_fullres_beads=None,
-                        mean_fullres_nghbr_dis=None):
-
+def get_epsilon_per_bead(epsilon, multiscale_factor, stretch_fullres_beads=None,
+                         mean_fullres_nghbr_dis=None):
     if stretch_fullres_beads is None:
-        if ag_np.asarray(epsilon).size == 1:
-            return epsilon
-        else:
-            epsilon_per_bin = ag_np.sqrt(
-                ag_np.square(epsilon[row3d]) + ag_np.square(
-                    epsilon[col3d])) / np.sqrt(2)
-            return epsilon_per_bin
+        return epsilon
 
     # Setup epsilon per low-res BEAD
     if ag_np.asarray(epsilon).size == 1:
         epsilon_per_bead = ag_np.full(stretch_fullres_beads.size, epsilon)
         adjusted_eps = None
     elif epsilon.size == stretch_fullres_beads.size:
-        epsilon_per_bead = epsilon
+        epsilon_per_bead = ag_np.asarray(epsilon)
         adjusted_eps = None
     else:
         epsilon_per_bead = ag_np.full(stretch_fullres_beads.size, epsilon[0])
@@ -73,6 +64,30 @@ def get_epsilon_per_bin(epsilon, row3d, col3d, multiscale_factor,
             epsilon_per_bead = epsilon_per_bead.at[
                 stretch_fullres_beads == eps_types[i]].set(adjusted_eps[i])
 
+    return epsilon_per_bead
+
+
+def get_epsilon_per_bin(epsilon, row3d, col3d, multiscale_factor,
+                        stretch_fullres_beads=None,
+                        mean_fullres_nghbr_dis=None):
+
+    if stretch_fullres_beads is None:
+        if ag_np.asarray(epsilon).size == 1:
+            return epsilon
+        else:
+            epsilon_per_bin = ag_np.sqrt(
+                ag_np.square(epsilon[row3d]) + ag_np.square(
+                    epsilon[col3d])) / np.sqrt(2)
+            return epsilon_per_bin
+
+    if ag_np.asarray(epsilon).size == stretch_fullres_beads.size:
+        epsilon_per_bead = epsilon
+    else:
+        epsilon_per_bead = get_epsilon_per_bead(
+            epsilon, multiscale_factor=multiscale_factor,
+            stretch_fullres_beads=stretch_fullres_beads,
+            mean_fullres_nghbr_dis=mean_fullres_nghbr_dis)
+
     # Get epsilon per low-res distance matrix BIN
     epsilon_per_bin = ag_np.sqrt(
         ag_np.square(epsilon_per_bead[row3d]) + ag_np.square(
@@ -81,15 +96,16 @@ def get_epsilon_per_bin(epsilon, row3d, col3d, multiscale_factor,
 
 
 def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
-                      ambiguity='ua', stretch_fullres_beads=None,
-                      mean_fullres_nghbr_dis=None, return_mean=True,
-                      return_var=True, inferring_alpha=False, mods=[]):
+                      multiscale_factor, ambiguity='ua',
+                      stretch_fullres_beads=None, mean_fullres_nghbr_dis=None,
+                      return_mean=True, return_var=True,
+                      inferring_alpha=False, mods=[]):
 
     dis = ag_np.sqrt((ag_np.square(
         struct[row3d] - struct[col3d])).sum(axis=1))
     dis_alpha = ag_np.power(dis, alpha)
 
-    if 'adjust_eps' in mods:
+    if 'adjust_eps' in mods or ag_np.asarray(epsilon).size > 1:
         epsilon = get_epsilon_per_bin(
             epsilon, row3d=row3d, col3d=col3d,
             multiscale_factor=multiscale_factor,
@@ -115,7 +131,6 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
         if return_var:
             gamma_var = gamma_var.reshape(reshape_0, -1).sum(axis=0)
 
-    # if not (ag_np.isfinite(gamma_mean) and ag_np.isfinite(gamma_var)): # TODO?
     if return_mean and return_var:
         return gamma_mean, gamma_var
     elif return_mean:
@@ -124,7 +139,8 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
         return gamma_var
 
 
-def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity='ua',
+def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
+                     multiscale_factor, ambiguity='ua',
                      stretch_fullres_beads=None, mean_fullres_nghbr_dis=None,
                      inferring_alpha=False, mods=[]):
 
@@ -132,12 +148,21 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity='ua',
         struct[row3d] - struct[col3d])).sum(axis=1))
     dis_alpha = ag_np.power(dis, alpha)
 
-    if 'adjust_eps' in mods:
+    eps_gt0 = None
+    dis_alpha_eps0 = ag_np.array([])
+    if 'adjust_eps' in mods or ag_np.asarray(epsilon).size > 1:
         epsilon = get_epsilon_per_bin(
             epsilon, row3d=row3d, col3d=col3d,
             multiscale_factor=multiscale_factor,
             stretch_fullres_beads=stretch_fullres_beads,
             mean_fullres_nghbr_dis=mean_fullres_nghbr_dis)
+    if 'adjust_eps' in mods:
+        eps_gt0 = (stretch_fullres_beads[row3d] * stretch_fullres_beads[col3d] > 1)
+        dis_alpha_eps0 = dis_alpha[~eps_gt0]
+        dis_alpha = dis_alpha[eps_gt0]
+        dis = dis[eps_gt0]
+        epsilon = epsilon[eps_gt0]
+
     ln_f_mean, ln_f_var = _approx_ln_f(
         dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha)
 
@@ -160,7 +185,7 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity='ua',
         k = ag_np.square(gamma_mean) / gamma_var
 
     theta = beta * theta_tmp
-    return k, theta
+    return k, theta, dis_alpha_eps0, eps_gt0
 
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
@@ -176,16 +201,29 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
     obj = 0
     for struct in structures:
-        k, theta = get_gamma_params(
+        k, theta, dis_alpha_eps0, eps_gt0 = get_gamma_params(
             struct, epsilon=epsilon, alpha=alpha, beta=counts.beta,
-            row3d=counts.row3d, col3d=counts.col3d, ambiguity=counts.ambiguity,
+            row3d=counts.row3d, col3d=counts.col3d,
+            multiscale_factor=multiscale_factor, ambiguity=counts.ambiguity,
             stretch_fullres_beads=stretch_fullres_beads,
             mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
             inferring_alpha=inferring_alpha, mods=mods)
-        obj = obj + gamma_poisson_nll(
-            theta=theta, k=k, data=counts.data,
-            num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
-            bias=bias_per_bin, mask=counts.mask, mods=mods)
+        if dis_alpha_eps0.size == 0:
+            obj = obj + gamma_poisson_nll(
+                theta=theta, k=k, data=counts.data,
+                num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
+                bias=bias_per_bin, mask=counts.mask, mods=mods)
+        else:
+            if eps_gt0.sum() > 0:
+                obj = obj + gamma_poisson_nll(
+                    theta=theta, k=k, data=counts.data[:, eps_gt0],
+                    num_fullres_per_lowres_bins=num_fullres_per_lowres_bins[:, eps_gt0],
+                    bias=bias_per_bin, mask=counts.mask[:, eps_gt0], mods=mods)
+            if eps_gt0.sum() < eps_gt0.size:
+                obj = obj + poisson_nll(
+                    data=counts.data[:, ~eps_gt0], lambda_pois=dis_alpha_eps0,
+                    mask=counts.mask[:, ~eps_gt0],
+                    num_fullres_per_lowres_bins=num_fullres_per_lowres_bins[:, ~eps_gt0])
 
     if not ag_np.isfinite(obj):
         raise ValueError(
@@ -351,6 +389,13 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             multiscale_reform=multiscale_reform,
             stretch_fullres_beads=stretch_fullres_beads,
             epsilon=epsilon, mixture_coefs=mixture_coefs, mods=mods)
+    if epsilon is not None and ('adjust_eps' in mods):
+        epsilon_tmp = get_epsilon_per_bead(
+            epsilon, multiscale_factor=multiscale_factor,
+            stretch_fullres_beads=stretch_fullres_beads,
+            mean_fullres_nghbr_dis=mean_fullres_nghbr_dis)
+    else:
+        epsilon_tmp = epsilon
 
     # Optionally translate & rotate structures
     if reorienter is not None and reorienter.reorient:
@@ -376,8 +421,8 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             constraint_obj = 0.
             for struct, mix_coef in zip(structures, mixture_coefs):
                 constraint_obj = constraint_obj + mix_coef * constraint.apply(
-                    struct=struct, alpha=alpha, epsilon=epsilon, counts=counts,
-                    bias=bias, inferring_alpha=inferring_alpha)
+                    struct=struct, alpha=alpha, epsilon=epsilon_tmp,
+                    counts=counts, bias=bias, inferring_alpha=inferring_alpha)
             obj_constraints[f"obj_{constraint.abbrev}"] = constraint_obj
 
     obj_poisson = {}
@@ -388,7 +433,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             structures=structures, counts=counts_maps, alpha=alpha,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances, epsilon=epsilon,
+            multiscale_variances=multiscale_variances, epsilon=epsilon_tmp,
             stretch_fullres_beads=stretch_fullres_beads,
             mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
             inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
@@ -447,7 +492,7 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
         elif eps_types is not None and (
                 X.size == nbeads * 3 * len(mixture_coefs) + eps_types.size):
             tmp = X[-eps_types.size:]
-            epsilon_primary = tmp[1]
+            epsilon_primary = tmp[0]
             epsilon_adjust = ag_np.cumprod(tmp[1:])
             epsilon = ag_np.append(
                 epsilon_primary, epsilon_adjust * epsilon_primary)
@@ -646,8 +691,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         bounds = np.append(
             np.full((init_X.flatten().shape[0], 2), None),
             np.array(epsilon_bounds).reshape(-1, 2), axis=0)
-        eps_types = get_eps_types(stretch_fullres_beads)
-        if eps_types.size > 1:
+        if ag_np.asarray(epsilon).size > 1:
+            eps_types = get_eps_types(stretch_fullres_beads)
             bounds_xtra = np.tile(np.array([1e-6, 1]), (eps_types.size - 1, 1))
             bounds = np.append(bounds, bounds_xtra, axis=0)
     else:
@@ -687,9 +732,9 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                 multiscale_reform=multiscale_reform,
                 stretch_fullres_beads=stretch_fullres_beads,
                 mixture_coefs=mixture_coefs, mods=mods)
-            print(f'INIT EPSILON: {np.asarray(epsilon).mean():.3g},'
-                  f'  FINAL EPSILON: {np.asarray(final_epsilon).mean():.3g}',
-                  flush=True)
+            # print(f'INIT EPSILON: {ag_np.asarray(epsilon).mean():.3g},'
+            #       f'  FINAL EPSILON: {ag_np.asarray(final_epsilon).mean():.3g}',
+            #       flush=True)  # Removed because is confusing with epsilon_per_bead
         if converged:
             print('CONVERGED\n', flush=True)
         else:
@@ -786,6 +831,7 @@ class PastisPM(object):
                  mods=[]):
 
         from .piecewise_whole_genome import ChromReorienter
+        from .callbacks import Callback
 
         lengths = np.asarray(lengths)
 
@@ -924,6 +970,9 @@ class PastisPM(object):
             multiscale_reform=self.multiscale_reform,
             stretch_fullres_beads=self.stretch_fullres_beads,
             mixture_coefs=self.mixture_coefs, mods=self.mods)
+        if self.epsilon_ is not None and isinstance(
+                self.epsilon_, ag_np.ndarray):
+            self.epsilon_ = self.epsilon_._value
 
         if self.reorienter is not None and self.reorienter.reorient:
             self.orientation_ = self.X_

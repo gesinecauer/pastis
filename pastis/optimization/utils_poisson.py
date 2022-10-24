@@ -101,7 +101,8 @@ def _load_infer_param(infer_param_file):
 
     for key in ['beta', 'est_hmlg_sep', 'orient', 'epsilon']:
         if key in infer_param:
-            infer_param[key] = np.array(infer_param[key].split(), dtype=float)
+            infer_param[key] = np.array(
+                infer_param[key].strip('[]').split(), dtype=float)
     convert_type_fxns = {
         'alpha': [float], 'converged': [strtobool], 'seed': [float, int],
         'multiscale_variances': [float], 'obj': [float], 'time': [float],

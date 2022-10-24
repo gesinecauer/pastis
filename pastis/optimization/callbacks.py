@@ -3,6 +3,7 @@ from timeit import default_timer as timer
 from datetime import timedelta
 import os
 from .utils_poisson import find_beads_to_remove
+from .poisson import get_eps_types
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from .multiscale_optimization import get_multiscale_epsilon_from_struct
 
@@ -131,8 +132,9 @@ class Callback(object):
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
                  on_iter_end=None, directory=None, seed=None, struct_true=None,
-                 alpha_true=None, constraints=None,
-                 multiscale_variances=None, mixture_coefs=None, verbose=False,
+                 alpha_true=None, constraints=None, multiscale_variances=None,
+                 stretch_fullres_beads=None, mean_fullres_nghbr_dis=None,
+                 mixture_coefs=None, verbose=False,
                  mods=[]):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -152,6 +154,8 @@ class Callback(object):
         self.constraints = constraints
         self.multiscale_reform = multiscale_reform
         self.multiscale_variances = multiscale_variances
+        self.stretch_fullres_beads = stretch_fullres_beads
+        self.mean_fullres_nghbr_dis = mean_fullres_nghbr_dis
         self.mixture_coefs = mixture_coefs
         self.mods = mods
 
@@ -180,12 +184,24 @@ class Callback(object):
         if struct_true is not None:
             struct_true = struct_true.reshape(-1, 3)
             if multiscale_factor != 1 and multiscale_reform:
-                self.epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
+                epsilon_per_bead_true = get_multiscale_epsilon_from_struct(
                     struct_true, lengths=lengths,
-                    multiscale_factor=multiscale_factor, verbose=False))
+                    multiscale_factor=multiscale_factor, verbose=False)
+                # if stretch_fullres_beads is not None:
+                #     eps_types = get_eps_types(stretch_fullres_beads)
+                #     epsilon_true = np.full(eps_types.size, np.nan)
+                #     for i in range(eps_types.size):
+                #         epsilon_true[i] = epsilon_per_bead_true[
+                #             stretch_fullres_beads == eps_types[i]]
+                #     epsilon_primary_true = epsilon_true[0]
+                # else:
+                #     epsilon_true = np.mean(epsilon_per_bead_true)
+                #     epsilon_primary_true = epsilon_true
+
+                self.epsilon_true = epsilon_per_bead_true
                 if verbose:
                     print(f"True epsilon ({multiscale_factor}x):"
-                          f" {self.epsilon_true:.3g}", flush=True)
+                          f" {self.epsilon_true.mean():.3g}", flush=True)
             if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
                 self.struct_true = decrease_struct_res(
                     struct_true, multiscale_factor=multiscale_factor,
@@ -245,7 +261,12 @@ class Callback(object):
             self.iter), 'f= ': '%.6g' % self.obj['obj'],
             'time= ': self.time}
         if self.epsilon is not None:
-            info_dict['epsilon= '] = f"{self.epsilon:.3g}"
+            if np.array(self.epsilon).size == 1:
+                info_dict['epsilon= '] = f"{self.epsilon:.3g}"
+            elif self.epsilon.size == self.X.shape[0]:
+                info_dict['epsilon= '] = f"{self.epsilon.mean():.3g}"
+            else:
+                info_dict['epsilon= '] = f"{self.epsilon[0]:.3g}"
         print('\t\t'.join([f'{k}{v}' for k, v in info_dict.items()]) + '\n',
               flush=True)
 
@@ -380,7 +401,10 @@ class Callback(object):
         self.alpha = alpha
         if self.opt_type == 'chrom_reorient':
             self.orientation = Xi
-        self.epsilon = epsilon
+        if type(epsilon).__name__ == 'DeviceArray':
+            self.epsilon = epsilon._value
+        else:
+            self.epsilon = epsilon
 
         self._print()
         self._log_history()

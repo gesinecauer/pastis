@@ -5,6 +5,7 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
 from .utils_poisson import _struct_replace_nan
+import warnings
 
 
 if sys.version_info[0] < 3:
@@ -630,7 +631,12 @@ def _get_stretch_of_fullres_beads(multiscale_factor, lengths, ploidy,
         np.arange(bad_idx.shape[0], dtype=float).reshape(-1, 1),
         (1, bad_idx.shape[1]))
     arr[bad_idx] = np.nan
-    stretch_fullres_beads = np.nanmax(arr, axis=0) - np.nanmin(arr, axis=0) + 1
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', message='All-NaN slice encountered',
+                                category=RuntimeWarning)
+        stretch_fullres_beads = np.nanmax(arr, axis=0) - np.nanmin(
+            arr, axis=0) + 1
+    stretch_fullres_beads[np.isnan(stretch_fullres_beads)] = 0
 
     return stretch_fullres_beads
 

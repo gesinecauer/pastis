@@ -232,9 +232,32 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             print(f'ALPHA: {alpha:.3g}', flush=True)
 
+    # INITIALIZATION
+    random_state = np.random.RandomState(seed)
+    random_state = check_random_state(random_state)
+    if isinstance(init, str) and init.lower() == 'true':
+        if struct_true is None:
+            raise ValueError("Attempting to initialize with struct_true but"
+                             " struct_true is None")
+        if verbose:
+            print('INITIALIZATION: initializing with true structure',
+                  flush=True)
+        init = struct_true
+    struct_init = initialize(
+        counts=counts, lengths=lengths, init=init, ploidy=ploidy,
+        random_state=random_state,
+        alpha=alpha_init if alpha is None else alpha,
+        bias=bias, multiscale_factor=multiscale_factor,
+        reorienter=reorienter, std_dev=init_std_dev,
+        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+    if multiscale_reform and multiscale_factor != 1:
+        epsilon = random_state.uniform()
+    else:
+        epsilon = None
+
     # SETUP MULTI-RES
     stretch_fullres_beads = mean_fullres_nghbr_dis = None
-    if multiscale_reform and ('adjust_eps' in mods):
+    if multiscale_reform and multiscale_factor != 1 and ('adjust_eps' in mods):
         if beta is None:
             mean_fullres_nghbr_dis = 1
         else:
@@ -272,8 +295,8 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             # exit(1)
 
         stretch_fullres_beads = _get_stretch_of_fullres_beads(
-                multiscale_factor=multiscale_factor, lengths=lengths,
-                ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
+            multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
         if 'adjust_eps_all' in mods:
             eps_types = get_eps_types(stretch_fullres_beads)
             if eps_types.size > 1:
@@ -293,29 +316,6 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             est_hmlg_sep = distance_between_homologs(
                 structures=reorienter.struct_init, lengths=lengths,
                 mixture_coefs=mixture_coefs)
-
-    # INITIALIZATION
-    random_state = np.random.RandomState(seed)
-    random_state = check_random_state(random_state)
-    if isinstance(init, str) and init.lower() == 'true':
-        if struct_true is None:
-            raise ValueError("Attempting to initialize with struct_true but"
-                             " struct_true is None")
-        if verbose:
-            print('INITIALIZATION: initializing with true structure',
-                  flush=True)
-        init = struct_true
-    struct_init = initialize(
-        counts=counts, lengths=lengths, init=init, ploidy=ploidy,
-        random_state=random_state,
-        alpha=alpha_init if alpha is None else alpha,
-        bias=bias, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, std_dev=init_std_dev,
-        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
-    if multiscale_reform and multiscale_factor != 1:
-        epsilon = random_state.uniform()
-    else:
-        epsilon = None
 
     # SETUP CONSTRAINTS
     constraints = prep_constraints(
@@ -342,8 +342,10 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         directory=outdir, seed=seed, struct_true=struct_true_tmp,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
         mixture_coefs=mixture_coefs, **callback_fxns,
-        multiscale_variances=multiscale_variances, verbose=verbose,
-        mods=mods)
+        multiscale_variances=multiscale_variances,
+        stretch_fullres_beads=stretch_fullres_beads,
+        mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
+        verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
             multiscale_variances, epsilon, stretch_fullres_beads,
@@ -769,8 +771,13 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             X_ = infer_param['orient']
         else:
             X_ = struct_
-        if 'epsilon' in infer_param:
-            epsilon_max_ = infer_param['epsilon']  # FIXME??
+        if 'epsilon' in infer_param:  # FIXME??
+            if np.asarray(infer_param['epsilon']).size == 1:
+                epsilon_max_ = infer_param['epsilon']
+            elif np.asarray(infer_param['epsilon']).size == struct_.shape[0]:
+                epsilon_max_ = infer_param['epsilon'].max()
+            else:
+                epsilon_max_ = infer_param['epsilon'][0]
         # if use_prev_std_dev and multiscale_reform:
         #     init_std_dev = infer_param['epsilon'] / np.sqrt(2)
         if 'lowres_exit' in mods:
