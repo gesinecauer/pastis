@@ -156,7 +156,8 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
             multiscale_factor=multiscale_factor,
             stretch_fullres_beads=stretch_fullres_beads,
             mean_fullres_nghbr_dis=mean_fullres_nghbr_dis)
-    if 'adjust_eps' in mods:
+    if ('adjust_eps' in mods) and ('eps0' not in mods):
+        print('not eps0 mod?'); exit(1)
         eps_gt0 = (stretch_fullres_beads[row3d] * stretch_fullres_beads[col3d] > 1)
         dis_alpha_eps0 = dis_alpha[~eps_gt0]
         dis_alpha = dis_alpha[eps_gt0]
