@@ -638,6 +638,15 @@ def _get_stretch_of_fullres_beads(multiscale_factor, lengths, ploidy,
             arr, axis=0) + 1
     stretch_fullres_beads[np.isnan(stretch_fullres_beads)] = 0
 
+    print('\n')
+    print('total =', (stretch_fullres_beads != 0).sum())
+    print('one =', (stretch_fullres_beads == 1).sum())
+    print('two =', (stretch_fullres_beads == 2).sum())
+    print('multiscale_factor =', (stretch_fullres_beads == multiscale_factor).sum())
+    print(stretch_fullres_beads[~np.isin(stretch_fullres_beads, [0, 1, 2, multiscale_factor])])
+    print('\n')
+
+
     return stretch_fullres_beads
 
 
