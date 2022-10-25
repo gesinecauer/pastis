@@ -12,6 +12,7 @@ import jax.numpy as ag_np
 from jax.nn import relu
 from jax.scipy.stats.gamma import logpdf as logpdf_gamma
 from jax.scipy.stats.norm import logpdf as logpdf_norm
+from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
 from jax.scipy.special import gammaln
 
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
@@ -709,7 +710,7 @@ class HomologSeparating2022(Constraint):
         else:
             fullres_per_lowres_bead = None
 
-        if self.lengths_lowres.size > 1 and 'interhmlg_intrachrom' in self.mods:
+        if (self.lengths_lowres.size > 1 and 'interhmlg_intrachrom' in self.mods):
             n = self.lengths_lowres.sum()
             mask_intrachrom = _intra_mask(
                 (n, n), lengths_at_res=self.lengths_lowres)
@@ -739,7 +740,7 @@ class HomologSeparating2022(Constraint):
             mask = row == col
             row = row[mask]
             col = col[mask]
-        elif 'interhmlg_intrachrom' in self.mods and 'mean' not in self.mods:
+        elif ('interhmlg_intrachrom' in self.mods and 'mean' not in self.mods):
             row = row[var['mask_intrachrom']]
             col = col[var['mask_intrachrom']]
         dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
@@ -847,8 +848,23 @@ class HomologSeparating2022(Constraint):
             # theta = variance / mean
             # k = mean / est_gamma_theta
 
-            k = counts_inter_mv['est_gamma_k']
-            theta = counts_inter_mv['est_gamma_theta']
+            if 'flex_var' in self.mods:
+                variance_max = counts_inter_mv['var']
+                variance = relu_min(lambda_interhmlg.var(), variance_max)
+                k = ag_np.square(mean) / variance
+                theta = variance / mean
+            elif 'flex_var2' in self.mods:
+                variance_max = counts_inter_mv['est_gamma_var']
+                variance = relu_min(lambda_interhmlg.var(), variance_max)
+                k = ag_np.square(mean) / variance
+                theta = variance / mean
+
+                # mad = ag_np.median(ag_np.absolute(
+                #     nghbr_dis - ag_np.median(nghbr_dis)))
+                # sigma_tmp = 1.4826 * mad
+            else:
+                k = counts_inter_mv['est_gamma_k']
+                theta = counts_inter_mv['est_gamma_theta']
 
             if 'hsc_invgamma' in self.mods:
                 k, theta = gamma_to_invgamma_to_gamma(
@@ -873,7 +889,7 @@ class HomologSeparating2022(Constraint):
             elif 'hsc_normal' in self.mods:
                 obj = -logpdf_norm(
                     lambda_interhmlg, loc=mean, scale=np.sqrt(variance)).mean()
-            else:
+            elif 'hsc_gamma' in self.mods:
                 obj = -logpdf_gamma(lambda_interhmlg, a=k, scale=theta).mean()
 
 
@@ -906,6 +922,59 @@ class HomologSeparating2022(Constraint):
                     to_print += f"\t   ε={epsilon:.2g}"
                 print(to_print, flush=True)
                 # exit(1)
+        elif 'nb3' in self.mods:
+            if 'div4' in self.mods or 'try1' in self.mods:
+                lambda_interhmlg = var['beta'] * ag_np.power(dis_interhmlg, alpha)
+            else:
+                lambda_interhmlg = (4 * var['beta']) * ag_np.power(dis_interhmlg, alpha)
+
+            counts_inter = counts_inter_mv['vals'].reshape(-1, 1)
+
+            lambda_mean = lambda_interhmlg.mean()
+            lambda_var = lambda_interhmlg.var()
+            k = ag_np.square(lambda_mean) / lambda_var
+            theta = lambda_var / lambda_mean
+            obj = gamma_poisson_nll(
+                theta=theta, k=k, data=counts_inter, bias=None, mods=self.mods)  # FIXME need to add bias and input non-normed counts??
+
+            if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                to_print = f"NB3: c={counts_inter_mv['mean']:.2g}\t   μ={lambda_mean:.2g}\t   σ²={lambda_var:.2g}\t   OBJ={obj:.2g}"
+                if epsilon is not None:
+                    to_print += f"\t   ε={epsilon:.2g}"
+                print(to_print, flush=True)
+        elif 'kl_nb' in self.mods:
+            lambda_interhmlg = (4 * var['beta']) * ag_np.power(dis_interhmlg, alpha)
+
+            counts_inter_pmf = counts_inter_mv['nb_pmf']
+
+            lambda_mean = lambda_interhmlg.mean()
+            lambda_var = lambda_interhmlg.var()
+            lambda_n = lambda_k = ag_np.square(lambda_mean) / lambda_var
+            lambda_theta = lambda_var / lambda_mean
+            lambda_p = 1 / (lambda_theta + 1)
+
+            lambda_pmf = ag_np.exp(logpmf_negbinom(
+                counts_inter_pmf['x'], n=lambda_n, p=lambda_p))
+
+            obj = kl_divergence(p=counts_inter_pmf['y'], q=lambda_pmf)
+
+            if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                to_print = f"KL_NB: c={counts_inter_mv['mean']:.2g}\t   μ={lambda_mean:.2g}\t   σ²={lambda_var:.2g}\t   OBJ={obj:g}"
+
+                # from scipy.special import rel_entr
+                # kl_test = rel_entr(counts_inter_pmf['y'], lambda_pmf if isinstance(lambda_pmf, np.ndarray) else lambda_pmf._value).sum()
+                # to_print += f"\t   TEST={kl_test:g}"
+
+                if epsilon is not None:
+                    to_print += f"\t   ε={epsilon:.2g}"
+                print(to_print, flush=True)
+        elif False:
+
+            dis_intraH_interC = _euclidean_distance(
+                struct, row=np.append(row, row + n), col=np.append(col, col + n))
+
+
+
         else:
             counts_inter_mean = counts_inter_mv['mean']
 
@@ -923,6 +992,10 @@ class HomologSeparating2022(Constraint):
         if not ag_np.isfinite(obj):
             raise ValueError(f"{self.name} constraint objective is {obj}.")
         return self.lambda_val * obj
+
+
+def kl_divergence(p, q):
+    return ag_np.sum(ag_np.where(p != 0, p * ag_np.log(p / q), 0))
 
 
 def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
@@ -1180,12 +1253,22 @@ def calc_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
         tmp = tmp / 4
     counts_inter_mv = {'mean': tmp.mean(), 'var': tmp.var()}
 
-    # Get mean of (c_ij / beta) ^ (-1/alpha)
-    beta_ambig = _ambiguate_beta(
-        beta, counts=counts, lengths=lengths, ploidy=ploidy)
-    tmp2 = np.power(tmp / beta_ambig, np.abs(1 / alpha))
-    counts_inter_mv['inv_dis_mean'] = tmp2.mean()
-    print('**********', tmp2.mean())
+    if 'nb3' in mods:
+        counts_inter_mv['vals'] = tmp
+
+    if 'kl_nb' in mods and bias is not None:
+        raise ValueError("bias for kl_nb")
+    nb_pmf_x = np.arange(tmp.max() + 1, dtype=int)
+    nb_pmf_y = np.bincount(tmp.astype(int))
+    counts_inter_mv['nb_pmf'] = {'x': nb_pmf_x, 'y': nb_pmf_y}
+
+
+    # # Get mean of (c_ij / beta) ^ (-1/alpha)
+    # beta_ambig = _ambiguate_beta(
+    #     beta, counts=counts, lengths=lengths, ploidy=ploidy)
+    # tmp2 = np.power(tmp / beta_ambig, np.abs(1 / alpha))
+    # counts_inter_mv['inv_dis_mean'] = tmp2.mean()
+    # print('**********', tmp2.mean())
 
     # Get estimated gamma theta & k for hsc2022
     tmp_factor = 0.01
