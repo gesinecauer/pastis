@@ -447,7 +447,10 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
 
     obj = obj_poisson_mean + sum(obj_constraints.values())
 
-    # if type(obj).__name__ == 'DeviceArray':
+    # if type(obj).__name__ in ('DeviceArray', 'ndarray'):
+    #     print(f"COUNTS OBJ: {obj_poisson_mean:g}")
+
+    # if type(obj).__name__ in ('DeviceArray', 'ndarray'):
     #     print("OBJ\t" + '\t'.join([f"{k.replace('obj_', '')}: {v._value:.3g}" for k, v in list(obj_poisson.items()) + list(obj_constraints.items())]))  # + f"\tepsilon: {epsilon:.3g}"
     # elif type(obj).__name__ == 'JVPTracer':
     #     print("GRAD\t" + '\t'.join([f"{k.replace('obj_', '')}: {v.primal._value:.3g}" for k, v in obj_poisson.items()]))
