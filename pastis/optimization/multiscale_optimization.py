@@ -128,7 +128,7 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     return struct_highres
 
 
-def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
+def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
                         random_state=None):
     """Linearly interpolate structure to increase resolution.
 
@@ -154,9 +154,9 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
         specified high resolution.
     """
 
+    # Setup
     if random_state is None:
         random_state = np.random.RandomState(seed=0)
-
     if int(multiscale_factor) != multiscale_factor:
         raise ValueError('The multiscale_factor must be an integer')
     multiscale_factor = int(multiscale_factor)
@@ -171,14 +171,11 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
     lengths_lowres = decrease_lengths_res(
         lengths=lengths, multiscale_factor=multiscale_factor)
 
+    # Get highres idx
     idx, bad_idx = _get_struct_index(
-        multiscale_factor=multiscale_factor, lengths=lengths,
-        ploidy=ploidy)
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
     idx = idx.astype(float)
     idx[bad_idx] = np.nan
-
-    if mask is not None:
-        idx[~mask.reshape(multiscale_factor, -1)] = np.nan
 
     struct_highres = np.full((lengths.sum() * ploidy, 3), np.nan)
     begin_lowres = end_lowres = 0
@@ -186,48 +183,39 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy, mask=None,
     for i in range(lengths.shape[0] * ploidy):
         end_lowres += lengths_tiled[i]
 
-        # Beads of struct that are NaN
-        struct_nan_mask = np.isnan(struct[begin_lowres:end_lowres, 0])
-
         # Get index for this molecule at low & high res
+        nan_mask_lowres = np.isnan(struct[begin_lowres:end_lowres, 0])
         chrom_idx = idx[:, begin_lowres:end_lowres]
-        chrom_idx[:, struct_nan_mask] = np.nan
-        chrom_idx_lowres = np.nanmean(chrom_idx, axis=0)
-        chrom_idx_highres = chrom_idx.T.flatten()
-        chrom_idx_highres = chrom_idx_highres[
-                ~np.isnan(chrom_idx_highres)].astype(int)
+        chrom_idx[:, nan_mask_lowres] = np.nan
+        chrom_xloc_lowres = np.nanmean(chrom_idx, axis=0)
+        chrom_xloc_lowres = chrom_xloc_lowres[~nan_mask_lowres]
+        chrom_idx_lowres = np.arange(begin_lowres, end_lowres)[~nan_mask_lowres]
+        chrom_idx_highres = np.arange(
+            np.nanmin(chrom_idx), np.nanmax(chrom_idx))
 
-        # If there's less than 2 non-NaN beads in lowres molecule
-        if (~struct_nan_mask).sum() == 0:
+        # Create highres beads
+        if (~nan_mask_lowres).sum() == 0:  # 0 non-NaN beads in lowres
             chrom_idx_highres = chrom_idx_highres[
                 ~np.isnan(chrom_idx_highres)].astype(int)
             random_chrom = random_state.uniform(
                 low=-1, high=1, size=(chrom_idx_highres.size, 3))
             struct_highres[chrom_idx_highres] = random_chrom
-            begin_lowres = end_lowres
-            continue
-        if (~struct_nan_mask).sum() == 1:
+        elif (~nan_mask_lowres).sum() == 1:  # Only 1 non-NaN bead in lowres
             chrom_idx_highres = chrom_idx_highres[
                 ~np.isnan(chrom_idx_highres)].astype(int)
-            lowres_bead = struct[
-                begin_lowres:end_lowres][~struct_nan_mask]
+            lowres_bead = struct[chrom_idx_lowres]
             struct_highres[chrom_idx_highres] = random_state.normal(
                 lowres_bead, 1, (chrom_idx_highres.size, 3))
-            begin_lowres = end_lowres
-            continue
-
-        struct_highres[chrom_idx_highres, 0] = interp1d(
-            chrom_idx_lowres[~struct_nan_mask],
-            struct[begin_lowres:end_lowres, 0][~struct_nan_mask],
-            kind="linear", fill_value="extrapolate")(chrom_idx_highres)
-        struct_highres[chrom_idx_highres, 1] = interp1d(
-            chrom_idx_lowres[~struct_nan_mask],
-            struct[begin_lowres:end_lowres, 1][~struct_nan_mask],
-            kind="linear", fill_value="extrapolate")(chrom_idx_highres)
-        struct_highres[chrom_idx_highres, 2] = interp1d(
-            chrom_idx_lowres[~struct_nan_mask],
-            struct[begin_lowres:end_lowres, 2][~struct_nan_mask],
-            kind="linear", fill_value="extrapolate")(chrom_idx_highres)
+        else:  # Enough non-NaN beads in lowres to interpolate
+            struct_highres[chrom_idx_highres, 0] = interp1d(
+                x=chrom_xloc_lowres, y=struct[chrom_idx_lowres, 0],
+                kind="linear", fill_value="extrapolate")(chrom_idx_highres)
+            struct_highres[chrom_idx_highres, 1] = interp1d(
+                x=chrom_xloc_lowres, y=struct[chrom_idx_lowres, 1],
+                kind="linear", fill_value="extrapolate")(chrom_idx_highres)
+            struct_highres[chrom_idx_highres, 2] = interp1d(
+                x=chrom_xloc_lowres, y=struct[chrom_idx_lowres, 2],
+                kind="linear", fill_value="extrapolate")(chrom_idx_highres)
 
         begin_lowres = end_lowres
 
@@ -534,9 +522,9 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
         multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
 
     if fullres_struct_nan is not None and fullres_struct_nan.shape != 0:
-        struct_nan_mask = np.isin(idx, fullres_struct_nan)
-        bad_idx[struct_nan_mask] = True
-        idx[struct_nan_mask] = 0
+        nan_mask_lowres = np.isin(idx, fullres_struct_nan)
+        bad_idx[nan_mask_lowres] = True
+        idx[nan_mask_lowres] = 0
 
     # Apply to struct, and set incorrect idx to np.nan
     grouped_struct = np.where(
