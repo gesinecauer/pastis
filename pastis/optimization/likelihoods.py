@@ -60,7 +60,7 @@ def _masksum(x, mask=None, axis=None):
 
 
 def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
-                      bias=None, mask=None, mods=[]):
+                      bias=None, mask=None, mods=[], mean=True):
     """TODO"""
 
     if num_fullres_per_lowres_bins is None:
@@ -92,7 +92,10 @@ def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
     if 'ij_sum' not in mods:
         log_likelihood = log_likelihood / num_fullres_per_lowres_bins
 
-    log_likelihood = ag_np.mean(log_likelihood)
+    if mean:
+        log_likelihood = ag_np.mean(log_likelihood)
+    else:
+        log_likelihood = ag_np.sum(log_likelihood)
     return -log_likelihood
 
 
