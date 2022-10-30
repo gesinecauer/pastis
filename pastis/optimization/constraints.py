@@ -287,17 +287,16 @@ class HomologSeparating2019(Constraint):
         struct_nan = find_beads_to_remove(
             counts, lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
-        if struct_nan.sum() != 0:
+        if struct_nan.size != 0:
             raise ValueError("Check that we actually want to remove torm beads here...")
         bead_weights[struct_nan] = 0.
         n = self.lengths_lowres.sum()
         begin = end = 0
         for i in range(len(self.lengths_lowres)):
             end = end + self.lengths_lowres[i]
-            bead_weights[:n][begin:end] /= np.sum(
-                bead_weights[:n][begin:end])
-            bead_weights[n:][begin:end] /= np.sum(
-                bead_weights[n:][begin:end])
+            bead_weights[begin:end] /= np.sum(bead_weights[begin:end])
+            bead_weights[n + begin:n + end] /= np.sum(
+                bead_weights[n + begin:n + end])
             begin = end
         bead_weights = bead_weights.reshape(-1, 1)
 
@@ -479,7 +478,7 @@ class BeadChainConnectivity2022(Constraint):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.hparams = hparams
-        self._fullres_struct_nan = None  # Not necessary for this constraint
+        self._fullres_struct_nan = fullres_struct_nan  # For self._setup() only
         self._lowmem = lowmem
         self._var = None
         self.mods = mods  # TODO remove
@@ -600,11 +599,15 @@ class BeadChainConnectivity2022(Constraint):
         if self.multiscale_factor == 1:
             nghbr_dis = _euclidean_distance(
                 struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
-            lambda_nghbr = (2 * var['beta']) * var['bias_nghbr'] * ag_np.power(
+            bias_nghbr = var['bias_nghbr']
+            if not np.all(bias_nghbr == 1):
+                bias_nghbr = np.tile(bias_nghbr, self.ploidy)
+            lambda_nghbr = (2 * var['beta']) * bias_nghbr * ag_np.power(
                 nghbr_dis, alpha)
             lambda_nghbr = lambda_nghbr + lambda_interchrom
             obj = poisson_nll(
-                np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_nghbr)
+                np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_nghbr,
+                mean=('bcc_sum' not in self.mods))
         else:
             gamma_mean, gamma_var = get_gamma_moments(
                 struct=struct, epsilon=epsilon, alpha=alpha,
@@ -631,7 +634,7 @@ class BeadChainConnectivity2022(Constraint):
                 theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
                 bias=var['bias_nghbr'], mask=var['counts_nghbr_mask'],
                 num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
-                mods=self.mods)
+                mods=self.mods, mean=('bcc_sum' not in self.mods))
 
             lambda_nghbr = gamma_mean  # TODO temp
 
