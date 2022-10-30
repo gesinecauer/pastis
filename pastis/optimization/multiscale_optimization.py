@@ -180,7 +180,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
     struct_highres = np.full((lengths.sum() * ploidy, 3), np.nan)
     begin_lowres = end_lowres = 0
     lengths_tiled = np.tile(lengths_lowres, ploidy)
-    for i in range(lengths.shape[0] * ploidy):
+    for i in range(lengths_tiled.size):
         end_lowres += lengths_tiled[i]
 
         # Get index for this molecule at low & high res
@@ -191,7 +191,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
         chrom_xloc_lowres = chrom_xloc_lowres[~nan_mask_lowres]
         chrom_idx_lowres = np.arange(begin_lowres, end_lowres)[~nan_mask_lowres]
         chrom_idx_highres = np.arange(
-            np.nanmin(chrom_idx), np.nanmax(chrom_idx))
+            np.nanmin(chrom_idx), np.nanmax(chrom_idx) + 1, dtype=int)
 
         # Create highres beads
         if (~nan_mask_lowres).sum() == 0:  # 0 non-NaN beads in lowres
