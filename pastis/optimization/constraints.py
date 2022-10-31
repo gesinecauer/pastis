@@ -630,15 +630,16 @@ class BeadChainConnectivity2022(Constraint):
             theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
 
-            num_fullres_per_lowres_bins = (
+            data_per_bin = (
                 var['fullres_per_lowres_bead'][var['row_nghbr']]) * (
                 var['fullres_per_lowres_bead'][var['row_nghbr'] + 1])
 
             obj = gamma_poisson_nll(
                 theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
-                bias=var['bias_nghbr'], mask=var['counts_nghbr_mask'],
-                num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
-                mods=self.mods, mean=('bcc_sum' not in self.mods))
+                bias_per_bin=var['bias_nghbr'], mask=var['counts_nghbr_mask'],
+                # data_per_bin=data_per_bin,  # FIXME adding this makes the obj wrong?
+                mean=('bcc_sum' not in self.mods),
+                mods=self.mods)
 
             lambda_nghbr = gamma_mean  # TODO temp
 
@@ -966,14 +967,14 @@ class HomologSeparating2022(Constraint):
             k = ag_np.square(lambda_mean) / lambda_var
             theta = lambda_var / lambda_mean
             obj = gamma_poisson_nll(
-                theta=theta, k=k, data=counts_inter, bias=None, mods=self.mods)  # FIXME need to add bias and input non-normed counts??
+                theta=theta, k=k, data=counts_inter, bias_per_bin=None, mods=self.mods)  # FIXME need to add bias and input non-normed counts??
 
             if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
                 to_print = f"NB3: c={counts_inter_mv['mean']:.2g}\t   μ={lambda_mean:.2g}\t   σ²={lambda_var:.2g}\t   OBJ={obj:.2g}"
                 if epsilon is not None:
                     to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
                 print(to_print, flush=True)
-        elif 'kl_nb' in self.mods:
+        elif ('kl_nb' in self.mods) or ('js_nb' in self.mods):
             # Get lambda_interhmlg
             if 'use_gmean' in self.mods and self.multiscale_factor > 1:
                 lambda_interhmlg, lambda_interhmlg_var = get_gamma_moments(
@@ -1049,6 +1050,26 @@ class HomologSeparating2022(Constraint):
                     pmf_x=counts_inter_pmf['x'],
                     pmf_y=counts_inter_pmf['y'], mods=self.mods)
                 obj = obj / divide_obj_by
+            elif 'per_half' in self.mods:
+                obj = 0
+                divide_obj_by = 1
+
+                if 'intrah_interc' in self.mods:
+                    lambda_intraH = lambda_interhmlg[-dis_intraH.size:]
+                    lambda_interhmlg = lambda_interhmlg[:-dis_intraH.size]
+                    obj = obj + negbinom_divergence(
+                        gamma_mean=lambda_intraH.mean(),
+                        gamma_var=lambda_intraH.var() + lambda_interhmlg_var,
+                        pmf_x=counts_inter_pmf['x'],
+                        pmf_y=counts_inter_pmf['y'], mods=self.mods)
+                    divide_obj_by += 1
+
+                obj = obj + negbinom_divergence(
+                    gamma_mean=lambda_interhmlg.mean(),
+                    gamma_var=lambda_interhmlg.var() + lambda_interhmlg_var,
+                    pmf_x=counts_inter_pmf['x'],
+                    pmf_y=counts_inter_pmf['y'], mods=self.mods)
+                obj = obj / divide_obj_by
 
             else:
                 obj = negbinom_divergence(
@@ -1096,19 +1117,36 @@ class HomologSeparating2022(Constraint):
 
 def negbinom_divergence(gamma_mean, gamma_var, pmf_x, pmf_y, mods=[]):
     gamma_theta = gamma_var / gamma_mean
-    n = lambda_k = ag_np.square(gamma_mean) / gamma_var
+    n = gamma_k = ag_np.square(gamma_mean) / gamma_var
     p = 1 / (gamma_theta + 1)
 
     lambda_pmf = ag_np.exp(logpmf_negbinom(pmf_x, n=n, p=p))
-    return kl_divergence(p=pmf_y, q=lambda_pmf)
+
+    if 'js_nb' in mods:
+        kl = kl_divergence(p=pmf_y, q=lambda_pmf)
+        divergence = js_divergence(p=pmf_y, q=lambda_pmf)
+        if 'debug2' in mods and type(divergence).__name__ in ('DeviceArray', 'ndarray'):
+            print(f"{pmf_x.size}\tKL={kl:.3g}\tJS={divergence:.3g}\t\tKL/n={kl/pmf_x.size:.3g}\tJS/n={divergence/pmf_x.size:.3g}")
+    else:
+        divergence = kl_divergence(p=pmf_y, q=lambda_pmf)
+        if 'debug2' in mods and type(divergence).__name__ in ('DeviceArray', 'ndarray'):
+            print(f"{pmf_x.size}\t{pmf_y.mean():.3g}\tKL={divergence:.3g}\t\tKL/n={divergence/pmf_x.size:.3g}")
+
+    return divergence
 
 
 def kl_divergence(p, q):
     mask = (p != 0)
     if mask.sum() == mask.size:
-        return ag_np.sum(p * ag_np.log(p / q))
+        tmp = p * ag_np.log(p / q)
     else:
-        return ag_np.sum(p[mask] * ag_np.log(p[mask] / q[mask]))
+        tmp = p[mask] * ag_np.log(p[mask] / q[mask])
+    return ag_np.sum(tmp)
+
+
+def js_divergence(p, q):
+    m = (p + q) / 2
+    return (kl_divergence(p, m) + kl_divergence(q, m)) / 2
 
 
 def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
@@ -1374,9 +1412,21 @@ def calc_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     if 'kl_nb' in mods and bias is not None:
         raise ValueError("bias for kl_nb")
     nb_pmf_x = np.arange(tmp.max() + 1, dtype=int)
-    nb_pmf_y = np.bincount(tmp.astype(int)) / tmp.size
-    nb_pmf_x = nb_pmf_x[nb_pmf_y != 0]
-    nb_pmf_y = nb_pmf_y[nb_pmf_y != 0]
+    bincount_y = np.bincount(tmp.astype(int))
+    nb_pmf_y = bincount_y / tmp.size
+
+    if ('js_nb' not in mods):
+        mask = nb_pmf_y != 0
+        nb_pmf_x = nb_pmf_x[mask]
+        nb_pmf_y = nb_pmf_y[mask]
+    if '1p' in mods:
+        cutoff = 0.01
+        print([float(f'{x:.3g}') for x in nb_pmf_y])
+        print((nb_pmf_y > cutoff).sum(), nb_pmf_y.size); print()
+        mask = nb_pmf_y > cutoff
+        nb_pmf_x = nb_pmf_x[mask]
+        nb_pmf_y = nb_pmf_y[mask]
+
     counts_inter_mv['nb_pmf'] = {'x': nb_pmf_x, 'y': nb_pmf_y}
 
 
