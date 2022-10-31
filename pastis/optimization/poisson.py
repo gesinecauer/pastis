@@ -16,7 +16,7 @@ from datetime import timedelta
 
 from .multiscale_optimization import decrease_lengths_res
 from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
-from .utils_poisson import _print_code_header, relu_min
+from .utils_poisson import _print_code_header
 from .polynomial import _approx_ln_f
 from .likelihoods import _masksum, gamma_poisson_nll, poisson_nll
 
@@ -197,7 +197,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     """Computes the multiscale objective function for a given counts matrix.
     """
 
-    num_fullres_per_lowres_bins = counts.fullres_per_lowres_dis().reshape(1, -1)
+    data_per_bin = counts.fullres_per_lowres_dis().reshape(1, -1)
     bias_per_bin = counts.bias_per_bin(bias)  # TODO
 
     obj = 0
@@ -211,20 +211,18 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             inferring_alpha=inferring_alpha, mods=mods)
         if dis_alpha_eps0.size == 0:
             obj = obj + gamma_poisson_nll(
-                theta=theta, k=k, data=counts.data,
-                num_fullres_per_lowres_bins=num_fullres_per_lowres_bins,
-                bias=bias_per_bin, mask=counts.mask, mods=mods)
+                theta=theta, k=k, data=counts.data, bias_per_bin=bias_per_bin,
+                mask=counts.mask, mods=mods)
         else:
             if eps_gt0.sum() > 0:
                 obj = obj + gamma_poisson_nll(
                     theta=theta, k=k, data=counts.data[:, eps_gt0],
-                    num_fullres_per_lowres_bins=num_fullres_per_lowres_bins[:, eps_gt0],
                     bias=bias_per_bin, mask=counts.mask[:, eps_gt0], mods=mods)
             if eps_gt0.sum() < eps_gt0.size:
                 obj = obj + poisson_nll(
                     data=counts.data[:, ~eps_gt0], lambda_pois=dis_alpha_eps0,
                     mask=counts.mask[:, ~eps_gt0],
-                    num_fullres_per_lowres_bins=num_fullres_per_lowres_bins[:, ~eps_gt0])
+                    data_per_bin=data_per_bin[:, ~eps_gt0])
 
     if not ag_np.isfinite(obj):
         raise ValueError(
@@ -248,7 +246,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             var_per_dis = multiscale_variances * 2
     else:
         var_per_dis = 0
-    num_fullres_per_lowres_bins = counts.fullres_per_lowres_dis()
+    data_per_bin = counts.fullres_per_lowres_dis()
 
     lambda_intensity = ag_np.zeros(counts.nnz)
     for struct, mix_coef in zip(structures, mixture_coefs):
@@ -263,7 +261,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             bias) * counts.beta * tmp
 
     # Sum main objective function  # TODO use function in likelihoods.py
-    obj = (lambda_intensity * num_fullres_per_lowres_bins).mean()
+    obj = (lambda_intensity * data_per_bin).mean()
     if counts.type != 'zero':
         if lambda_intensity.shape == counts.data.shape:
             counts_data = counts.data

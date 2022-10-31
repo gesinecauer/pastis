@@ -14,15 +14,13 @@ from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
 from tensorflow_probability.substrates import jax as tfp
 from typing import Any
 from scipy.special import iv, ivp
-from .utils_poisson import jax_max
 from .polynomial import _polyval
-from .utils_poisson import relu_min
 
 
 coefs_stirling = np.flip(np.array([
-        8.11614167470508450300E-4, -5.95061904284301438324E-4,
-        7.93650340457716943945E-4, -2.77777777730099687205E-3,
-        8.33333333333331927722E-2]))
+    8.11614167470508450300E-4, -5.95061904284301438324E-4,
+    7.93650340457716943945E-4, -2.77777777730099687205E-3,
+    8.33333333333331927722E-2]))
 
 
 def _stirling(z):
@@ -36,66 +34,59 @@ def _masksum(x, mask=None, axis=None):
     """Sum of masked array (for jax)"""
     if mask is None:
         return ag_np.sum(x, axis=axis)
+    elif axis is None:
+        return ag_np.sum(x[mask])
     else:
         return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
-# def loss2(x, mask, num_fullres_per_lowres_bins=4, theta=10.0, k=0.1):  # TODO remove
-#     log1p_theta = np.log1p(theta)
-#     obj_tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
-#     obj_tmp2 = -num_fullres_per_lowres_bins * _stirling(k + 1)
-#     obj_tmp3 = _masksum(
-#         _stirling(x + k + 1), mask=mask,
-#         axis=0)
-#     obj_tmp4 = _masksum(x, mask=mask, axis=0) * (
-#         np.log(theta) + np.log1p(k) - log1p_theta - 1)
-#     obj_tmp5 = _masksum(
-#         (x + k + 0.5) * np.log1p(
-#             x / (k + 1)), mask=mask, axis=0)
-#     obj_tmp6 = -_masksum(np.log1p(
-#         x / k), mask=mask, axis=0)
-#     obj = np.sum(obj_tmp1 + obj_tmp2 + obj_tmp3 + obj_tmp4 + obj_tmp5 + obj_tmp6)
-#     # Taking negative log likelihood
-#     return - obj
-
-
-def gamma_poisson_nll(theta, k, data, num_fullres_per_lowres_bins=None,
-                      bias=None, mask=None, mods=[], mean=True):
+def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None, mean=True,
+                      data_per_bin=None, mods=[]):
     """TODO"""
 
-    if num_fullres_per_lowres_bins is None:
+    if mean:
+        fxn = ag_np.mean
+    else:
+        fxn = ag_np.sum
+    if data_per_bin is None:
         if mask is None:
-            num_fullres_per_lowres_bins = data.shape[0]  # TODO really?
-        # else:
-        #     num_fullres_per_lowres_bins = mask.sum(axis=0)  # TODO check... probably wrong bc diff counts matrices...
+            data_per_bin = data.shape[0]
+        else:
+            data_per_bin = mask.sum(axis=0).reshape(1, -1)
+    if np.all(bias_per_bin == 1):
+        bias_per_bin = None
 
-    if not (bias is None or np.all(bias == 1)):
-        raise NotImplementedError("aaaaa.")
+    if bias_per_bin is None:
+        log1p_theta = ag_np.log1p(theta)
+    else:
+        log1p_theta = ag_np.log1p(theta * bias_per_bin)
+    if bias_per_bin is None:
+        tmp1 = fxn(-k * log1p_theta)
+    else:
+        tmp1 = fxn(_masksum(-k * log1p_theta, mask=mask, axis=0) / data_per_bin)
 
-    log1p_theta = ag_np.log1p(theta)
-    tmp1 = -num_fullres_per_lowres_bins * k * log1p_theta
     if data.sum() == 0:
         log_likelihood = tmp1
     else:
         k_plus_1 = k + 1
-        tmp2 = -num_fullres_per_lowres_bins * _stirling(k_plus_1)
-        tmp3 = _masksum(_stirling(
-            data + k_plus_1), mask=mask, axis=0)
-        tmp4 = _masksum(data, mask=mask, axis=0) * (
-            ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1)
-        tmp5 = _masksum((data + k + 0.5) * ag_np.log1p(
-            data / k_plus_1), mask=mask, axis=0)
-        tmp6 = -_masksum(
-            ag_np.log1p(data / k), mask=mask, axis=0)
+        tmp2 = -fxn(_stirling(k_plus_1))
+        tmp3 = fxn(_masksum(
+            _stirling(data + k_plus_1), mask=mask, axis=0) / data_per_bin)
+        if bias_per_bin is None:
+            tmp4 = fxn(_masksum(data, mask=mask, axis=0) / data_per_bin * (
+                ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1))
+        else:
+            tmp4a = fxn(_masksum(data, mask=mask, axis=0) / data_per_bin * (
+                ag_np.log(theta) + ag_np.log1p(k) - 1))
+            tmp4b = -fxn(
+                _masksum(data * log1p_theta, mask=mask, axis=0) / data_per_bin)
+            tmp4 = tmp4a + tmp4b
+        tmp5 = fxn(_masksum((data + k + 0.5) * ag_np.log1p(
+            data / k_plus_1), mask=mask, axis=0) / data_per_bin)
+        tmp6 = -fxn(
+            _masksum(ag_np.log1p(data / k), mask=mask, axis=0) / data_per_bin)
         log_likelihood = (tmp1 + tmp2 + tmp3 + tmp4 + tmp5 + tmp6)
 
-    if 'ij_sum' not in mods:
-        log_likelihood = log_likelihood / num_fullres_per_lowres_bins
-
-    if mean:
-        log_likelihood = ag_np.mean(log_likelihood)
-    else:
-        log_likelihood = ag_np.sum(log_likelihood)
     return -log_likelihood
 
 
@@ -243,7 +234,7 @@ def negbinom_nll(data, n, p, mean=True, use_scipy=False, num_stable=True):
     return -log_likelihood
 
 
-def poisson_nll(data, lambda_pois, mask=None, num_fullres_per_lowres_bins=1, mean=True):
+def poisson_nll(data, lambda_pois, mask=None, data_per_bin=1, mean=True):
     if mean:
         fxn = ag_np.mean
     else:
@@ -252,7 +243,7 @@ def poisson_nll(data, lambda_pois, mask=None, num_fullres_per_lowres_bins=1, mea
     lambda_pois = ag_np.asarray(lambda_pois)
     data = ag_np.asarray(data)
 
-    obj = fxn(lambda_pois * num_fullres_per_lowres_bins)
+    obj = fxn(lambda_pois * data_per_bin)
     non0 = (data != 0)
     if np.any(non0):
         if data.ndim > lambda_pois.ndim:
