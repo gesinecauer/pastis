@@ -214,7 +214,7 @@ class BeadChainConnectivity2019(Constraint):
             print(f"{nghbr_dis_var.mean()=:.3g}")
             exit(1)
 
-            raise ValueError(f"{self.name} constraint objective is {obj}.")
+            raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
 
@@ -345,7 +345,7 @@ class HomologSeparating2019(Constraint):
         obj = ag_np.mean(hmlg_sep_diff_sq)
 
         if not ag_np.isfinite(obj):
-            raise ValueError(f"{self.name} constraint objective is {obj}.")
+            raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
 
@@ -459,7 +459,7 @@ class BeadChainConnectivity2021(Constraint):
         #     print(f'μ={mu:.3f} \t σMax={sigma_max:.3f} \t mean={data.mean():.3f} \t sigma={sigma:.3f} \t sigma_tmp={sigma_tmp:.3f} \t std={data.std():.3f} \t obj={obj:.5g}')
 
         if not ag_np.isfinite(obj):
-            raise ValueError(f"{self.name} constraint objective is {obj}.")
+            raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
 
@@ -604,6 +604,10 @@ class BeadChainConnectivity2022(Constraint):
                 bias_nghbr = np.tile(bias_nghbr, self.ploidy)
             lambda_nghbr = (2 * var['beta']) * bias_nghbr * ag_np.power(
                 nghbr_dis, alpha)
+
+            # if type(nghbr_dis).__name__ in ('DeviceArray', 'ndarray'):
+            #     print(struct.mean())
+
             lambda_nghbr = lambda_nghbr + lambda_interchrom
             obj = poisson_nll(
                 np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_nghbr,
@@ -650,7 +654,7 @@ class BeadChainConnectivity2022(Constraint):
             # exit(1)
 
         if not ag_np.isfinite(obj):
-            raise ValueError(f"{self.name} constraint objective is {obj}.")
+            raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
 
@@ -1086,7 +1090,7 @@ class HomologSeparating2022(Constraint):
                 print(to_print, flush=True)
 
         if not ag_np.isfinite(obj):
-            raise ValueError(f"{self.name} constraint objective is {obj}.")
+            raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
 
@@ -1100,7 +1104,11 @@ def negbinom_divergence(gamma_mean, gamma_var, pmf_x, pmf_y, mods=[]):
 
 
 def kl_divergence(p, q):
-    return ag_np.sum(ag_np.where(p != 0, p * ag_np.log(p / q), 0))
+    mask = (p != 0)
+    if mask.sum() == mask.size:
+        return ag_np.sum(p * ag_np.log(p / q))
+    else:
+        return ag_np.sum(p[mask] * ag_np.log(p[mask] / q[mask]))
 
 
 def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
@@ -1367,6 +1375,8 @@ def calc_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
         raise ValueError("bias for kl_nb")
     nb_pmf_x = np.arange(tmp.max() + 1, dtype=int)
     nb_pmf_y = np.bincount(tmp.astype(int)) / tmp.size
+    nb_pmf_x = nb_pmf_x[nb_pmf_y != 0]
+    nb_pmf_y = nb_pmf_y[nb_pmf_y != 0]
     counts_inter_mv['nb_pmf'] = {'x': nb_pmf_x, 'y': nb_pmf_y}
 
 
