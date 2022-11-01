@@ -1090,12 +1090,8 @@ class HomologSeparating2022(Constraint):
                     to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
                 print(to_print, flush=True)
         elif False:
-
             dis_intraH_interC = _euclidean_distance(
                 struct, row=np.append(row, row + n), col=np.append(col, col + n))
-
-
-
         else:
             counts_inter_mean = counts_inter_mv['mean']
 
@@ -1147,80 +1143,6 @@ def kl_divergence(p, q):
 def js_divergence(p, q):
     m = (p + q) / 2
     return (kl_divergence(p, m) + kl_divergence(q, m)) / 2
-
-
-def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
-    """TODO"""
-
-    if scale_by_expected:
-        actual = actual / expected
-        expected = 1
-
-    if cutoff is not None and cutoff != 0:
-        if scale_by_expected:
-            window = cutoff
-        else:
-            window = cutoff * expected
-
-        mle_expected = ag_np.mean(actual)
-
-        # print(f"{window=:g}")
-        # print(f"{expected=:g}")
-        # print(f"{mle_expected=:g}")
-
-        sub_from_expected = relu_min(relu(expected - mle_expected), window)
-        add_to_expected = relu_min(relu(mle_expected - expected), window)
-        expected = expected + add_to_expected - sub_from_expected
-
-        # print(f"{add_to_expected=:g}")
-        # print(f"{sub_from_expected=:g}")
-        # print(f"{expected=:g}")
-
-    diff = expected - actual
-    mse = ag_np.mean(ag_np.square(diff))
-
-    return mse
-
-
-def _mse_outside_of_window(actual, expected, cutoff=None, scale_by_expected=True, new=True):
-    """TODO"""
-    if scale_by_expected:
-        diff = 1 - actual / expected
-    else:
-        diff = expected - actual
-
-    if cutoff is None:
-        diff = relu(diff)
-        mse = ag_np.mean(ag_np.square(diff))
-        raise ValueError("I thought we weren't doing ReLU for HSC anymore")  # TODO remove ValueError
-        return mse
-
-    if cutoff == 0:
-        mse = ag_np.mean(ag_np.square(diff))
-        return mse
-
-    if scale_by_expected:
-        window = cutoff
-    else:
-        window = cutoff * expected
-
-    if new:
-        n = diff.size
-        diff_gt0 = relu(diff)
-        diff_lt0 = -relu(-diff)
-        diff_gt0 = relu(diff_gt0 - window)
-        diff_lt0 = -relu(-(diff_lt0 + window))
-        mse = (ag_np.square(diff_gt0).sum() + ag_np.square(diff_lt0).sum()) / n
-    else:  # TODO remove old code
-        window = ag_np.array(window)
-        if window.size == 1 and actual.size > 1:
-            window = ag_np.tile(window, actual.size)
-        gt0 = diff > 0
-        diff = diff.at[gt0].set(relu(diff[gt0] - window[gt0]))
-        diff = diff.at[~gt0].set(-relu(-(diff[~gt0] + window[~gt0])))
-        mse = ag_np.mean(ag_np.square(diff))
-
-    return mse
 
 
 def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
@@ -1284,96 +1206,6 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
     # TODO if lowmem, run Constraint._setup before .apply during opt = share var dict for all during opt if lowmem
 
     return constraints
-
-
-def get_fullres_counts_interchrom(counts, lengths, ploidy, verbose=False):
-    """TODO"""  # TODO remove function?
-
-    if lengths.size == 1:
-        raise ValueError(
-            "Must input counts_interchrom if inferring single chromosome.")
-    counts_ambig = ambiguate_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
-    counts_interchrom = _inter_counts(
-        counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
-    counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
-    if verbose:
-        print(f"Inter-chromosomal counts μ={counts_interchrom.mean():.3g}"
-              f"  σ²={counts_interchrom.var():.3g}", flush=True)
-    return counts_interchrom
-
-
-def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1,
-                          fullres_struct_nan=None, verbose=False):
-    """TODO"""
-
-    if lengths.size == 1:
-        raise ValueError(
-            "Must input counts_interchrom if inferring single chromosome.")
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-
-    counts_ambig = ambiguate_counts(
-        counts=counts, lengths=lengths_lowres, ploidy=ploidy,
-        exclude_zeros=False)
-    counts_interchrom = _inter_counts(
-        counts_ambig, lengths_at_res=lengths_lowres, ploidy=ploidy,
-        exclude_zeros=False)
-    if multiscale_factor > 1:
-        fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-            multiscale_factor=multiscale_factor, lengths=lengths,
-            ploidy=1, fullres_struct_nan=fullres_struct_nan)
-        mask = fullres_per_lowres_bead == multiscale_factor
-        counts_interchrom[~mask, :] = np.nan
-        counts_interchrom[:, ~mask] = np.nan
-
-    counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
-    if verbose:
-        print(f"Inter-chromosomal counts μ={counts_interchrom.mean():.3g}"
-              f"  σ²={counts_interchrom.var():.3g}", flush=True)
-    return counts_interchrom
-
-
-def gamma_to_gengamma_to_gamma(k, theta, q, scale=1, return_moments=False, verbose=False):
-    # Scale original gamma distribution
-    theta = theta * scale
-    # Get GenGamma params
-    p = 1 / q
-    d = k / q
-    a = ag_np.power(theta, q)
-    # Get GenGamma moments
-    mean = a * ag_np.exp(gammaln((d + 1) / p) - gammaln(d / p))
-    var = ag_np.square(a) * ag_np.exp(
-        gammaln((d + 2) / p) - gammaln(d / p)) - ag_np.square(mean)
-    if verbose:
-        print(f"OLD: μ={k * theta:.2g}\t    σ²={k * (theta ** 2):.2g}", flush=True)
-        print(f"NEW: μ={mean:.2g}\t    σ²={var:.2g}", flush=True)
-    if return_moments:
-        return mean, var
-    # Get params of new gamma distribution
-    theta_new = var / mean
-    k_new = (mean ** 2) / var
-    return k_new, theta_new
-
-
-def gamma_to_invgamma_to_gamma(k, theta, scale=1, return_moments=False, verbose=False):  # FIXME FIXME2
-    # Scale original gamma distribution
-    theta = theta * scale
-    # Get InvGamma params
-    a = k
-    b = 1 / theta
-    # Get InvGamma moments
-    mean = b / (a - 1)
-    var = (mean ** 2) / (a - 2)
-    if verbose:
-        print(f"OLD: μ={k * theta:.2g}\t    σ²={k * (theta ** 2):.2g}", flush=True)
-        print(f"NEW: μ={mean:.2g}\t    σ²={var:.2g}", flush=True)
-    if return_moments:
-        return mean, var
-    # Get params of new gamma distribution
-    theta_new = var / mean
-    k_new = (mean ** 2) / var
-    return k_new, theta_new
 
 
 def calc_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
@@ -1500,6 +1332,170 @@ def calc_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
               f"\tΓvar={gamma_var:.3g}", flush=True)
 
     return counts_inter_mv
+
+
+def get_fullres_counts_interchrom(counts, lengths, ploidy, verbose=False):
+    """TODO"""  # TODO remove function?
+
+    if lengths.size == 1:
+        raise ValueError(
+            "Must input counts_interchrom if inferring single chromosome.")
+    counts_ambig = ambiguate_counts(
+        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
+    counts_interchrom = _inter_counts(
+        counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
+    counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
+    if verbose:
+        print(f"Inter-chromosomal counts μ={counts_interchrom.mean():.3g}"
+              f"  σ²={counts_interchrom.var():.3g}", flush=True)
+    return counts_interchrom
+
+
+def get_counts_interchrom(counts, lengths, ploidy, multiscale_factor=1,
+                          fullres_struct_nan=None, verbose=False):
+    """TODO"""
+
+    if lengths.size == 1:
+        raise ValueError(
+            "Must input counts_interchrom if inferring single chromosome.")
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+
+    counts_ambig = ambiguate_counts(
+        counts=counts, lengths=lengths_lowres, ploidy=ploidy,
+        exclude_zeros=False)
+    counts_interchrom = _inter_counts(
+        counts_ambig, lengths_at_res=lengths_lowres, ploidy=ploidy,
+        exclude_zeros=False)
+    if multiscale_factor > 1:
+        fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+            multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=1, fullres_struct_nan=fullres_struct_nan)
+        mask = fullres_per_lowres_bead == multiscale_factor
+        counts_interchrom[~mask, :] = np.nan
+        counts_interchrom[:, ~mask] = np.nan
+
+    counts_interchrom = counts_interchrom[~np.isnan(counts_interchrom)]
+    if verbose:
+        print(f"Inter-chromosomal counts μ={counts_interchrom.mean():.3g}"
+              f"  σ²={counts_interchrom.var():.3g}", flush=True)
+    return counts_interchrom
+
+
+def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
+    """TODO"""
+
+    if scale_by_expected:
+        actual = actual / expected
+        expected = 1
+
+    if cutoff is not None and cutoff != 0:
+        if scale_by_expected:
+            window = cutoff
+        else:
+            window = cutoff * expected
+
+        mle_expected = ag_np.mean(actual)
+
+        # print(f"{window=:g}")
+        # print(f"{expected=:g}")
+        # print(f"{mle_expected=:g}")
+
+        sub_from_expected = relu_min(relu(expected - mle_expected), window)
+        add_to_expected = relu_min(relu(mle_expected - expected), window)
+        expected = expected + add_to_expected - sub_from_expected
+
+        # print(f"{add_to_expected=:g}")
+        # print(f"{sub_from_expected=:g}")
+        # print(f"{expected=:g}")
+
+    diff = expected - actual
+    mse = ag_np.mean(ag_np.square(diff))
+
+    return mse
+
+
+def _mse_outside_of_window(actual, expected, cutoff=None, scale_by_expected=True, new=True):
+    """TODO"""
+    if scale_by_expected:
+        diff = 1 - actual / expected
+    else:
+        diff = expected - actual
+
+    if cutoff is None:
+        diff = relu(diff)
+        mse = ag_np.mean(ag_np.square(diff))
+        raise ValueError("I thought we weren't doing ReLU for HSC anymore")  # TODO remove ValueError
+        return mse
+
+    if cutoff == 0:
+        mse = ag_np.mean(ag_np.square(diff))
+        return mse
+
+    if scale_by_expected:
+        window = cutoff
+    else:
+        window = cutoff * expected
+
+    if new:
+        n = diff.size
+        diff_gt0 = relu(diff)
+        diff_lt0 = -relu(-diff)
+        diff_gt0 = relu(diff_gt0 - window)
+        diff_lt0 = -relu(-(diff_lt0 + window))
+        mse = (ag_np.square(diff_gt0).sum() + ag_np.square(diff_lt0).sum()) / n
+    else:  # TODO remove old code
+        window = ag_np.array(window)
+        if window.size == 1 and actual.size > 1:
+            window = ag_np.tile(window, actual.size)
+        gt0 = diff > 0
+        diff = diff.at[gt0].set(relu(diff[gt0] - window[gt0]))
+        diff = diff.at[~gt0].set(-relu(-(diff[~gt0] + window[~gt0])))
+        mse = ag_np.mean(ag_np.square(diff))
+
+    return mse
+
+
+def gamma_to_gengamma_to_gamma(k, theta, q, scale=1, return_moments=False, verbose=False):
+    # Scale original gamma distribution
+    theta = theta * scale
+    # Get GenGamma params
+    p = 1 / q
+    d = k / q
+    a = ag_np.power(theta, q)
+    # Get GenGamma moments
+    mean = a * ag_np.exp(gammaln((d + 1) / p) - gammaln(d / p))
+    var = ag_np.square(a) * ag_np.exp(
+        gammaln((d + 2) / p) - gammaln(d / p)) - ag_np.square(mean)
+    if verbose:
+        print(f"OLD: μ={k * theta:.2g}\t    σ²={k * (theta ** 2):.2g}", flush=True)
+        print(f"NEW: μ={mean:.2g}\t    σ²={var:.2g}", flush=True)
+    if return_moments:
+        return mean, var
+    # Get params of new gamma distribution
+    theta_new = var / mean
+    k_new = (mean ** 2) / var
+    return k_new, theta_new
+
+
+def gamma_to_invgamma_to_gamma(k, theta, scale=1, return_moments=False, verbose=False):  # FIXME FIXME2
+    # Scale original gamma distribution
+    theta = theta * scale
+    # Get InvGamma params
+    a = k
+    b = 1 / theta
+    # Get InvGamma moments
+    mean = b / (a - 1)
+    var = (mean ** 2) / (a - 2)
+    if verbose:
+        print(f"OLD: μ={k * theta:.2g}\t    σ²={k * (theta ** 2):.2g}", flush=True)
+        print(f"NEW: μ={mean:.2g}\t    σ²={var:.2g}", flush=True)
+    if return_moments:
+        return mean, var
+    # Get params of new gamma distribution
+    theta_new = var / mean
+    k_new = (mean ** 2) / var
+    return k_new, theta_new
 
 
 def taylor_approx_ndc(x, beta=1, alpha=-3, order=1):
