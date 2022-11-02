@@ -974,22 +974,17 @@ class HomologSeparating2022(Constraint):
                 if epsilon is not None:
                     to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
                 print(to_print, flush=True)
-        elif ('kl_nb' in self.mods) or ('js_nb' in self.mods):
+        elif ('kl_nb' in self.mods) or ('kl_1nb' in self.mods) or ('js_nb' in self.mods):
             # Get lambda_interhmlg
             if 'use_gmean' in self.mods and self.multiscale_factor > 1:
-                lambda_interhmlg, lambda_interhmlg_var = get_gamma_moments(
+                lambda_interhmlg = get_gamma_moments(
                     struct=struct, epsilon=epsilon, alpha=alpha,
                     beta=4 * var['beta'], multiscale_factor=self.multiscale_factor,
-                    row3d=row_final, col3d=col_final, mods=self.mods, return_var=True,
+                    row3d=row_final, col3d=col_final, mods=self.mods, return_var=False,
                     stretch_fullres_beads=self.hparams['stretch_fullres_beads'],
                     mean_fullres_nghbr_dis=self.hparams['mean_fullres_nghbr_dis'])  # FIXME
-                if 'add_gvar' in self.mods:
-                    lambda_interhmlg_var = lambda_interhmlg_var.mean()
-                else:
-                    lambda_interhmlg_var = 0
             else:
                 lambda_interhmlg = (4 * var['beta']) * ag_np.power(dis_interhmlg, alpha)
-                lambda_interhmlg_var = 0
             if 'sum2' in self.mods:
                 lambda_interhmlg = lambda_interhmlg / 2
                 half = int(lambda_interhmlg.size / 2)
@@ -1012,9 +1007,7 @@ class HomologSeparating2022(Constraint):
                     for j in range(nchrom):
                         mask = (row_binned == i) & (col_binned == j)
                         obj = obj + negbinom_divergence(
-                            gamma_mean=lambda_interhmlg[mask].mean(),
-                            gamma_var=lambda_interhmlg[mask].var() + lambda_interhmlg_var,
-                            pmf_x=counts_inter_pmf['x'],
+                            lambda_interhmlg[mask], pmf_x=counts_inter_pmf['x'],
                             pmf_y=counts_inter_pmf['y'], mods=self.mods)
                 obj = obj / np.square(nchrom)
             elif 'per_section' in self.mods:
@@ -1027,27 +1020,19 @@ class HomologSeparating2022(Constraint):
 
                     half = int(lambda_intraH.size / 2)
                     obj = obj + negbinom_divergence(
-                        gamma_mean=lambda_intraH[:half].mean(),
-                        gamma_var=lambda_intraH[:half].var() + lambda_interhmlg_var,
-                        pmf_x=counts_inter_pmf['x'],
+                        lambda_intraH[:half], pmf_x=counts_inter_pmf['x'],
                         pmf_y=counts_inter_pmf['y'], mods=self.mods)
                     obj = obj + negbinom_divergence(
-                        gamma_mean=lambda_intraH[half:].mean(),
-                        gamma_var=lambda_intraH[half:].var() + lambda_interhmlg_var,
-                        pmf_x=counts_inter_pmf['x'],
+                        lambda_intraH[half:], pmf_x=counts_inter_pmf['x'],
                         pmf_y=counts_inter_pmf['y'], mods=self.mods)
                     divide_obj_by += 2
 
                 half = int(lambda_interhmlg.size / 2)
                 obj = obj + negbinom_divergence(
-                    gamma_mean=lambda_interhmlg[:half].mean(),
-                    gamma_var=lambda_interhmlg[:half].var() + lambda_interhmlg_var,
-                    pmf_x=counts_inter_pmf['x'],
+                    lambda_interhmlg[:half], pmf_x=counts_inter_pmf['x'],
                     pmf_y=counts_inter_pmf['y'], mods=self.mods)
                 obj = obj + negbinom_divergence(
-                    gamma_mean=lambda_interhmlg[half:].mean(),
-                    gamma_var=lambda_interhmlg[half:].var() + lambda_interhmlg_var,
-                    pmf_x=counts_inter_pmf['x'],
+                    lambda_interhmlg[half:], pmf_x=counts_inter_pmf['x'],
                     pmf_y=counts_inter_pmf['y'], mods=self.mods)
                 obj = obj / divide_obj_by
             elif 'per_half' in self.mods:
@@ -1058,34 +1043,35 @@ class HomologSeparating2022(Constraint):
                     lambda_intraH = lambda_interhmlg[-dis_intraH.size:]
                     lambda_interhmlg = lambda_interhmlg[:-dis_intraH.size]
                     obj = obj + negbinom_divergence(
-                        gamma_mean=lambda_intraH.mean(),
-                        gamma_var=lambda_intraH.var() + lambda_interhmlg_var,
-                        pmf_x=counts_inter_pmf['x'],
+                        lambda_intraH, pmf_x=counts_inter_pmf['x'],
                         pmf_y=counts_inter_pmf['y'], mods=self.mods)
                     divide_obj_by += 1
 
                 obj = obj + negbinom_divergence(
-                    gamma_mean=lambda_interhmlg.mean(),
-                    gamma_var=lambda_interhmlg.var() + lambda_interhmlg_var,
-                    pmf_x=counts_inter_pmf['x'],
+                    lambda_interhmlg, pmf_x=counts_inter_pmf['x'],
                     pmf_y=counts_inter_pmf['y'], mods=self.mods)
                 obj = obj / divide_obj_by
 
             else:
                 obj = negbinom_divergence(
-                    gamma_mean=lambda_interhmlg.mean(),
-                    gamma_var=lambda_interhmlg.var() + lambda_interhmlg_var,
-                    pmf_x=counts_inter_pmf['x'], pmf_y=counts_inter_pmf['y'],
-                    mods=self.mods)
+                    lambda_interhmlg, pmf_x=counts_inter_pmf['x'],
+                    pmf_y=counts_inter_pmf['y'], mods=self.mods)
 
             if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-                gamma_mean = lambda_interhmlg.mean()
-                gamma_var = lambda_interhmlg.var() + lambda_interhmlg_var
-                to_print = f"KL_NB: 𝔼[c]={counts_inter_mv['mean']:.2g}\t   μ={gamma_mean:.2g}\t   σ²={gamma_var:.2g}\t   Var[c]={counts_inter_mv['var']:.2g}\t   NBσ²={gamma_mean + gamma_var:.2g}\t   OBJ={obj:.2g}"
+                to_print = f"KL_NB: 𝔼[c]={counts_inter_mv['mean']:.2g}\t   μ={lambda_interhmlg.mean():.2g}\t   σ²={lambda_interhmlg.var():.2g}\t   Var[c]={counts_inter_mv['var']:.2g}"
+
+                k, theta = _fit_gamma(lambda_interhmlg, mods=self.mods)
+                n, p = _gamma_to_negbinom(k=k, theta=theta)
+                nb_mean = (1 - p) * n / p
+                nb_var = nb_mean / p
+                to_print += f"\t   NBμ={nb_mean:.3g}\t   NBσ²={nb_var:.3g}"
+
                 # print(dis_interhmlg.size, lambda_interhmlg.size, lambda_intraH.size)
                 # from scipy.special import rel_entr
                 # kl_test = rel_entr(counts_inter_pmf['y'], lambda_pmf if isinstance(lambda_pmf, np.ndarray) else lambda_pmf._value).sum()
                 # to_print += f"\t   TEST={kl_test:.3g}"
+
+                to_print += f"\t   OBJ={obj:.2g}"
                 if epsilon is not None:
                     to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
                 print(to_print, flush=True)
@@ -1111,10 +1097,38 @@ class HomologSeparating2022(Constraint):
         return self.lambda_val * obj
 
 
-def negbinom_divergence(gamma_mean, gamma_var, pmf_x, pmf_y, mods=[]):
-    gamma_theta = gamma_var / gamma_mean
-    n = gamma_k = ag_np.square(gamma_mean) / gamma_var
-    p = 1 / (gamma_theta + 1)
+def _fit_gamma(data, debias=True, mods=[]):
+    if 'kl_1nb' in mods:
+        mean = data.mean()
+        var = data.var()
+        theta = var / mean
+        k = ag_np.square(mean) / var
+        return k, theta
+
+    mean = data.mean()
+    n = data.size
+    est_theta = (1 / n) * (
+        ag_np.sum(data * ag_np.log(data)) - ag_np.log(data).sum() * mean)
+    est_k = mean / est_theta
+    if not debias or 'no_debias' in mods:
+        return est_k, est_theta
+
+    debias_theta = n / (n - 1) * est_theta
+    debias_k = est_k - (1 / n) * (3 * est_k - 2 / 3 * est_k / (
+        1 + est_k) - 4 / 5 * est_k / ag_np.square(1 + est_k))
+
+    return debias_k, debias_theta
+
+
+def _gamma_to_negbinom(k, theta):
+    n = k
+    p = 1 / (theta + 1)
+    return n, p
+
+
+def negbinom_divergence(data, pmf_x, pmf_y, mods=[]):
+    k, theta = _fit_gamma(data, mods=mods)
+    n, p = _gamma_to_negbinom(k=k, theta=theta)
 
     lambda_pmf = ag_np.exp(logpmf_negbinom(pmf_x, n=n, p=p))
 
