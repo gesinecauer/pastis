@@ -827,7 +827,7 @@ class PastisPM(object):
                  constraints=None, callback=None, multiscale_factor=1,
                  multiscale_variances=None, epsilon=None, epsilon_bounds=None,
                  stretch_fullres_beads=None, mean_fullres_nghbr_dis=None,
-                 epsilon_coord_descent=False, alpha_init=-3, max_alpha_loop=20, max_iter=30000,
+                 epsilon_coord_descent=False, alpha_init=None, max_alpha_loop=20, max_iter=30000,
                  factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                  reorienter=None, null=False, mixture_coefs=None, verbose=True,
                  mods=[]):

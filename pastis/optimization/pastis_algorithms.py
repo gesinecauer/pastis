@@ -11,7 +11,6 @@ import os
 import numpy as np
 import pandas as pd
 from scipy import sparse
-from sklearn.utils import check_random_state
 
 from .utils_poisson import _print_code_header, _get_output_files
 from .utils_poisson import _output_subdir, _load_infer_param
@@ -175,7 +174,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
 
 
 def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
-                    filter_threshold=0.04, normalize=True, bias=None, alpha_init=-3,
+                    filter_threshold=0.04, normalize=True, bias=None, alpha_init=None,
                     max_alpha_loop=20, beta=None, multiscale_factor=1,
                     use_multiscale_variance=True, beta_init=None,
                     init='mds', max_iter=30000,
@@ -234,7 +233,6 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # INITIALIZATION
     random_state = np.random.RandomState(seed)
-    random_state = check_random_state(random_state)
     if isinstance(init, str) and init.lower() == 'true':
         if struct_true is None:
             raise ValueError("Attempting to initialize with struct_true but"
@@ -353,7 +351,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
-                   filter_threshold=0.04, normalize=True, bias=None, alpha_init=-3,
+                   filter_threshold=0.04, normalize=True, bias=None, alpha_init=None,
                    max_alpha_loop=20, beta=None, multiscale_factor=1,
                    use_multiscale_variance=True, alpha_loop=None, update_alpha=False,
                    beta_init=None, init='mds', max_iter=30000,
@@ -586,7 +584,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
 
 def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
-          filter_threshold=0.04, normalize=True, bias=None, alpha_init=-3,
+          filter_threshold=0.04, normalize=True, bias=None, alpha_init=None,
           max_alpha_loop=20, beta=None,
           multiscale_rounds=1, use_multiscale_variance=True,
           struct_draft_fullres=None,
@@ -607,7 +605,15 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # SETUP
     if alpha is None:
         update_alpha = True
+        if alpha_init is None:
+            random_state = np.random.RandomState(seed)
+            alpha_init = random_state.uniform(low=-4, high=-1)
         alpha = alpha_init
+        if verbose:
+            print("JOINTLY INFERRING STRUCTURE + ALPHA with initial alpha of",
+                  f" {alpha_init:.3g}", flush=True)
+    elif verbose:
+        print(f"INFERRING STRUCTURE WITH FIXED ALPHA = {alpha:.3g}", flush=True)
     if update_alpha and alpha_loop is None:
         alpha_loop = 1
     if update_alpha:
@@ -818,7 +824,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    chrom_subset=None, alpha=None, seed=0,
                    filter_threshold=0.04, normalize=True, bias=None,
-                   alpha_init=-3, max_alpha_loop=20,
+                   alpha_init=None, max_alpha_loop=20,
                    beta=None, multiscale_rounds=1, use_multiscale_variance=True,
                    max_iter=30000, factr=1e7, pgtol=1e-05,
                    alpha_factr=1e12, bcc_lambda=0, hsc_lambda=0,
