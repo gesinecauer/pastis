@@ -287,9 +287,9 @@ class HomologSeparating2019(Constraint):
         struct_nan = find_beads_to_remove(
             counts, lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
-        if struct_nan.size != 0:
-            raise ValueError("Check that we actually want to remove torm beads here...")
-        bead_weights[struct_nan] = 0.
+        # if struct_nan.size != 0:
+        #     raise ValueError("Check that we actually want to remove torm beads here...") # FIXME
+        bead_weights[struct_nan] = 0
         n = self.lengths_lowres.sum()
         begin = end = 0
         for i in range(len(self.lengths_lowres)):
