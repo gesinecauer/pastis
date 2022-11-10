@@ -49,7 +49,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
     infer_draft_fullres = struct_draft_fullres is None and (
         need_multiscale_var)
 
-    if not infer_draft_fullres or infer_draft_lowres:
+    if not (infer_draft_fullres or infer_draft_lowres):
         return struct_draft_fullres, est_hmlg_sep, True
 
     counts, bias, lengths, _, _, _, struct_true = load_data(
@@ -347,7 +347,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
             multiscale_variances, epsilon, stretch_fullres_beads,
-            mean_fullres_nghbr_dis)
+            mean_fullres_nghbr_dis, ploidy)
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -505,7 +505,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, bias, struct_nan, struct_init, constraints, callback,
         multiscale_variances, epsilon, stretch_fullres_beads,
-        mean_fullres_nghbr_dis) = prepped
+        mean_fullres_nghbr_dis, ploidy) = prepped
 
     # INFER STRUCTURE
     # original_counts_beta = [c.beta for c in counts if c.sum() != 0]
