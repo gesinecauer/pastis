@@ -725,15 +725,15 @@ class HomologSeparating2022(Constraint):
         else:
             fullres_per_lowres_bead = None
 
-        if (self.lengths_lowres.size > 1) and ((
-                'interhmlg_intrachrom' in self.mods) or (
-                'intrah_interc' in self.mods) or ('sum4' in self.mods) or (
-                'kl_gamma' in self.mods)):
-            n = self.lengths_lowres.sum()
-            mask_intrachrom = _intra_mask(
-                (n, n), lengths_at_res=self.lengths_lowres)
-        else:
-            mask_intrachrom = None
+        # if (self.lengths_lowres.size > 1) and ((
+        #         'interhmlg_intrachrom' in self.mods) or (
+        #         'intrah_interc' in self.mods) or ('sum4' in self.mods) or (
+        #         'kl_gamma' in self.mods)):
+        n = self.lengths_lowres.sum()
+        mask_intrachrom = _intra_mask(
+            (n, n), lengths_at_res=self.lengths_lowres)
+        # else:
+        #     mask_intrachrom = None
 
         var = {'beta': beta, 'fullres_per_lowres_bead': fullres_per_lowres_bead,
                'mask_intrachrom': mask_intrachrom}
@@ -757,7 +757,7 @@ class HomologSeparating2022(Constraint):
         if ('sum2' in self.mods) or ('sum4' in self.mods):
             if 'per_section' in self.mods:
                 raise ValueError("Can't do per_section if doing sum2 or sum4")
-        if ('kl_gamma' in self.mods) or ('sum4' in self.mods):
+        if ('kl_gamma' in self.mods) or ('sum4' in self.mods) or ('kl_3nb' in self.mods):
             mask = (row > col) & np.invert(var['mask_intrachrom'])
             row = row[mask]
             col = col[mask]
@@ -978,38 +978,55 @@ class HomologSeparating2022(Constraint):
                     to_print += f"\t   ε={epsilon:.2g}"
                 print(to_print, flush=True)
                 # exit(1)
-        elif 'nb3' in self.mods:
-            dis_interhmlg = _euclidean_distance(struct, row=row, col=col + n)
-            if 'div4' in self.mods or 'try1' in self.mods:
-                lambda_interhmlg = var['beta'] * ag_np.power(dis_interhmlg, alpha)
-            else:
-                lambda_interhmlg = (4 * var['beta']) * ag_np.power(dis_interhmlg, alpha)
-
-            counts_inter = counts_inter_mv['vals'].reshape(-1, 1)
-
-            lambda_mean = lambda_interhmlg.mean()
-            lambda_var = lambda_interhmlg.var()
-            k = ag_np.square(lambda_mean) / lambda_var
-            theta = lambda_var / lambda_mean
-            obj = gamma_poisson_nll(
-                theta=theta, k=k, data=counts_inter, bias_per_bin=None, mods=self.mods)  # FIXME need to add bias and input non-normed counts??
-
-            if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
-                to_print = f"NB3: c={counts_inter_mv['mean']:.2g}\t   μ={lambda_mean:.2g}\t   σ²={lambda_var:.2g}\t   OBJ={obj:.2g}"
-                if epsilon is not None:
-                    to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
-                print(to_print, flush=True)
         elif 'kl_gamma' in self.mods:
-            dis_h1h1 = _euclidean_distance(struct, row=row, col=col)
-            dis_h2h2 = _euclidean_distance(struct, row=row + n, col=col + n)
-            dis_h1h2 = _euclidean_distance(struct, row=row, col=col + n)
-            dis_h2h1 = _euclidean_distance(struct, row=row + n, col=col)
+            if 'lambda' in self.mods:
+                if self.multiscale_factor == 1:
+                    dis_h1h1 = _euclidean_distance(struct, row=row, col=col)
+                    dis_h2h2 = _euclidean_distance(struct, row=row + n, col=col + n)
+                    dis_h1h2 = _euclidean_distance(struct, row=row, col=col + n)
+                    dis_h2h1 = _euclidean_distance(struct, row=row + n, col=col)
+                    dis_h1h1 = var['beta'] * ag_np.power(dis_h1h1, alpha)
+                    dis_h2h2 = var['beta'] * ag_np.power(dis_h2h2, alpha)
+                    dis_h1h2 = var['beta'] * ag_np.power(dis_h1h2, alpha)
+                    dis_h2h1 = var['beta'] * ag_np.power(dis_h2h1, alpha)
+                    gamm_params = [_fit_gamma(dis) for dis in (
+                        dis_h1h1, dis_h2h2, dis_h1h2, dis_h2h1)]
+                else:
+                    mean_h1h1, var_h1h1 = get_gamma_moments(
+                        struct=struct, epsilon=epsilon, alpha=alpha,
+                        beta=var['beta'], multiscale_factor=self.multiscale_factor,
+                        row3d=row, col3d=col, mods=self.mods)
+                    mean_h2h2, var_h2h2 = get_gamma_moments(
+                        struct=struct, epsilon=epsilon, alpha=alpha,
+                        beta=var['beta'], multiscale_factor=self.multiscale_factor,
+                        row3d=row + n, col3d=col + n, mods=self.mods)
+                    mean_h1h2, var_h1h2 = get_gamma_moments(
+                        struct=struct, epsilon=epsilon, alpha=alpha,
+                        beta=var['beta'], multiscale_factor=self.multiscale_factor,
+                        row3d=row, col3d=col + n, mods=self.mods)
+                    mean_h2h1, var_h2h1 = get_gamma_moments(
+                        struct=struct, epsilon=epsilon, alpha=alpha,
+                        beta=var['beta'], multiscale_factor=self.multiscale_factor,
+                        row3d=row + n, col3d=col, mods=self.mods)
+                    gamma_h1h1 = _fit_gamma(mean_h1h1, extra_var=var_h1h1.mean())
+                    gamma_h2h2 = _fit_gamma(mean_h2h2, extra_var=var_h2h2.mean())
+                    gamma_h1h2 = _fit_gamma(mean_h1h2, extra_var=var_h1h2.mean())
+                    gamma_h2h1 = _fit_gamma(mean_h2h1, extra_var=var_h2h1.mean())
+                    gamm_params = [gamma_h1h1, gamma_h2h2, gamma_h1h2, gamma_h2h1]
+                    dis_h1h1 = mean_h1h1
+                    dis_h2h2 = mean_h2h2
+                    dis_h1h2 = mean_h1h2
+                    dis_h2h1 = mean_h2h1
+            else:
+                dis_h1h1 = _euclidean_distance(struct, row=row, col=col)
+                dis_h2h2 = _euclidean_distance(struct, row=row + n, col=col + n)
+                dis_h1h2 = _euclidean_distance(struct, row=row, col=col + n)
+                dis_h2h1 = _euclidean_distance(struct, row=row + n, col=col)
+                gamm_params = [_fit_gamma(dis) for dis in (
+                    dis_h1h1, dis_h2h2, dis_h1h2, dis_h2h1)]
 
-            gamm_params = [_fit_gamma(dis) for dis in (
-                dis_h1h1, dis_h2h2, dis_h1h2, dis_h2h1)]
             num_distrib = len(gamm_params)
-
-            kl_div = ag_np.zeros(int(num_distrib * (num_distrib - 1) / 2)) - 1
+            kl_div = ag_np.zeros(int(num_distrib * (num_distrib - 1) / 2))
             idx = 0
             for i in range(num_distrib):
                 k_i, theta_i = gamm_params[i]
@@ -1033,6 +1050,119 @@ class HomologSeparating2022(Constraint):
                 if epsilon is not None:
                     to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
                 print(to_print, flush=True)
+        elif ('kl_3nb' in self.mods):
+            counts_inter_pmf = counts_inter_mv['nb_pmf']
+
+            all_mean = ag_np.zeros(4)
+            all_var = ag_np.zeros(4)
+
+            sum_mean = ag_np.zeros(row.size)
+            sum_var = ag_np.zeros(row.size)
+            pmf_mean = ag_np.zeros(counts_inter_pmf['x'].size)
+            pmf_list = []
+            fctrs = [(0, 0), (n, n), (0, n), (n, 0)]
+            for i in range(4):
+                x, y = fctrs[i]
+                if self.multiscale_factor == 1:
+                    dis = _euclidean_distance(struct, row=row + x, col=col + y)
+                    tmp_mean = var['beta'] * ag_np.power(dis, alpha)
+                    sum_mean = sum_mean + tmp_mean
+                    variance = tmp_mean.var()
+                else:
+                    tmp_mean, tmp_var = get_gamma_moments(
+                        struct=struct, epsilon=epsilon, alpha=alpha,
+                        beta=var['beta'], multiscale_factor=self.multiscale_factor,
+                        row3d=row + x, col3d=col + y, mods=self.mods)
+                    sum_mean = sum_mean + tmp_mean
+                    sum_var = sum_var + tmp_var
+                    variance = tmp_mean.var() + tmp_var.mean()
+                mean = tmp_mean.mean()
+                all_mean = all_mean.at[i].set(mean)
+                all_var = all_var.at[i].set(variance)
+                theta = variance / mean
+                k = ag_np.square(mean) / variance
+                n, p = _gamma_to_negbinom(k=k, theta=theta)
+                pmf_i = ag_np.exp(logpmf_negbinom(counts_inter_pmf['x'], n=n, p=p))
+                pmf_mean = pmf_mean + (pmf_i / 4)
+                pmf_list.append(pmf_i)
+
+            obj = 0
+
+            obj_quarter = 0
+            if 'quarter_mse' in self.mods:
+                diff = counts_inter_mv['mean'] / 4 - all_mean
+                mse = ag_np.mean(ag_np.square(diff))
+                obj_quarter = mse
+            else:
+                for pmf_i in pmf_list:
+                    obj_quarter = obj_quarter + kl_divergence(p=pmf_i, q=pmf_mean) / 4
+            obj = obj + obj_quarter
+
+            obj_sum = 0
+            mean = sum_mean.mean()
+            variance = sum_mean.var() + sum_var.mean()
+            theta = variance / mean
+            k = ag_np.square(mean) / variance
+            n, p = _gamma_to_negbinom(k=k, theta=theta)
+            pmf_sum = ag_np.exp(logpmf_negbinom(counts_inter_pmf['x'], n=n, p=p))
+            obj_sum = kl_divergence(p=counts_inter_pmf['y'], q=pmf_sum)
+            obj = obj + obj_sum
+
+            if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                to_print = f"μ={all_mean.mean():.2g}\t   σ²={all_var.mean():.2g}"
+                to_print += f"\t   μ∑={mean:.2g}\t   σ²∑={variance:.2g}"
+                to_print += f"\t   QUART={obj_quarter:.2e}"
+                to_print += f"\t   SUM={obj_sum:.2g}"
+                to_print += f"\t   OBJ={obj:.2g}"
+                if epsilon is not None:
+                    to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
+                print(to_print, flush=True)
+
+        elif 'nb3' in self.mods:
+            # Get lambda_interhmlg
+            if ('use_gmean' in self.mods) and ('use_gvar' in self.mods) and self.multiscale_factor > 1:
+                lambda_interhmlg, lambda_inter_var = get_gamma_moments(
+                    struct=struct, epsilon=epsilon, alpha=alpha,
+                    beta=var['beta'], multiscale_factor=self.multiscale_factor,
+                    row3d=row_final, col3d=col_final, mods=self.mods)
+            elif 'use_gmean' in self.mods and self.multiscale_factor > 1:
+                lambda_interhmlg = get_gamma_moments(
+                    struct=struct, epsilon=epsilon, alpha=alpha,
+                    beta=var['beta'], multiscale_factor=self.multiscale_factor,
+                    row3d=row_final, col3d=col_final, mods=self.mods, return_var=False)
+                lambda_inter_var = np.zeros(lambda_interhmlg.shape)
+            else:
+                dis_interhmlg = _euclidean_distance(struct, row=row_final, col=col_final)
+                lambda_interhmlg = var['beta'] * ag_np.power(dis_interhmlg, alpha)
+                lambda_inter_var = np.zeros(lambda_interhmlg.shape)
+
+            counts_inter = counts_inter_mv['vals'].reshape(-1, 1)
+
+            lambda_mean = lambda_interhmlg.mean()
+            lambda_var = lambda_interhmlg.var() + lambda_inter_var.mean()
+            k = ag_np.square(lambda_mean) / lambda_var
+            theta = lambda_var / lambda_mean
+
+            if 'fix_sum' in self.mods:
+                k = k * 4
+            else:
+                theta = theta * 4
+
+            obj = gamma_poisson_nll(
+                theta=theta, k=k, data=counts_inter, bias_per_bin=None, mods=self.mods)  # FIXME need to add bias and input non-normed counts??
+
+            if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+                nb_mean = k * theta
+                nb_var = nb_mean + k * ag_np.square(theta)
+                # n, p = _gamma_to_negbinom(k=k, theta=theta)
+                # nb_mean = (1 - p) * n / p
+                # nb_var = nb_mean / p
+                to_print = f"NB3: 𝔼[c]={counts_inter_mv['mean']:.2g}\t   μ={nb_mean:.2g}\t   𝕍[c]={counts_inter_mv['var']:.2g}\t   NBσ²={nb_var:.2g}"
+                to_print += f"\t   OBJ={obj:.2g}"
+                if epsilon is not None:
+                    to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
+                print(to_print, flush=True)
+
         elif ('kl_nb' in self.mods) or ('kl_1nb' in self.mods) or ('js_nb' in self.mods) or ('kl_g' in self.mods):  # FIXME what about bias?
             # Get lambda_interhmlg
             if ('use_gmean' in self.mods) and ('use_gvar' in self.mods) and self.multiscale_factor > 1:
@@ -1048,7 +1178,7 @@ class HomologSeparating2022(Constraint):
                 lambda_inter_var = np.zeros(lambda_interhmlg.shape)
             else:
                 dis_interhmlg = _euclidean_distance(struct, row=row_final, col=col_final)
-                lambda_interhmlg = (var['beta']) * ag_np.power(dis_interhmlg, alpha)
+                lambda_interhmlg = var['beta'] * ag_np.power(dis_interhmlg, alpha)
                 lambda_inter_var = np.zeros(lambda_interhmlg.shape)
 
             if ('sum2' in self.mods) or ('sum4' in self.mods):
@@ -1196,6 +1326,15 @@ class HomologSeparating2022(Constraint):
                     to_print += f"\t   ε={epsilon:.2g}"
                 print(to_print, flush=True)
 
+        if 'adjust10' in self.mods:
+            obj = obj / np.power(10, np.log2(self.multiscale_factor))
+        if 'adjust_nxny' in self.mods:
+            obj = obj / np.square(self.multiscale_factor)
+        if 'adjust_nbeads' in self.mods:
+            obj = obj / (self.lengths_lowres.sum() * self.ploidy)
+        if 'mult_nbeads' in self.mods:
+            obj = obj * (self.lengths_lowres.sum() * self.ploidy)
+
         if not ag_np.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
@@ -1203,7 +1342,6 @@ class HomologSeparating2022(Constraint):
 
 def _fit_gamma(data, debias=True, extra_var=0, mods=[]):
     if not ag_np.all(extra_var == 0):
-        n = data.size
         mean = data.mean()
         var = extra_var + data.var()
         # var = extra_var + ag_np.square(data).mean() - ag_np.square(mean) # same
