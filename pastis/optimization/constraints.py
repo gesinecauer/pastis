@@ -1330,9 +1330,9 @@ class HomologSeparating2022(Constraint):
             obj = obj / np.power(10, np.log2(self.multiscale_factor))
         if 'adjust_nxny' in self.mods:
             obj = obj / np.square(self.multiscale_factor)
+        # if 'adjust_nbeads' in self.mods:
+        #     obj = obj / (self.lengths_lowres.sum() * self.ploidy)
         if 'adjust_nbeads' in self.mods:
-            obj = obj / (self.lengths_lowres.sum() * self.ploidy)
-        if 'mult_nbeads' in self.mods:
             obj = obj * (self.lengths_lowres.sum() * self.ploidy)
 
         if not ag_np.isfinite(obj):
