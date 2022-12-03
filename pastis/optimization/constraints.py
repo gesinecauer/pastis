@@ -1313,6 +1313,17 @@ class HomologSeparating2022(Constraint):
                 to_print += f"\t   OBJ={obj:.2g}"
                 if epsilon is not None:
                     to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
+
+                    if ag_np.asarray(epsilon).size > 1:
+                        from .poisson import get_epsilon_per_bin
+                        epsilon = get_epsilon_per_bin(
+                            epsilon, row3d=row_final, col3d=col_final,
+                            multiscale_factor=self.multiscale_factor)
+                    dis_interhmlg = _euclidean_distance(
+                        struct, row=row_final, col=col_final)
+                    epsilon_over_dis = epsilon / dis_interhmlg
+                    to_print += f"\t   ε/D={epsilon_over_dis.mean():.2g}"
+
                 print(to_print, flush=True)
                 # exit(1)
         else:
@@ -1346,6 +1357,8 @@ def _fit_gamma(data, debias=True, extra_var=0, mods=[]):
         var = extra_var + data.var()
         # var = extra_var + ag_np.square(data).mean() - ag_np.square(mean) # same
         # var = extra_var + ag_np.square(mean) # wrong
+        # if type(data).__name__ in ('DeviceArray', 'ndarray'):
+        #     print(mean, var)
         theta = var / mean
         k = ag_np.square(mean) / var
         # print(f"{data.var()=:.3g}  {extra_var=:.3g}  mean={k * theta * 4:.3g}  var={k * theta**2 * 4:.3g}")
