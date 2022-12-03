@@ -113,7 +113,7 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
             mean_fullres_nghbr_dis=mean_fullres_nghbr_dis)
     ln_f_mean, ln_f_var = _approx_ln_f(
         dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha,
-        return_mean=return_mean, return_var=return_var)
+        return_mean=return_mean, return_var=return_var, mods=mods)
 
     gamma_mean = gamma_var = 0
     if return_mean:
@@ -165,7 +165,8 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
         epsilon = epsilon[eps_gt0]
 
     ln_f_mean, ln_f_var = _approx_ln_f(
-        dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha)
+        dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha,
+        mods=mods)
 
     if ambiguity == 'ua':
         theta_tmp = dis_alpha * ag_np.exp(ln_f_var - ln_f_mean)
