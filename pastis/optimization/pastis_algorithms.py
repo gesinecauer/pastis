@@ -19,7 +19,7 @@ from .counts import check_counts, _set_initial_beta
 from .initialization import initialize
 from .callbacks import Callback
 from .constraints import prep_constraints, distance_between_homologs
-from .constraints import calc_counts_interchrom
+from .constraints import get_counts_interchrom
 from .poisson import PastisPM, _convergence_criteria, get_eps_types
 from .multiscale_optimization import get_multiscale_variances_from_struct
 from .multiscale_optimization import _get_stretch_of_fullres_beads
@@ -180,7 +180,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
                     init='mds', max_iter=30000,
                     factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                     bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
-                    hsc_version='2019', counts_inter_mv=None, est_hmlg_sep=None,
+                    hsc_version='2019', data_interchrom=None, est_hmlg_sep=None,
                     hsc_min_beads=5, hsc_perc_diff=None, excluded_counts=None,
                     struct_draft_fullres=None, draft=False, simple_diploid=False,
                     callback_freq=None, callback_fxns=None, reorienter=None,
@@ -320,7 +320,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts=counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, bcc_version=bcc_version,
-        hsc_version=hsc_version, counts_inter_mv=counts_inter_mv,
+        hsc_version=hsc_version, data_interchrom=data_interchrom,
         est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=hsc_perc_diff,
         fullres_struct_nan=fullres_struct_nan, verbose=verbose, mods=mods)
 
@@ -357,7 +357,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                    beta_init=None, init='mds', max_iter=30000,
                    factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                    bcc_lambda=0, hsc_lambda=0, bcc_version='2019', hsc_version='2019',
-                   counts_inter_mv=None, est_hmlg_sep=None, hsc_min_beads=5,
+                   data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
                    hsc_perc_diff=None, excluded_counts=None,
                    struct_draft_fullres=None, draft=False, simple_diploid=False,
                    callback_freq=None, callback_fxns=None, reorienter=None,
@@ -427,8 +427,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     hsc_lambda : float, optional
         For diploid organisms: lambda of the homolog-separating
         constraint.
-    counts_inter_mv : int or float, optional
-        TODO add bcc_version, hsc_version, & counts_inter_mv
+    data_interchrom : int or float, optional
+        TODO add bcc_version, hsc_version, & data_interchrom
     est_hmlg_sep : list of float, optional
         For diploid organisms: hyperparameter of the homolog-separating
         constraint specificying the expected distance between homolog
@@ -492,7 +492,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         use_multiscale_variance=use_multiscale_variance, beta_init=beta_init, init=init,
         max_iter=max_iter, factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
-        hsc_version=hsc_version, counts_inter_mv=counts_inter_mv,
+        hsc_version=hsc_version, data_interchrom=data_interchrom,
         est_hmlg_sep=est_hmlg_sep, hsc_min_beads=hsc_min_beads,
         hsc_perc_diff=hsc_perc_diff, excluded_counts=excluded_counts,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
@@ -592,7 +592,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
           beta_init=None, init='mds', max_iter=30000,
           factr=1e7, pgtol=1e-05, alpha_factr=1e12,
           bcc_lambda=0, hsc_lambda=0, bcc_version='2019', hsc_version='2019',
-          counts_inter_mv=None, est_hmlg_sep=None, hsc_min_beads=5,
+          data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
           hsc_perc_diff=None, excluded_counts=None,
           callback_freq=None, callback_fxns=None, reorienter=None,
           multiscale_reform=False, epsilon_min=1e-2, epsilon_max=1e6,
@@ -642,10 +642,10 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
                     exclude_zeros=exclude_zeros)
     # Get inter-chromosomal counts (if needed)
-    if counts_inter_mv is None and ((
+    if data_interchrom is None and ((
             bcc_lambda > 0 and bcc_version == '2022') or (
             hsc_lambda > 0 and hsc_version == '2022')):
-        counts_inter_mv = calc_counts_interchrom(
+        data_interchrom = get_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
             verbose=verbose, mods=mods)
@@ -680,7 +680,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, bcc_version=bcc_version, hsc_version=hsc_version,
-            counts_inter_mv=counts_inter_mv, est_hmlg_sep=est_hmlg_sep,
+            data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
             hsc_min_beads=hsc_min_beads, hsc_perc_diff=hsc_perc_diff,
             excluded_counts=excluded_counts, callback_freq=callback_freq,
             callback_fxns=callback_fxns, reorienter=reorienter,
@@ -752,7 +752,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             init=X_, max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, bcc_version=bcc_version,
-            hsc_version=hsc_version, counts_inter_mv=counts_inter_mv,
+            hsc_version=hsc_version, data_interchrom=data_interchrom,
             est_hmlg_sep=est_hmlg_sep_, hsc_min_beads=hsc_min_beads,
             hsc_perc_diff=hsc_perc_diff,
             struct_draft_fullres=struct_draft_fullres_,
@@ -809,7 +809,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         max_iter=max_iter, factr=factr, pgtol=pgtol,
         alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, bcc_version=bcc_version, hsc_version=hsc_version,
-        counts_inter_mv=counts_inter_mv, est_hmlg_sep=est_hmlg_sep,
+        data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
         hsc_min_beads=hsc_min_beads, hsc_perc_diff=hsc_perc_diff,
         excluded_counts=excluded_counts, callback_freq=callback_freq,
         callback_fxns=callback_fxns, reorienter=reorienter,
@@ -829,7 +829,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    max_iter=30000, factr=1e7, pgtol=1e-05,
                    alpha_factr=1e12, bcc_lambda=0, hsc_lambda=0,
                    bcc_version='2019', hsc_version='2019',
-                   counts_inter_mv=None, est_hmlg_sep=None, hsc_min_beads=5,
+                   data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
                    hsc_perc_diff=None, struct_draft_fullres=None,
                    callback_fxns=None, print_freq=100, history_freq=100,
                    save_freq=None, piecewise=False, piecewise_step=None,
@@ -901,7 +901,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
     hsc_lambda : float, optional
         For diploid organisms: lambda of the homolog-separating
         constraint.
-    TODO add bcc_version, hsc_version, & counts_inter_mv
+    TODO add bcc_version, hsc_version, & data_interchrom
     est_hmlg_sep : list of float, optional
         For diploid organisms: hyperparameter of the homolog-separating
         constraint specificying the expected distance between homolog
@@ -956,7 +956,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
             bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
             bcc_version=bcc_version, hsc_version=hsc_version,
-            counts_inter_mv=counts_inter_mv,
+            data_interchrom=data_interchrom,
             est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=hsc_perc_diff,
             struct_draft_fullres=struct_draft_fullres,
             hsc_min_beads=hsc_min_beads, callback_fxns=callback_fxns,
@@ -985,7 +985,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
             bcc_version=bcc_version, hsc_version=hsc_version,
-            counts_inter_mv=counts_inter_mv, est_hmlg_sep=est_hmlg_sep,
+            data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
             hsc_min_beads=hsc_min_beads, hsc_perc_diff=hsc_perc_diff,
             callback_freq=callback_freq, callback_fxns=callback_fxns,
             multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
