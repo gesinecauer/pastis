@@ -506,7 +506,7 @@ class BeadChainConnectivity2022(Constraint):
                 mods=self.mods)
             lambda_pois = gamma_mean  # TODO temp
 
-        if False and 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+        if 'debug2' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
             to_print = f"𝔼[c]={var['counts_nghbr'].mean():.2g}\t   μ={lambda_pois.mean():.2g}"
             if epsilon is not None:
                 to_print += f"\t   V[c]={var['counts_nghbr'].var(axis=0).mean():.2g}"

@@ -93,8 +93,8 @@ def _approx_ln_f(dis, epsilon, alpha, inferring_alpha=False,
     epsilon_over_dis = relu_max(epsilon_over_dis, min_epsilon_over_dis)
     epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)
 
-    if 'c_log_eps' in mods:
-        epsilon_over_dis = ag_np.log(epsilon_over_dis)
+    # if 'c_log_eps' in mods:
+    epsilon_over_dis = ag_np.log(epsilon_over_dis)
 
     ln_f_mean = ln_f_var = None
     if return_mean:
