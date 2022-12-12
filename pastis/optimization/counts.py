@@ -2,6 +2,8 @@ import numpy as np
 from scipy import sparse
 from warnings import warn
 import re
+import copy
+import pandas as pd
 
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
@@ -796,6 +798,8 @@ class CountsMatrix(object):
         self.beta = None
         self.weight = None
         self.null = None
+        self.row = None
+        self.col = None
         self.row3d = None
         self.col3d = None
 
@@ -829,7 +833,7 @@ class CountsMatrix(object):
         """Copy counts matrix.
         """
 
-        pass
+        return copy.deepcopy(self)
 
     def sum(self, axis=None, dtype=None, out=None):
         """Sum of current counts matrix.
@@ -867,6 +871,66 @@ class CountsMatrix(object):
 
         pass
 
+    def ambiguate(self, copy=True):
+        """Convert diploid counts to ambiguous.
+
+        If  unambiguous or partially ambiguous diploid, convert to ambiguous. If
+        haploid or ambiguous diploid, return current counts matrix.
+
+        Returns
+        -------
+        CountsMatrix object
+            Ambiguated contact counts matrix.
+        """
+
+        if copy:
+            ambig = self.copy()
+        else:
+            ambig = self
+
+        if self.ploidy == 1 or self.ambiguity == 'ambig':
+            return ambig
+
+        ambig.ambiguity = 'ambig'
+        if self.sum() == 0:
+            ambig.name = 'ambig0'
+        else:
+            ambig.name = 'ambig'
+
+
+        lengths_lowres = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor)
+        n = lengths_lowres.sum()
+
+        # h1h1 = (self.row < n) & (self.col < n)
+        # h2h2 = (self.row >= n) & (self.col >= n)
+        # h1h2 = (self.row < n) & (self.col >= n)
+        # h2h1 = (self.row >= n) & (self.col < n)
+
+        row_ambig = self.row.copy()
+        col_ambig = self.col.copy()
+        row_ambig[row_ambig >= n] -= n
+        col_ambig[col_ambig >= n] -= n
+
+        # idx_ambig = np.stack([self.row, self.col], axis=1)
+        # idx_ambig[idx_ambig >= n] -= n
+
+        df = pd.DataFrame(self._data.T)
+        df['row'] = row_ambig
+        df['col'] = col_ambig
+        df = df.groupby(['row', 'col']).sum().reset_index()
+        ambig.row = df.row
+        ambig.col = df.col
+        ambig._data = df[[c for c in df.columns if c not in ('row', 'col')]]
+
+
+
+
+
+
+
+
+
 
 class SparseCountsMatrix(CountsMatrix):
     """Stores data for non-zero counts bins.
@@ -892,7 +956,6 @@ class SparseCountsMatrix(CountsMatrix):
         self.weight = (1. if weight is None else weight)
         if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
             raise ValueError(f"Counts weight may not be {self.weight}.")
-        self.type = 'sparse'
         self.null = False
         self.lengths = lengths
         self.ploidy = ploidy
@@ -930,11 +993,13 @@ class SparseCountsMatrix(CountsMatrix):
             (data, (self.row, self.col)), shape=self.shape)
         return coo
 
-    def copy(self):
-        # TODO update (also AtypicalCM)
-        self.row3d = self.row3d.copy()
-        self.col3d = self.col3d.copy()
-        return self
+    # def __copy__(self):
+    #     # TODO update (also AtypicalCM)
+    #     self.row = self.row.copy()
+    #     self.col = self.col.copy()
+    #     self.row3d = self.row3d.copy()
+    #     self.col3d = self.col3d.copy()
+    #     return self
 
     def sum(self, axis=None, dtype=None, out=None):
         # TODO update (also AtypicalCM)
@@ -970,7 +1035,11 @@ class AtypicalCountsMatrix(CountsMatrix):
 
     @property
     def data(self):
-        return np.zeros(self._data_grouped_shape, dtype=np.uint16)
+        if self.multiscale_factor == 1:
+            return np.zeros(self.row.shape, dtype=np.uint16)
+        else:
+            return np.zeros((np.square(self.multiscale_factor), self.row.shape),
+                            dtype=np.uint16)
 
     def toarray(self):
         array = np.full(self.shape, np.nan)
@@ -980,12 +1049,12 @@ class AtypicalCountsMatrix(CountsMatrix):
     def tocoo(self):
         return sparse.coo_matrix(self.toarray())
 
-    def copy(self):
-        self.row = self.row.copy()
-        self.col = self.col.copy()
-        self.row3d = self.row3d.copy()
-        self.col3d = self.col3d.copy()
-        return self
+    # def __copy__(self):
+    #     self.row = self.row.copy()
+    #     self.col = self.col.copy()
+    #     self.row3d = self.row3d.copy()
+    #     self.col3d = self.col3d.copy()
+    #     return self
 
     def sum(self, axis=None, dtype=None, out=None):
         if axis is None or axis == (0, 1) or axis == (1, 0):
@@ -1046,7 +1115,6 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
         self.weight = (1. if weight is None else weight)
         if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
             raise ValueError(f"Counts weight may not be {self.weight}.")
-        self.type = 'zero'
         self.null = False
         self.lengths = lengths
         self.ploidy = ploidy
@@ -1057,9 +1125,9 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
             multiscale_factor=multiscale_factor, dummy=True,
             exclude_each_fullres_zero=True)
         data_grouped, indices, indices3d, self.shape, self.mask = tmp
-        self._data_grouped_shape = data_grouped.shape
         self.row, self.col = indices
         self.row3d, self.col3d = indices3d
+        self._data = None
 
 
 class NullCountsMatrix(AtypicalCountsMatrix):
@@ -1084,10 +1152,9 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             multiscale_factor=1)
 
         self.ambiguity = 'ua'
-        self.name = '%s0' % self.ambiguity
+        self.name = f'{self.ambiguity}0'
         self.beta = 0.
         self.weight = 0.
-        self.type = 'null'
         self.null = True
         self.lengths = lengths
         self.ploidy = ploidy
@@ -1105,6 +1172,6 @@ class NullCountsMatrix(AtypicalCountsMatrix):
             dummy_counts, lengths=lengths_lowres, ploidy=ploidy,
             multiscale_factor=1, dummy=True)
         data_grouped, indices, indices3d, self.shape, self.mask = tmp
-        self._data_grouped_shape = data_grouped.shape
         self.row, self.col = indices
         self.row3d, self.col3d = indices3d
+        self._data = None
