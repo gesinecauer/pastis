@@ -263,7 +263,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
 
     # Sum main objective function  # TODO use function in likelihoods.py
     obj = (lambda_intensity * data_per_bin).mean()
-    if counts.type != 'zero':
+    if counts.sum() > 0:
         if lambda_intensity.shape == counts.data.shape:
             counts_data = counts.data
         else:

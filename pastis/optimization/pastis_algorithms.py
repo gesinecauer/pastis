@@ -10,12 +10,11 @@ if sys.version_info[0] < 3:
 import os
 import numpy as np
 import pandas as pd
-from scipy import sparse
 
 from .utils_poisson import _print_code_header, _get_output_files
 from .utils_poisson import _output_subdir, _load_infer_param
-from .counts import preprocess_counts, ambiguate_counts, _ambiguate_beta
-from .counts import check_counts, _set_initial_beta
+from .counts import preprocess_counts, _ambiguate_beta
+from .counts import _set_initial_beta
 from .initialization import initialize
 from .callbacks import Callback
 from .constraints import prep_constraints, distance_between_homologs
@@ -118,8 +117,8 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         else:
             lowres_outdir = os.path.join(outdir, 'struct_draft_lowres')
         ua_index = [i for i in range(len(
-            counts)) if counts[i].shape == (lengths.sum() * ploidy,
-                                                    lengths.sum() * ploidy)]
+            counts)) if counts[i].shape == (
+            lengths.sum() * ploidy, lengths.sum() * ploidy)]
         if len(ua_index) == 1:
             counts_for_lowres = [counts[ua_index[0]]]
             simple_diploid_for_lowres = False
