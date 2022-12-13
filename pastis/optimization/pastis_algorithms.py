@@ -316,7 +316,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # SETUP CONSTRAINTS
     constraints = prep_constraints(
-        counts=counts, lengths=lengths, ploidy=ploidy,
+        lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, bcc_version=bcc_version,
         hsc_version=hsc_version, data_interchrom=data_interchrom,

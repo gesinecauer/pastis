@@ -684,7 +684,7 @@ def _kl_divergence(p, q):
     return ag_np.sum(tmp)
 
 
-def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
+def prep_constraints(lengths, ploidy, multiscale_factor=1,
                      bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
                      hsc_version='2019', data_interchrom=None,
                      est_hmlg_sep=None, hsc_perc_diff=None,
@@ -736,12 +736,6 @@ def prep_constraints(counts, lengths, ploidy, multiscale_factor=1,
             multiscale_factor=multiscale_factor,
             hparams=hsc_hparams[hsc_version],
             fullres_struct_nan=fullres_struct_nan, lowmem=False, mods=mods))
-
-    # TODO have var=None input to Constraint._setup = share var dict for all (only add to var if not already found)
-    # TODO if NOT lowmem, run Constraint._setup method here = share var dict for all
-
-    # TODO have var=None input to Constraint.apply = share var dict for all during opt if lowmem
-    # TODO if lowmem, run Constraint._setup before .apply during opt = share var dict for all during opt if lowmem
 
     return constraints
 
