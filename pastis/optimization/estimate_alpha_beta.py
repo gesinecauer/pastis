@@ -19,10 +19,8 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                           epsilon=None, mixture_coefs=None):
     """Facilitates estimation of beta for a single counts object.
 
-    Computes the sum of distances (K) corresponding to a given counts matrix.
+    Computes the sum of lambda_ij corresponding to a given counts matrix.
     """
-
-    multiscale_reform = (epsilon is not None)
 
     if isinstance(alpha, np.ndarray):
         if len(alpha) > 1:
@@ -35,8 +33,6 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                          (len(structures), len(mixture_coefs)))
     elif mixture_coefs is None:
         mixture_coefs = [1.]
-
-    # lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
 
     if multiscale_variances is not None:
         if isinstance(multiscale_variances, np.ndarray):
@@ -109,17 +105,17 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
         mixture_coefs = [1.] * len(structures)
 
     # Estimate beta for each type of counts (ambig, pa, ua)
-    counts_sum = {c.ambiguity: c.input_sum for c in counts}
-    K = {c.ambiguity: 0. for c in counts}
+    counts_sum = {c.ambiguity: c.sum() for c in counts if c.sum() > 0}
+    lambda_sum = {c.ambiguity: 0. for c in counts}
 
     for counts_maps in counts:
-        K[counts_maps.ambiguity] += _estimate_beta_single(
+        lambda_sum[counts_maps.ambiguity] += _estimate_beta_single(
             structures, counts_maps, alpha=alpha, lengths=lengths,
             ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
             multiscale_variances=multiscale_variances,
             epsilon=epsilon, mixture_coefs=mixture_coefs)
 
-    beta = {k: counts_sum[k] / K[k] for k in counts_sum.keys()}
+    beta = {x: counts_sum[x] / lambda_sum[x] for x in counts_sum.keys()}
     for ambiguity, beta_maps in beta.items():
         if not ag_np.isfinite(beta_maps) or beta_maps == 0:
             raise ValueError(f"Beta for {ambiguity} counts is {beta_maps}.")

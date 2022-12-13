@@ -694,19 +694,22 @@ def _row_and_col(data):
         return data.row, data.col
 
 
-def _counts_indices_to_3d_indices(counts, nbeads_lowres):
+def _counts_indices_to_3d_indices(data, nbeads_lowres):
     """Return distance matrix indices associated with counts matrix data.
     """
 
+    if isinstance(data, tuple) and len(data) == 3:
+        row3d, col3d, shape = data
+    else:
+        row3d, col3d = _row_and_col(data)
+        shape = data.shape
+
     nbeads_lowres = int(nbeads_lowres)
-
-    row3d, col3d = _row_and_col(counts)
-
-    if counts.shape[0] != nbeads_lowres or counts.shape[1] != nbeads_lowres:
+    if shape[0] != nbeads_lowres or shape[1] != nbeads_lowres:
         nnz = len(row3d)
 
-        map_factor_rows = int(nbeads_lowres / counts.shape[0])
-        map_factor_cols = int(nbeads_lowres / counts.shape[1])
+        map_factor_rows = int(nbeads_lowres / shape[0])
+        map_factor_cols = int(nbeads_lowres / shape[1])
         map_factor = map_factor_rows * map_factor_cols
 
         x, y = np.indices((map_factor_rows, map_factor_cols))
@@ -714,11 +717,11 @@ def _counts_indices_to_3d_indices(counts, nbeads_lowres):
         y = y.flatten()
 
         row3d = np.repeat(
-            x, int(nnz * map_factor / x.shape[0])) * min(
-                counts.shape) + np.tile(row3d, map_factor)
+            x, int(nnz * map_factor / x.shape[0])) * min(shape) + np.tile(
+            row3d, map_factor)
         col3d = np.repeat(
-            y, int(nnz * map_factor / y.shape[0])) * min(
-                counts.shape) + np.tile(col3d, map_factor)
+            y, int(nnz * map_factor / y.shape[0])) * min(shape) + np.tile(
+            col3d, map_factor)
 
     return row3d, col3d
 
@@ -760,8 +763,6 @@ class CountsMatrix(object):
         Column index array of the matrix (COO format).
     shape : tuple of int
         Shape of the matrix.
-    input_sum : int
-        Sum of the nonzero counts in the input.
     ambiguity : {"ambig", "pa", "ua"}
         The ambiguity level of the counts data. "ambig" indicates ambiguous,
         "pa" indicates partially ambiguous, and "ua" indicates unambiguous
@@ -792,7 +793,6 @@ class CountsMatrix(object):
         if self.__class__.__name__ in ('CountsMatrix', 'AtypicalCountsMatrix'):
             raise ValueError("This class is not intended"
                              " to be instantiated directly.")
-        self.input_sum = None
         self.ambiguity = None
         self.name = None
         self.beta = None
@@ -805,46 +805,40 @@ class CountsMatrix(object):
 
     @property
     def nnz(self):
-        """Number of stored values, including explicit zeros.
+        """Number of stored values in counts matrix, at the current resolution.
         """
-
-        pass
+        return self.row.size
 
     @property
     def data(self):
         """Data array of the matrix (COO format).
         """
-
         pass
 
     def toarray(self):
         """Convert counts matrix to numpy array format.
         """
-
         pass
 
     def tocoo(self):
         """Convert counts matrix to scipy sparse COO format.
         """
-
         pass
 
     def copy(self):
         """Copy counts matrix.
         """
-
         return copy.deepcopy(self)
 
     def sum(self, axis=None, dtype=None, out=None):
         """Sum of current counts matrix.
         """
-
         pass
 
     def bias_per_bin(self, bias):
-        """Determines bias corresponding to each bin of the matrix.
+        """Determines bias corresponding to each bin of the distance matrix.
 
-        Returns bias for each bin of the contact counts matrix by multiplying
+        Returns bias for each bin of the distance matrix by multiplying
         the bias for the bin's row and column.
 
         Parameters
@@ -855,10 +849,14 @@ class CountsMatrix(object):
         Returns
         -------
         array of float
-            Bias for each bin of the contact counts matrix.
+            Bias for each bin of the distance matrix.
         """
-
-        pass
+        if bias is None or np.all(bias == 1):
+            return 1
+        else:
+            bias = bias.flatten()
+            bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
+            return bias[self.row3d] * bias[self.col3d]
 
     @property
     def fullres_per_lowres_dis(self):
@@ -868,8 +866,10 @@ class CountsMatrix(object):
         Returns the number of full-resolution counts bins corresponding to each
         low-resolution distance bin.
         """
-
-        pass
+        if self.multiscale_factor == 1:
+            return 1
+        else:
+            return self.mask.sum(axis=0)
 
     def ambiguate(self, copy=True):
         """Convert diploid counts to ambiguous.
@@ -891,45 +891,116 @@ class CountsMatrix(object):
         if self.ploidy == 1 or self.ambiguity == 'ambig':
             return ambig
 
+        lengths_lowres = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor)
+        n = lengths_lowres.sum()
+
+        if self.ambiguity == 'pa':
+            ambig.beta = self.beta
+        else:
+            ambig.beta = self.beta * 2
+        ambig.shape = (n, n)
         ambig.ambiguity = 'ambig'
         if self.sum() == 0:
             ambig.name = 'ambig0'
         else:
             ambig.name = 'ambig'
 
-
-        lengths_lowres = decrease_lengths_res(
-            self.lengths, multiscale_factor=self.multiscale_factor)
-        n = lengths_lowres.sum()
-
-        # h1h1 = (self.row < n) & (self.col < n)
-        # h2h2 = (self.row >= n) & (self.col >= n)
-        # h1h2 = (self.row < n) & (self.col >= n)
-        # h2h1 = (self.row >= n) & (self.col < n)
-
         row_ambig = self.row.copy()
         col_ambig = self.col.copy()
         row_ambig[row_ambig >= n] -= n
         col_ambig[col_ambig >= n] -= n
+        same_idx = row_ambig == col_ambig
 
-        # idx_ambig = np.stack([self.row, self.col], axis=1)
-        # idx_ambig[idx_ambig >= n] -= n
+        if self._data is not None:
+            data = pd.DataFrame(self._data.T)
+            data['row'] = row_ambig
+            data['col'] = col_ambig
+            data['same_idx'] = same_idx
+            data = data.groupby(['row', 'col', 'same_idx']).sum().reset_index()
+            data = data[~data.same_idx]
+            ambig.row = data.row
+            ambig.col = data.col
+            ambig._data = data[[c for c in data.columns if c not in (
+                'row', 'col', 'same_idx')]]._value.T
+        else:
+            ambig.row = row_ambig[~same_idx]
+            ambig.col = col_ambig[~same_idx]
 
-        df = pd.DataFrame(self._data.T)
-        df['row'] = row_ambig
-        df['col'] = col_ambig
-        df = df.groupby(['row', 'col']).sum().reset_index()
-        ambig.row = df.row
-        ambig.col = df.col
-        ambig._data = df[[c for c in df.columns if c not in ('row', 'col')]]
+        if self.mask is not None:
+            mask = pd.DataFrame(self.mask.T)
+            mask['row'] = row_ambig
+            mask['col'] = col_ambig
+            mask['same_idx'] = same_idx
+            mask = mask.groupby(
+                ['row', 'col', 'same_idx']).sum().astype(bool).reset_index()
+            mask = mask[~mask.same_idx]
+            ambig.mask = mask[[c for c in mask.columns if c not in (
+                'row', 'col', 'same_idx')]]._value.T
 
+        self.row3d, self.col3d = _counts_indices_to_3d_indices(
+            (ambig.row, ambig.col, ambig.shape), nbeads_lowres=n * self.ploidy)
 
+        return ambig
 
+    def __add__(self, other):
+        if self.ploidy != other.ploidy:
+            raise ValueError("Mismatch in ploidy")
+        if self.multiscale_factor != other.multiscale_factor:
+            raise ValueError("Mismatch in multiscale_factor")
+        if not np.array_equal(self.lengths, other.lengths):
+            raise ValueError("Mismatch in number of beads per chromosome")
 
+        first = self
+        second = other
+        if first.shape != second.shape:
+            first = first.ambiguate(copy=True)
+            second = second.ambiguate(copy=True)
 
+        # FIXME create a blank object or whatever
+        # FIXME make sure other attributes are compatible, combine them
+        combo = 1
+        combo.beta = first.beta + second.beta  # FIXME really?
 
+        if (first._data is None) and (second._data is None):
+            row = np.concatenate([first.row, second.row])
+            col = np.concatenate([first.col, second.col])
+            combo.row, combo.col = np.unique(
+                np.stack([row, col], axis=1), axis=0).T
+            combo._data = None
+            combo.name = f'{combo.name}0'
+        else:
+            data = pd.DataFrame(
+                np.concatenate([first.data.T, second.data.T], axis=1))
+            data['row'] = np.concatenate([first.row, second.row])
+            data['col'] = np.concatenate([first.col, second.col])
+            data = data.groupby(['row', 'col']).sum().reset_index()
+            combo.row = data.row
+            combo.col = data.col
+            combo._data = data[[c for c in data.columns if c not in (
+                'row', 'col')]]._value.T
 
+        if (first.mask is not None) or (second.mask is not None):
+            mask = pd.DataFrame(
+                np.concatenate([first.mask.T, second.mask.T], axis=1))
+            mask['row'] = np.concatenate([first.row, second.row])
+            mask['col'] = np.concatenate([first.col, second.col])
+            mask = mask.groupby(['row', 'col']).sum().astype(bool).reset_index()
+            combo.mask = mask[[c for c in data.columns if c not in (
+                'row', 'col')]]._value.T
 
+        n = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor).sum()
+        combo.row3d, combo.col3d = _counts_indices_to_3d_indices(
+            (combo.row, combo.col, combo.shape), nbeads_lowres=n * self.ploidy)
+
+        return combo
+
+    def __radd__(self, other):
+        if other == 0:
+            return self
+        else:
+            return self.__add__(other)
 
 
 class SparseCountsMatrix(CountsMatrix):
@@ -941,7 +1012,6 @@ class SparseCountsMatrix(CountsMatrix):
         _counts = counts.copy()
         if sparse.issparse(_counts):
             _counts = _counts.toarray()
-        self.input_sum = np.nansum(_counts)
         _counts[np.isnan(_counts)] = 0
         if np.array_equal(_counts[~np.isnan(_counts)],
                           _counts[~np.isnan(_counts)].round()):
@@ -969,15 +1039,10 @@ class SparseCountsMatrix(CountsMatrix):
         self.row3d, self.col3d = indices3d
 
     @property
-    def nnz(self):
-        return self.row.shape[0]
-
-    @property
     def data(self):
         return self._data
 
     def toarray(self):
-        # TODO decide what this fxn should actually do (esp wrt reform), and make AtypicalCM match
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)
         return _check_counts_matrix(
@@ -985,7 +1050,6 @@ class SparseCountsMatrix(CountsMatrix):
             exclude_zeros=False)
 
     def tocoo(self):
-        # TODO decide what this fxn should actually do (esp wrt reform), and make AtypicalCM match
         data = self.data
         if len(data.shape) > 1:
             data = data.sum(axis=0)
@@ -993,33 +1057,8 @@ class SparseCountsMatrix(CountsMatrix):
             (data, (self.row, self.col)), shape=self.shape)
         return coo
 
-    # def __copy__(self):
-    #     # TODO update (also AtypicalCM)
-    #     self.row = self.row.copy()
-    #     self.col = self.col.copy()
-    #     self.row3d = self.row3d.copy()
-    #     self.col3d = self.col3d.copy()
-    #     return self
-
     def sum(self, axis=None, dtype=None, out=None):
-        # TODO update (also AtypicalCM)
         return self.tocoo().sum(axis=axis, dtype=dtype, out=out)
-
-    def bias_per_bin(self, bias):
-        if bias is None or np.all(bias == 1):
-            return 1
-        else:
-            if self.multiscale_factor != 1:
-                raise NotImplementedError
-            bias = bias.flatten()
-            bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
-            return bias[self.row] * bias[self.col]
-
-    def fullres_per_lowres_dis(self):
-        if self.multiscale_factor == 1:
-            return 1
-        else:
-            return self.mask.sum(axis=0)
 
 
 class AtypicalCountsMatrix(CountsMatrix):
@@ -1028,10 +1067,6 @@ class AtypicalCountsMatrix(CountsMatrix):
 
     def __init__(self):
         CountsMatrix.__init__(self)
-
-    @property
-    def nnz(self):
-        return self.row.shape[0]
 
     @property
     def data(self):
@@ -1047,46 +1082,21 @@ class AtypicalCountsMatrix(CountsMatrix):
         return array
 
     def tocoo(self):
-        return sparse.coo_matrix(self.toarray())
-
-    # def __copy__(self):
-    #     self.row = self.row.copy()
-    #     self.col = self.col.copy()
-    #     self.row3d = self.row3d.copy()
-    #     self.col3d = self.col3d.copy()
-    #     return self
+        return sparse.coo_matrix(
+            (np.zeros(self.row.size), (self.row, self.col)), shape=self.shape)
 
     def sum(self, axis=None, dtype=None, out=None):
-        if axis is None or axis == (0, 1) or axis == (1, 0):
-            output = 0
+        if axis is None or set(list(axis)) == {0, 1}:
+            if dtype is not None:
+                return dtype(0)
+            return 0
         elif axis in (0, 1, -1):
-            output = np.zeros((self.shape[int(not axis)]))
+            output = np.zeros((self.shape[int(not axis)]), dtype=dtype)
+            if out is not None:
+                output = output.reshape(out.shape)
+            return output
         else:
-            raise ValueError("Axis %s not understood" % axis)
-        if out is not None:
-            output = np.array(output).reshape(out.shape)
-        if dtype is not None:
-            if isinstance(output, np.ndarray):
-                output = output.astype(dtype)
-            else:
-                output = dtype(output)
-        return output
-
-    def bias_per_bin(self, bias=None):
-        if bias is None or np.all(bias == 1):
-            return 1
-        else:
-            if self.multiscale_factor != 1:
-                raise NotImplementedError
-            bias = bias.flatten()
-            bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
-            return bias[self.row] * bias[self.col]
-
-    def fullres_per_lowres_dis(self):
-        if self.multiscale_factor == 1:
-            return 1
-        else:
-            return self.mask.sum(axis=0)
+            raise ValueError(f"Axis ({axis}) not understood")
 
 
 class ZeroCountsMatrix(AtypicalCountsMatrix):
@@ -1097,10 +1107,10 @@ class ZeroCountsMatrix(AtypicalCountsMatrix):
                  weight=1):
         # counts = counts.copy()
         if sparse.issparse(counts):
+            raise NotImplementedError
             # FIXME I think this should be _check_counts_matrix with exclude_zeros=False, right?
             # because you don't want beads that are all zero to be included - they should be nan
             counts = counts.toarray()
-        self.input_sum = np.nansum(counts)
         mask_non0 = (counts != 0)
         # counts[counts != 0] = np.nan
         dummy_counts = counts + 1
@@ -1159,13 +1169,6 @@ class NullCountsMatrix(AtypicalCountsMatrix):
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
-
-        self.input_sum = 0.
-        for counts_maps in counts:
-            if isinstance(counts_maps, np.ndarray):
-                self.input_sum += np.nansum(counts_maps)
-            else:
-                self.input_sum += counts_maps.sum()
 
         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
         tmp = _group_counts_multiscale(
