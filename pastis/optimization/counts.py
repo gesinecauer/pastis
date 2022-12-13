@@ -789,19 +789,27 @@ class CountsMatrix(object):
     TODO
     """
 
-    def __init__(self):
-        if self.__class__.__name__ in ('CountsMatrix', 'AtypicalCountsMatrix'):
-            raise ValueError("This class is not intended"
-                             " to be instantiated directly.")
+    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
+                 beta=1, weight=1):
+        self.beta = beta
+        self.weight = (1. if weight is None else weight)
+        if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
+            raise ValueError(f"Counts weight may not be {self.weight}.")
+        self.lengths = lengths
+        self.ploidy = ploidy
+        self.multiscale_factor = multiscale_factor
+        self.null = False  # Set to True to exclude counts data from primary obj
+
         self.ambiguity = None
         self.name = None
-        self.beta = None
-        self.weight = None
-        self.null = None
-        self.row = None
-        self.col = None
-        self.row3d = None
-        self.col3d = None
+        self._data = None
+        self.shape = None
+        self.mask = None
+        self.row, self.col = None, None
+        self.row3d, self.col3d = None, None
+        self._sum = None
+        if counts is not None:
+            self._add_counts_bins(counts)
 
     @property
     def nnz(self):
@@ -813,6 +821,10 @@ class CountsMatrix(object):
     def data(self):
         """Data array of the matrix (COO format).
         """
+        pass
+
+    def _add_counts_bins(self, counts):
+        """Incorporate counts data to object"""
         pass
 
     def toarray(self):
@@ -896,9 +908,9 @@ class CountsMatrix(object):
         n = lengths_lowres.sum()
 
         if self.ambiguity == 'pa':
-            ambig.beta = self.beta
-        else:
             ambig.beta = self.beta * 2
+        else:
+            ambig.beta = self.beta
         ambig.shape = (n, n)
         ambig.ambiguity = 'ambig'
         if self.sum() == 0:
@@ -912,7 +924,10 @@ class CountsMatrix(object):
         col_ambig[col_ambig >= n] -= n
         same_idx = row_ambig == col_ambig
 
-        if self._data is not None:
+        if self.sum() == 0:
+            ambig.row = row_ambig[~same_idx]
+            ambig.col = col_ambig[~same_idx]
+        else:
             data = pd.DataFrame(self._data.T)
             data['row'] = row_ambig
             data['col'] = col_ambig
@@ -923,9 +938,6 @@ class CountsMatrix(object):
             ambig.col = data.col
             ambig._data = data[[c for c in data.columns if c not in (
                 'row', 'col', 'same_idx')]]._value.T
-        else:
-            ambig.row = row_ambig[~same_idx]
-            ambig.col = col_ambig[~same_idx]
 
         if self.mask is not None:
             mask = pd.DataFrame(self.mask.T)
@@ -938,8 +950,9 @@ class CountsMatrix(object):
             ambig.mask = mask[[c for c in mask.columns if c not in (
                 'row', 'col', 'same_idx')]]._value.T
 
-        self.row3d, self.col3d = _counts_indices_to_3d_indices(
+        ambig.row3d, ambig.col3d = _counts_indices_to_3d_indices(
             (ambig.row, ambig.col, ambig.shape), nbeads_lowres=n * self.ploidy)
+        ambig._sum = ambig.data.sum()
 
         return ambig
 
@@ -950,19 +963,25 @@ class CountsMatrix(object):
             raise ValueError("Mismatch in multiscale_factor")
         if not np.array_equal(self.lengths, other.lengths):
             raise ValueError("Mismatch in number of beads per chromosome")
+        if self.null != other.null:
+            raise ValueError("Mismatch in null attribute")
 
         first = self
         second = other
-        if first.shape != second.shape:
+        if first.shape != second.shape and self.ploidy == 2:
             first = first.ambiguate(copy=True)
             second = second.ambiguate(copy=True)
+        if first.shape != second.shape:
+            raise ValueError("Mismatch in shape")
 
-        # FIXME create a blank object or whatever
-        # FIXME make sure other attributes are compatible, combine them
-        combo = 1
-        combo.beta = first.beta + second.beta  # FIXME really?
+        beta = first.beta + second.beta
+        weight = first.weight + second.weight
 
-        if (first._data is None) and (second._data is None):
+        if first.sum() == 0 and second.sum() == 0:
+            combo = ZeroCountsMatrix.__init__(
+                lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor, beta=beta,
+                weight=weight)
             row = np.concatenate([first.row, second.row])
             col = np.concatenate([first.col, second.col])
             combo.row, combo.col = np.unique(
@@ -970,6 +989,10 @@ class CountsMatrix(object):
             combo._data = None
             combo.name = f'{combo.name}0'
         else:
+            combo = SparseCountsMatrix.__init__(
+                lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor, beta=beta,
+                weight=weight)
             data = pd.DataFrame(
                 np.concatenate([first.data.T, second.data.T], axis=1))
             data['row'] = np.concatenate([first.row, second.row])
@@ -993,6 +1016,7 @@ class CountsMatrix(object):
             self.lengths, multiscale_factor=self.multiscale_factor).sum()
         combo.row3d, combo.col3d = _counts_indices_to_3d_indices(
             (combo.row, combo.col, combo.shape), nbeads_lowres=n * self.ploidy)
+        combo._sum = combo.data.sum()
 
         return combo
 
@@ -1002,13 +1026,45 @@ class CountsMatrix(object):
         else:
             return self.__add__(other)
 
+    def __eq__(self, other):
+        if type(other) is type(self):
+            # return self.__dict__ == other.__dict__
+            if self.__dict__.keys() != other.__dict__.keys():
+                return False
+            for key in self.__dict__.keys():
+                if type(self.__dict__[key]) is not type(other.__dict__[key]):
+                    return False
+                if isinstance(self.__dict__[key], (list, np.ndarray)):
+                    if not np.array_equal(
+                            self.__dict__[key], other.__dict__[key]):
+                        return False
+                elif self.__dict__[key] != other.__dict__[key]
+                    return False
+            return True
+        return NotImplemented
+
+    def __hash__(self):
+        __dict__ = []
+        for x in self.__dict__.items():
+            if isinstance(x, np.ndarray):
+                x = x.tolist()
+            if isinstance(x, list):
+                x = tuple(x)
+            __dict__.append(x)
+        return hash(tuple(sorted(__dict__)))
+
 
 class SparseCountsMatrix(CountsMatrix):
-    """Stores data for non-zero counts bins.
+    """Stores data for counts bins with >0 reads.
     """
 
-    def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
-                 weight=1):
+    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
+                 beta=1, weight=1):
+        CountsMatrix.__init__(
+            self, lengths=lengths, ploidy=ploidy, counts=counts,
+            multiscale_factor=multiscale_factor, beta=beta, weight=weight)
+
+    def _add_counts_bins(self, counts):
         _counts = counts.copy()
         if sparse.issparse(_counts):
             _counts = _counts.toarray()
@@ -1020,23 +1076,16 @@ class SparseCountsMatrix(CountsMatrix):
         _counts = sparse.coo_matrix(_counts)
 
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(_counts.shape) / (lengths.sum() * ploidy)]
+            sum(_counts.shape) / (self.lengths.sum() * self.ploidy)]
         self.name = self.ambiguity
-        self.beta = beta
-        self.weight = (1. if weight is None else weight)
-        if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
-            raise ValueError(f"Counts weight may not be {self.weight}.")
-        self.null = False
-        self.lengths = lengths
-        self.ploidy = ploidy
-        self.multiscale_factor = multiscale_factor
 
         tmp = _group_counts_multiscale(
-            _counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor)
+            _counts, lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor)
         self._data, indices, indices3d, self.shape, self.mask = tmp
         self.row, self.col = indices
         self.row3d, self.col3d = indices3d
+        self._sum = self._data.sum()
 
     @property
     def data(self):
@@ -1058,15 +1107,48 @@ class SparseCountsMatrix(CountsMatrix):
         return coo
 
     def sum(self, axis=None, dtype=None, out=None):
+        if axis is None or set(list(axis)) == {0, 1}:
+            return self._sum
         return self.tocoo().sum(axis=axis, dtype=dtype, out=out)
 
 
-class AtypicalCountsMatrix(CountsMatrix):
-    """Stores null counts data or data for zero counts bins.
+class ZeroCountsMatrix(CountsMatrix):
+    """Stores data for counts bins with 0 reads.
     """
 
-    def __init__(self):
-        CountsMatrix.__init__(self)
+    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
+                 beta=1, weight=1):
+        CountsMatrix.__init__(
+            self, lengths=lengths, ploidy=ploidy, counts=counts,
+            multiscale_factor=multiscale_factor, beta=beta, weight=weight)
+
+    def _add_counts_bins(self, counts):
+        # counts = counts.copy()
+        if sparse.issparse(counts):
+            raise NotImplementedError
+            # FIXME I think this should be _check_counts_matrix with exclude_zeros=False, right?
+            # because you don't want beads that are all zero to be included - they should be nan
+            counts = counts.toarray()
+        mask_non0 = (counts != 0)
+        # counts[counts != 0] = np.nan
+        dummy_counts = counts + 1
+        # dummy_counts[np.isnan(dummy_counts)] = 0
+        dummy_counts[mask_non0] = 0
+        dummy_counts = sparse.coo_matrix(dummy_counts)
+
+        self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
+            sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
+        self.name = f'{self.ambiguity}0'
+
+        tmp = _group_counts_multiscale(
+            dummy_counts, lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor, dummy=True,
+            exclude_each_fullres_zero=True)
+        _, indices, indices3d, self.shape, self.mask = tmp
+        self.row, self.col = indices
+        self.row3d, self.col3d = indices3d
+        self._data = None
+        self._sum = 0.
 
     @property
     def data(self):
@@ -1087,9 +1169,7 @@ class AtypicalCountsMatrix(CountsMatrix):
 
     def sum(self, axis=None, dtype=None, out=None):
         if axis is None or set(list(axis)) == {0, 1}:
-            if dtype is not None:
-                return dtype(0)
-            return 0
+            return 0.
         elif axis in (0, 1, -1):
             output = np.zeros((self.shape[int(not axis)]), dtype=dtype)
             if out is not None:
@@ -1097,84 +1177,3 @@ class AtypicalCountsMatrix(CountsMatrix):
             return output
         else:
             raise ValueError(f"Axis ({axis}) not understood")
-
-
-class ZeroCountsMatrix(AtypicalCountsMatrix):
-    """Stores data for zero counts bins.
-    """
-
-    def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
-                 weight=1):
-        # counts = counts.copy()
-        if sparse.issparse(counts):
-            raise NotImplementedError
-            # FIXME I think this should be _check_counts_matrix with exclude_zeros=False, right?
-            # because you don't want beads that are all zero to be included - they should be nan
-            counts = counts.toarray()
-        mask_non0 = (counts != 0)
-        # counts[counts != 0] = np.nan
-        dummy_counts = counts + 1
-        # dummy_counts[np.isnan(dummy_counts)] = 0
-        dummy_counts[mask_non0] = 0
-        dummy_counts = sparse.coo_matrix(dummy_counts)
-
-        self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(counts.shape) / (lengths.sum() * ploidy)]
-        self.name = f'{self.ambiguity}0'
-        self.beta = beta
-        self.weight = (1. if weight is None else weight)
-        if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
-            raise ValueError(f"Counts weight may not be {self.weight}.")
-        self.null = False
-        self.lengths = lengths
-        self.ploidy = ploidy
-        self.multiscale_factor = multiscale_factor
-
-        tmp = _group_counts_multiscale(
-            dummy_counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, dummy=True,
-            exclude_each_fullres_zero=True)
-        data_grouped, indices, indices3d, self.shape, self.mask = tmp
-        self.row, self.col = indices
-        self.row3d, self.col3d = indices3d
-        self._data = None
-
-
-class NullCountsMatrix(AtypicalCountsMatrix):
-    """Stores null counts data.
-    """
-
-    def __init__(self, counts, lengths, ploidy, multiscale_factor=1, beta=1,
-                 weight=1):
-
-        # TODO make sure all of this is still valid, given multiscale
-
-        if not isinstance(counts, list):
-            counts = [counts]
-
-        # Dummy counts need to be inputted because if a row/col is all 0 it is
-        # excluded from calculations of constraints.
-        # Dummy counts should be "unambiguous" for diploid organisms.
-        # All non-zero data in dummy counts is set to 1.
-        # (multiscale_factor=1 because counts are always high-resolution)
-        dummy_counts = _create_unambig_dummy_counts(
-            counts=counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=1)
-
-        self.ambiguity = 'ua'
-        self.name = f'{self.ambiguity}0'
-        self.beta = 0.
-        self.weight = 0.
-        self.null = True
-        self.lengths = lengths
-        self.ploidy = ploidy
-        self.multiscale_factor = multiscale_factor
-
-        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        tmp = _group_counts_multiscale(
-            dummy_counts, lengths=lengths_lowres, ploidy=ploidy,
-            multiscale_factor=1, dummy=True)
-        data_grouped, indices, indices3d, self.shape, self.mask = tmp
-        self.row, self.col = indices
-        self.row3d, self.col3d = indices3d
-        self._data = None
