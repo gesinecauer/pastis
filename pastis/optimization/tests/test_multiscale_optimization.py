@@ -198,17 +198,17 @@ def test_increase_struct_res_gaussian():
         struct_current[mask], struct_lowres_new[mask], decimal=5)
 
 
-# @pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
 @pytest.mark.parametrize(
     "ambiguity,multiscale_factor",
     [('ambig', 1), ('pa', 1), ('ua', 1), ('ambig', 2), ('pa', 2), ('ua', 2),
      ('ambig', 4), ('pa', 4), ('ua', 4), ('ambig', 8), ('pa', 8), ('ua', 8)])
 def test_decrease_counts_res(ambiguity, multiscale_factor):
+    if ambiguity not in ('ambig', 'pa', 'ua'):
+        raise ValueError(f"Ambiguity not understood: {ambiguity}")
     lengths = np.array([10, 21])
     ploidy = 2
     seed = 42
     alpha, beta = -3., 1.
-    ratio_ambig, ratio_pa, ratio_ua = [1 / 3] * 3
     nan_indices = np.array([0, 1, 2, 3, 12, 15, 25, 40])
 
     random_state = np.random.RandomState(seed=seed)
@@ -216,69 +216,31 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
     struct_true = random_state.rand(n * ploidy, 3)
     dis = euclidean_distances(struct_true)
     dis[dis == 0] = np.inf
-    poisson_intensity = dis ** alpha
 
+    counts = beta * dis ** alpha
+    counts[np.isnan(counts) | np.isinf(counts)] = 0
     if ambiguity == 'ambig':
-        # Make ambiguous counts
-        ambig_counts = ratio_ambig * beta * poisson_intensity
-        ambig_counts[np.isnan(ambig_counts) | np.isinf(ambig_counts)] = 0
-        ambig_counts = ambig_counts[:n, :n] + ambig_counts[
-            n:, n:] + ambig_counts[:n, n:] + ambig_counts[n:, :n]
-        ambig_counts = np.triu(ambig_counts, 1)
-        ambig_counts[nan_indices[nan_indices < n], :] = np.nan
-        ambig_counts[:, nan_indices[nan_indices < n]] = np.nan
-        # Test ambiguous
-        ambig_counts_lowres_true = decrease_counts_res_correct(
-            ambig_counts, multiscale_factor=multiscale_factor, lengths=lengths)
-        ambig_counts_lowres = multiscale_optimization.decrease_counts_res(
-            ambig_counts, multiscale_factor=multiscale_factor, lengths=lengths,
-            ploidy=ploidy)
-        ambig_counts_lowres[np.isnan(ambig_counts_lowres)] = 0
-
-        assert_array_equal(
-            ambig_counts_lowres_true != 0, ambig_counts_lowres != 0)
-        assert_array_equal(ambig_counts_lowres_true, ambig_counts_lowres)
-
+        counts = counts[:n, :n] + counts[
+            n:, n:] + counts[:n, n:] + counts[n:, :n]
+        counts = np.triu(counts, 1)
     elif ambiguity == 'pa':
-        # Make partially ambiguous counts
-        pa_counts = ratio_pa * beta * poisson_intensity
-        pa_counts[np.isnan(pa_counts) | np.isinf(pa_counts)] = 0
-        pa_counts = pa_counts[:, :n] + pa_counts[:, n:]
-        np.fill_diagonal(pa_counts[:n, :], 0)
-        np.fill_diagonal(pa_counts[n:, :], 0)
-        pa_counts[nan_indices, :] = np.nan
-        pa_counts[:, nan_indices[nan_indices < n]] = np.nan
-        # Test partially ambiguous
-        pa_counts_lowres_true = decrease_counts_res_correct(
-            pa_counts, multiscale_factor=multiscale_factor, lengths=lengths)
-        pa_counts_lowres = multiscale_optimization.decrease_counts_res(
-            pa_counts, multiscale_factor=multiscale_factor, lengths=lengths,
-            ploidy=ploidy)
-        pa_counts_lowres[np.isnan(pa_counts_lowres)] = 0
-
-        assert_array_equal(pa_counts_lowres_true != 0, pa_counts_lowres != 0)
-        assert_array_equal(pa_counts_lowres_true, pa_counts_lowres)
-
+        counts = counts[:, :n] + counts[:, n:]
+        np.fill_diagonal(counts[:n, :], 0)
+        np.fill_diagonal(counts[n:, :], 0)
     elif ambiguity == 'ua':
-        # Make unambiguous counts
-        ua_counts = ratio_ua * beta * poisson_intensity
-        ua_counts[np.isnan(ua_counts) | np.isinf(ua_counts)] = 0
-        ua_counts = np.triu(ua_counts, 1)
-        ua_counts[nan_indices, :] = np.nan
-        ua_counts[:, nan_indices] = np.nan
-        # Test unambiguous
-        ua_counts_lowres_true = decrease_counts_res_correct(
-            ua_counts, multiscale_factor=multiscale_factor, lengths=lengths)
-        ua_counts_lowres = multiscale_optimization.decrease_counts_res(
-            ua_counts, multiscale_factor=multiscale_factor, lengths=lengths,
-            ploidy=ploidy)
-        ua_counts_lowres[np.isnan(ua_counts_lowres)] = 0
+        counts = np.triu(counts, 1)
+    counts[nan_indices[nan_indices < counts.shape[0]], :] = np.nan
+    counts[:, nan_indices[nan_indices < counts.shape[1]]] = np.nan
 
-        assert_array_equal(ua_counts_lowres_true != 0, ua_counts_lowres != 0)
-        assert_array_equal(ua_counts_lowres_true, ua_counts_lowres)
+    counts_lowres_true = decrease_counts_res_correct(
+        counts, multiscale_factor=multiscale_factor, lengths=lengths)
+    counts_lowres = multiscale_optimization.decrease_counts_res(
+        counts, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    counts_lowres[np.isnan(counts_lowres)] = 0
 
-    else:
-        raise ValueError(f"ambiguity={ambiguity} not understood")
+    assert_array_equal(counts_lowres_true != 0, counts_lowres != 0)
+    assert_array_equal(counts_lowres_true, counts_lowres)
 
 
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
@@ -291,11 +253,8 @@ def test_get_struct_index(multiscale_factor):
     idx, bad_idx = multiscale_optimization._get_struct_index(
         multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
 
-    assert_array_equal(
-        idx_true, idx)
-
-    assert_array_equal(
-        bad_idx_true, bad_idx)
+    assert_array_equal(idx_true, idx)
+    assert_array_equal(bad_idx_true, bad_idx)
 
 
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
