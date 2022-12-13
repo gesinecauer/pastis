@@ -15,7 +15,7 @@ from timeit import default_timer as timer
 from datetime import timedelta
 
 from .multiscale_optimization import decrease_lengths_res
-from .counts import _update_betas_in_counts_matrices, NullCountsMatrix
+from .counts import _update_betas_in_counts_matrices
 from .utils_poisson import _print_code_header
 from .polynomial import _approx_ln_f
 from .likelihoods import _masksum, gamma_poisson_nll, poisson_nll
@@ -285,7 +285,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
     """Computes the objective function for a given individual counts matrix.
     """
 
-    if (bias is not None and bias.sum() == 0) or counts.nnz == 0 or counts.null:
+    if counts.nnz == 0 or counts.null or (bias is not None and bias.sum() == 0):
         return 0.
     if np.isnan(counts.weight) or np.isinf(counts.weight) or counts.weight == 0:
         raise ValueError(f"Counts weight may not be {counts.weight}.")
@@ -882,11 +882,12 @@ class PastisPM(object):
 
         if self.null:
             print('GENERATING NULL STRUCTURE', flush=True)
-            # Dummy counts need to be inputted because we need to know which
-            # row/col to include in calculations of constraints
-            self.counts = [NullCountsMatrix(
-                counts=self.counts, lengths=self.lengths, ploidy=self.ploidy,
-                multiscale_factor=self.multiscale_factor)]
+            # Dummy counts need to be inputted because we need to use the counts
+            # in calculation of the constraints
+            # Null counts need not be phased, only ambiguated data is used by
+            # constraints
+            self.counts = sum(self.counts).ambiguate()
+            self.counts.null = True
 
         self._clear()
 
