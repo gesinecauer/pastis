@@ -10,7 +10,7 @@ pytestmark = pytest.mark.skipif(
 
 if sys.version_info[0] >= 3:
     from pastis.optimization import estimate_alpha_beta
-    from pastis.optimization.counts import _format_counts, NullCountsMatrix
+    from pastis.optimization.counts import _format_counts
 
 
 def test_estimate_alpha_beta_haploid():
