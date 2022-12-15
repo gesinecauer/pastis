@@ -670,12 +670,12 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
     counts_reformatted = []
     for i in range(len(counts)):
         counts_reformatted.append(SparseCountsMatrix(
-            counts[i], lengths=lengths, ploidy=ploidy,
+            lengths=lengths, ploidy=ploidy, counts=counts[i],
             multiscale_factor=multiscale_factor, beta=beta[i],
             weight=input_weight[i]))
         if not exclude_zeros and (counts[i] == 0).sum() > 0:
             zero_counts_maps = ZeroCountsMatrix(
-                counts[i], lengths=lengths, ploidy=ploidy,
+                lengths=lengths, ploidy=ploidy, counts=counts[i],
                 multiscale_factor=multiscale_factor, beta=beta[i],
                 weight=input_weight[i])
             if zero_counts_maps.nnz > 0:
@@ -918,37 +918,78 @@ class CountsMatrix(object):
         else:
             ambig.name = 'ambig'
 
-        row_ambig = self.row.copy()
-        col_ambig = self.col.copy()
-        row_ambig[row_ambig >= n] -= n
-        col_ambig[col_ambig >= n] -= n
-        same_idx = row_ambig == col_ambig
+        row = self.row.copy()
+        col = self.col.copy()
+        row[row >= n] -= n
+        col[col >= n] -= n
+        row_ambig = np.minimum(row, col)
+        col_ambig = np.maximum(row, col)
+        swap = row != row_ambig
+        rowsum = None
 
-        if self.sum() == 0:
-            ambig.row = row_ambig[~same_idx]
-            ambig.col = col_ambig[~same_idx]
-        else:
-            data = pd.DataFrame(self._data.T)
-            data['row'] = row_ambig
-            data['col'] = col_ambig
-            data['same_idx'] = same_idx
-            data = data.groupby(['row', 'col', 'same_idx']).sum().reset_index()
-            data = data[~data.same_idx]
-            ambig.row = data.row
-            ambig.col = data.col
-            ambig._data = data[[c for c in data.columns if c not in (
-                'row', 'col', 'same_idx')]]._value.T
-
-        if self.mask is not None:
-            mask = pd.DataFrame(self.mask.T)
+        if self.multiscale_factor > 1:
+            mask = self.mask.T
+            mask[swap] = mask[swap].reshape(
+                swap.sum(), self.multiscale_factor,
+                self.multiscale_factor).reshape(swap.sum(), -1, order='f')
+            mask = pd.DataFrame(mask)
             mask['row'] = row_ambig
             mask['col'] = col_ambig
-            mask['same_idx'] = same_idx
+            if self.sum() == 0:
+                mask_ = mask.groupby(
+                    ['row', 'col']).sum().astype(bool).reset_index()
+                mask_ = mask_[mask_.row != mask_.col]
+
+                tmp = np.invert(np.invert(
+                    mask.set_index(['row', 'col'])).groupby(
+                    level=(0, 1)).sum().astype(bool)).reset_index()
+                tmp = tmp[tmp.row != tmp.col]
+                rowsum = tmp.set_index(['row', 'col']).sum(axis=1)
+                print('tmp_rowsum'); print(rowsum.values)
+                mask_rowsum = mask_.set_index(['row', 'col']).sum(axis=1)
+                print('mask_rowsum'); print(mask_rowsum.values); print()
+                print(np.array_equal(mask_rowsum, rowsum))
+                print()
             mask = mask.groupby(
-                ['row', 'col', 'same_idx']).sum().astype(bool).reset_index()
-            mask = mask[~mask.same_idx]
+                ['row', 'col']).sum().astype(bool).reset_index()
+            mask = mask[mask.row != mask.col]
             ambig.mask = mask[[c for c in mask.columns if c not in (
-                'row', 'col', 'same_idx')]]._value.T
+                'row', 'col')]].astype(bool).values.T
+
+        if self.sum() == 0:
+            data = pd.DataFrame()
+            data['row'] = row_ambig
+            data['col'] = col_ambig
+            data = data.groupby(['row', 'col']).size().reset_index()
+            data = data[data.row != data.col]
+            data = data[data[0] == rowsum.values]  # FIXME wrong
+            if len(data) == 0:
+                return None
+            # FIXME the check for removing idx is incorrect if some beads are NaN
+            # FIXME also have to deal with mask in this situation
+        else:
+            data = self._data.T
+            if self.multiscale_factor > 1:
+                data[swap] = data[swap].reshape(
+                    swap.sum(), self.multiscale_factor,
+                    self.multiscale_factor).reshape(swap.sum(), -1, order='f')
+            data = pd.DataFrame(data)
+            data['row'] = row_ambig
+            data['col'] = col_ambig
+            data = data.groupby(['row', 'col']).sum().reset_index()
+            data = data[data.row != data.col]
+            ambig._data = data[[c for c in data.columns if c not in (
+                'row', 'col')]].values.T
+            if self.multiscale_factor == 1:
+                ambig._data = ambig._data.ravel()
+        # sort_idx = np.lexsort((row, col))
+
+        if self.multiscale_factor > 1:
+            if self.sum() == 0:
+                pass  # FIXME
+
+        ambig.row = data.row.values
+        ambig.col = data.col.values
 
         ambig.row3d, ambig.col3d = _counts_indices_to_3d_indices(
             (ambig.row, ambig.col, ambig.shape), nbeads_lowres=n * self.ploidy)
@@ -1001,16 +1042,16 @@ class CountsMatrix(object):
             combo.row = data.row
             combo.col = data.col
             combo._data = data[[c for c in data.columns if c not in (
-                'row', 'col')]]._value.T
+                'row', 'col')]].values.T
 
-        if (first.mask is not None) or (second.mask is not None):
+        if self.multiscale_factor > 1:
             mask = pd.DataFrame(
                 np.concatenate([first.mask.T, second.mask.T], axis=1))
             mask['row'] = np.concatenate([first.row, second.row])
             mask['col'] = np.concatenate([first.col, second.col])
             mask = mask.groupby(['row', 'col']).sum().astype(bool).reset_index()
             combo.mask = mask[[c for c in data.columns if c not in (
-                'row', 'col')]]._value.T
+                'row', 'col')]].values.T
 
         n = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor).sum()
@@ -1030,15 +1071,26 @@ class CountsMatrix(object):
         if type(other) is type(self):
             # return self.__dict__ == other.__dict__
             if self.__dict__.keys() != other.__dict__.keys():
+                print('~~~~~~ __dict__ keys mismatch')  # TODO remove
                 return False
             for key in self.__dict__.keys():
                 if type(self.__dict__[key]) is not type(other.__dict__[key]):
+                    print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')  # TODO remove
                     return False
                 if isinstance(self.__dict__[key], (list, np.ndarray)):
-                    if not np.array_equal(
+                    if ((self.__dict__[key].dtype.char in np.typecodes[
+                            'AllInteger']) and (other.__dict__[
+                            key].dtype.char in np.typecodes['AllInteger'])):
+                        if not np.array_equal(
+                                self.__dict__[key], other.__dict__[key]):
+                            print(f'~~~~~~ __dict__ array not equal int: {key}')  # TODO remove
+                            return False
+                    elif not np.allclose(
                             self.__dict__[key], other.__dict__[key]):
+                        print(f'~~~~~~ __dict__ array not equal: {key}')  # TODO remove
                         return False
-                elif self.__dict__[key] != other.__dict__[key]
+                elif self.__dict__[key] != other.__dict__[key]:
+                    print(f'~~~~~~ __dict__ value not equal: {key}')  # TODO remove
                     return False
             return True
         return NotImplemented
@@ -1153,9 +1205,9 @@ class ZeroCountsMatrix(CountsMatrix):
     @property
     def data(self):
         if self.multiscale_factor == 1:
-            return np.zeros(self.row.shape, dtype=np.uint16)
+            return np.zeros(self.row.size, dtype=np.uint16)
         else:
-            return np.zeros((np.square(self.multiscale_factor), self.row.shape),
+            return np.zeros((np.square(self.multiscale_factor), self.row.size),
                             dtype=np.uint16)
 
     def toarray(self):
