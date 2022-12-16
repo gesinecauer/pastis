@@ -12,7 +12,7 @@ if sys.version_info[0] >= 3:
     from pastis.optimization import multiscale_optimization
     from pastis.optimization import pastis_algorithms
     from pastis.optimization import poisson
-    from pastis.optimization.counts import preprocess_counts
+    from pastis.optimization.counts import _format_counts, preprocess_counts
 
 
 def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
@@ -148,7 +148,7 @@ def test_increase_struct_res():
     lengths = np.array([10, 21])
     multiscale_factor = 2
     ploidy = 1
-    nan_indices_lowres = np.array([0, 4])
+    struct_nan_lowres = np.array([0, 4])
 
     nbeads = lengths.sum() * ploidy
     coord0 = np.arange(nbeads * ploidy, dtype=float).reshape(-1, 1)
@@ -160,7 +160,7 @@ def test_increase_struct_res():
     struct_lowres = decrease_struct_res_correct(
         struct_highres_true, multiscale_factor=multiscale_factor,
         lengths=lengths, ploidy=ploidy)
-    struct_lowres[nan_indices_lowres] = np.nan
+    struct_lowres[struct_nan_lowres] = np.nan
 
     struct_highres = multiscale_optimization.increase_struct_res(
         struct_lowres, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -209,7 +209,7 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
     ploidy = 2
     seed = 42
     alpha, beta = -3., 1.
-    nan_indices = np.array([0, 1, 2, 3, 12, 15, 25, 40])
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
@@ -229,8 +229,13 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
         np.fill_diagonal(counts[n:, :], 0)
     elif ambiguity == 'ua':
         counts = np.triu(counts, 1)
-    counts[nan_indices[nan_indices < counts.shape[0]], :] = np.nan
-    counts[:, nan_indices[nan_indices < counts.shape[1]]] = np.nan
+    if ploidy == 2:
+        struct_nan_tmp = np.concatenate([struct_nan, struct_nan + n])
+    else:
+        struct_nan_tmp = struct_nan
+    counts[struct_nan_tmp[struct_nan_tmp < counts.shape[0]], :] = 0
+    counts[:, struct_nan_tmp[struct_nan_tmp < counts.shape[1]]] = 0
+    counts = sparse.coo_matrix(counts)
 
     counts_lowres_true = decrease_counts_res_correct(
         counts, multiscale_factor=multiscale_factor, lengths=lengths)
@@ -262,12 +267,12 @@ def test_decrease_struct_res(multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 1
     seed = 42
-    nan_indices = np.array([0, 1, 2, 3, 12, 15, 25])
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     nbeads = lengths.sum() * ploidy
     random_state = np.random.RandomState(seed=seed)
     struct = random_state.rand(nbeads, 3)
-    struct[nan_indices] = np.nan
+    struct[struct_nan] = np.nan
 
     struct_lowres_true = decrease_struct_res_correct(
         struct, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -284,15 +289,15 @@ def test_decrease_struct_res(multiscale_factor):
 def test_get_multiscale_variances_from_struct(multiscale_factor):
     lengths = np.array([10, 21])
     seed = 42
-    nan_indices = np.array([0, 1, 2, 3, 12, 15, 25])
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     nbeads = lengths.sum()
     random_state = np.random.RandomState(seed=seed)
     coord0 = random_state.rand(nbeads, 1)
     coord1 = coord2 = np.zeros_like(coord0)
     struct = np.concatenate([coord0, coord1, coord2], axis=1)
-    coord0[nan_indices] = np.nan
-    struct[nan_indices] = np.nan
+    coord0[struct_nan] = np.nan
+    struct[struct_nan] = np.nan
 
     multiscale_variances_true = []
     begin = end = 0
@@ -347,7 +352,7 @@ def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
     lengths = np.array([100])
     ploidy = 2
     seed = 42
-    nan_indices = np.array([0, 1, 2, 3, 12, 15, 25])
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
@@ -355,14 +360,14 @@ def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
     # Make counts
     counts_raw = random_state.randint(0, 10, size=(n, n))
     counts_raw = np.triu(counts_raw, 1)
-    if nan_indices is not None:
-        counts_raw[nan_indices, :] = 0
-        counts_raw[:, nan_indices] = 0
+    if struct_nan is not None:
+        counts_raw[struct_nan, :] = 0
+        counts_raw[:, struct_nan] = 0
     counts_raw = sparse.coo_matrix(counts_raw)
 
-    fullres_struct_nan_true = nan_indices
+    fullres_struct_nan_true = struct_nan
     if ploidy == 2:
-        fullres_struct_nan_true = np.concatenate(nan_indices, nan_indices + n)
+        fullres_struct_nan_true = np.concatenate(struct_nan, struct_nan + n)
 
     counts, _, _, fullres_struct_nan = preprocess_counts(
         counts_raw=counts_raw, lengths=lengths, ploidy=ploidy, normalize=False,

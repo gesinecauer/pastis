@@ -92,6 +92,8 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
 
     if not isinstance(counts, list):
         counts = [counts]
+    if not isinstance(beta, list):
+        beta = [beta]
     counts = [c for c in counts if (
         isinstance(c, np.ndarray) and np.nansum(c) != 0) or c.sum() != 0]
     if len(counts) != len(beta):
@@ -180,9 +182,9 @@ def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
 
     row = np.atleast_2d(np.concatenate(row))
     col = np.atleast_2d(np.concatenate(col))
-    indices = np.unique(np.concatenate([row, col], axis=0), axis=1)
-    row = indices[0]
-    col = indices[1]
+    idx = np.unique(np.concatenate([row, col], axis=0), axis=1)
+    row = idx[0]
+    col = idx[1]
 
     return row, col
 
@@ -925,36 +927,6 @@ class CountsMatrix(object):
         row_ambig = np.minimum(row, col)
         col_ambig = np.maximum(row, col)
         swap = row != row_ambig
-        rowsum = None
-
-        if self.multiscale_factor > 1:
-            mask = self.mask.T
-            mask[swap] = mask[swap].reshape(
-                swap.sum(), self.multiscale_factor,
-                self.multiscale_factor).reshape(swap.sum(), -1, order='f')
-            mask = pd.DataFrame(mask)
-            mask['row'] = row_ambig
-            mask['col'] = col_ambig
-            if self.sum() == 0:
-                mask_ = mask.groupby(
-                    ['row', 'col']).sum().astype(bool).reset_index()
-                mask_ = mask_[mask_.row != mask_.col]
-
-                tmp = np.invert(np.invert(
-                    mask.set_index(['row', 'col'])).groupby(
-                    level=(0, 1)).sum().astype(bool)).reset_index()
-                tmp = tmp[tmp.row != tmp.col]
-                rowsum = tmp.set_index(['row', 'col']).sum(axis=1)
-                print('tmp_rowsum'); print(rowsum.values)
-                mask_rowsum = mask_.set_index(['row', 'col']).sum(axis=1)
-                print('mask_rowsum'); print(mask_rowsum.values); print()
-                print(np.array_equal(mask_rowsum, rowsum))
-                print()
-            mask = mask.groupby(
-                ['row', 'col']).sum().astype(bool).reset_index()
-            mask = mask[mask.row != mask.col]
-            ambig.mask = mask[[c for c in mask.columns if c not in (
-                'row', 'col')]].astype(bool).values.T
 
         if self.sum() == 0:
             data = pd.DataFrame()
@@ -962,11 +934,12 @@ class CountsMatrix(object):
             data['col'] = col_ambig
             data = data.groupby(['row', 'col']).size().reset_index()
             data = data[data.row != data.col]
-            data = data[data[0] == rowsum.values]  # FIXME wrong
+            data = data[data[0] == 4]  # FIXME wrong?
             if len(data) == 0:
                 return None
-            # FIXME the check for removing idx is incorrect if some beads are NaN
+            # FIXME the check for removing idx is incorrect if some enitre highres groups are NaN
             # FIXME also have to deal with mask in this situation
+            ambig._sum = 0
         else:
             data = self._data.T
             if self.multiscale_factor > 1:
@@ -982,18 +955,32 @@ class CountsMatrix(object):
                 'row', 'col')]].values.T
             if self.multiscale_factor == 1:
                 ambig._data = ambig._data.ravel()
-        # sort_idx = np.lexsort((row, col))
-
-        if self.multiscale_factor > 1:
-            if self.sum() == 0:
-                pass  # FIXME
-
+            if np.array_equal(ambig._data, ambig._data.round()):  # TODO Use Mozes function for this
+                ambig._data = ambig._data.astype(
+                    sparse.sputils.get_index_dtype(maxval=ambig._data.max()))
+            ambig._sum = ambig._data.sum()
         ambig.row = data.row.values
         ambig.col = data.col.values
 
+        if self.multiscale_factor > 1:
+            mask = self.mask.T
+            mask[swap] = mask[swap].reshape(
+                swap.sum(), self.multiscale_factor,
+                self.multiscale_factor).reshape(swap.sum(), -1, order='f')
+            mask = pd.DataFrame(mask)
+            mask['row'] = row_ambig
+            mask['col'] = col_ambig
+            mask['_size'] = 1
+            mask_ambig = mask.groupby(
+                ['row', 'col', '_size']).sum().astype(bool).reset_index()
+            mask_ambig = mask_ambig[mask_ambig.row != mask_ambig.col]
+            if self.sum() == 0:
+                mask_ambig = mask_ambig[mask_ambig._size == 4]
+            ambig.mask = mask_ambig[[c for c in mask_ambig.columns if c not in (
+                'row', 'col', '_size')]].astype(bool).values.T
+
         ambig.row3d, ambig.col3d = _counts_indices_to_3d_indices(
             (ambig.row, ambig.col, ambig.shape), nbeads_lowres=n * self.ploidy)
-        ambig._sum = ambig.data.sum()
 
         return ambig
 
@@ -1029,6 +1016,7 @@ class CountsMatrix(object):
                 np.stack([row, col], axis=1), axis=0).T
             combo._data = None
             combo.name = f'{combo.name}0'
+            combo._sum = 0
         else:
             combo = SparseCountsMatrix.__init__(
                 lengths=self.lengths, ploidy=self.ploidy,
@@ -1043,6 +1031,10 @@ class CountsMatrix(object):
             combo.col = data.col
             combo._data = data[[c for c in data.columns if c not in (
                 'row', 'col')]].values.T
+            if np.array_equal(combo._data, combo._data.round()):  # TODO Use Mozes function for this
+                combo._data = combo._data.astype(
+                    sparse.sputils.get_index_dtype(maxval=combo._data.max()))
+            combo._sum = combo._data.sum()
 
         if self.multiscale_factor > 1:
             mask = pd.DataFrame(
@@ -1057,7 +1049,6 @@ class CountsMatrix(object):
             self.lengths, multiscale_factor=self.multiscale_factor).sum()
         combo.row3d, combo.col3d = _counts_indices_to_3d_indices(
             (combo.row, combo.col, combo.shape), nbeads_lowres=n * self.ploidy)
-        combo._sum = combo.data.sum()
 
         return combo
 
@@ -1076,6 +1067,8 @@ class CountsMatrix(object):
             for key in self.__dict__.keys():
                 if type(self.__dict__[key]) is not type(other.__dict__[key]):
                     print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')  # TODO remove
+                    print(f"{type(self.__dict__[key])=}")
+                    print(f"{type(other.__dict__[key])=}")
                     return False
                 if isinstance(self.__dict__[key], (list, np.ndarray)):
                     if ((self.__dict__[key].dtype.char in np.typecodes[
@@ -1117,26 +1110,19 @@ class SparseCountsMatrix(CountsMatrix):
             multiscale_factor=multiscale_factor, beta=beta, weight=weight)
 
     def _add_counts_bins(self, counts):
-        _counts = counts.copy()
-        if sparse.issparse(_counts):
-            _counts = _counts.toarray()
-        _counts[np.isnan(_counts)] = 0
-        if np.array_equal(_counts[~np.isnan(_counts)],
-                          _counts[~np.isnan(_counts)].round()):
-            _counts = _counts.astype(
-                sparse.sputils.get_index_dtype(maxval=_counts.max()))
-        _counts = sparse.coo_matrix(_counts)
-
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(_counts.shape) / (self.lengths.sum() * self.ploidy)]
+            sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
         self.name = self.ambiguity
 
         tmp = _group_counts_multiscale(
-            _counts, lengths=self.lengths, ploidy=self.ploidy,
+            counts, lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
-        self._data, indices, indices3d, self.shape, self.mask = tmp
-        self.row, self.col = indices
-        self.row3d, self.col3d = indices3d
+        self._data, idx, idx3d, self.shape, self.mask = tmp
+        self.row, self.col = idx
+        self.row3d, self.col3d = idx3d
+        if np.array_equal(self._data, self._data.round()):  # TODO Use Mozes function for this
+            self._data = self._data.astype(
+                sparse.sputils.get_index_dtype(maxval=self._data.max()))
         self._sum = self._data.sum()
 
     @property
@@ -1175,32 +1161,18 @@ class ZeroCountsMatrix(CountsMatrix):
             multiscale_factor=multiscale_factor, beta=beta, weight=weight)
 
     def _add_counts_bins(self, counts):
-        # counts = counts.copy()
-        if sparse.issparse(counts):
-            raise NotImplementedError
-            # FIXME I think this should be _check_counts_matrix with exclude_zeros=False, right?
-            # because you don't want beads that are all zero to be included - they should be nan
-            counts = counts.toarray()
-        mask_non0 = (counts != 0)
-        # counts[counts != 0] = np.nan
-        dummy_counts = counts + 1
-        # dummy_counts[np.isnan(dummy_counts)] = 0
-        dummy_counts[mask_non0] = 0
-        dummy_counts = sparse.coo_matrix(dummy_counts)
-
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
         self.name = f'{self.ambiguity}0'
 
-        tmp = _group_counts_multiscale(
-            dummy_counts, lengths=self.lengths, ploidy=self.ploidy,
-            multiscale_factor=self.multiscale_factor, dummy=True,
-            exclude_each_fullres_zero=True)
-        _, indices, indices3d, self.shape, self.mask = tmp
-        self.row, self.col = indices
-        self.row3d, self.col3d = indices3d
+        _, idx, idx3d, self.shape, self.mask = _group_counts_multiscale(
+            counts, lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor,
+            for_zero_counts_matrix=True)
+        self.row, self.col = idx
+        self.row3d, self.col3d = idx3d
         self._data = None
-        self._sum = 0.
+        self._sum = 0
 
     @property
     def data(self):
@@ -1221,7 +1193,7 @@ class ZeroCountsMatrix(CountsMatrix):
 
     def sum(self, axis=None, dtype=None, out=None):
         if axis is None or set(list(axis)) == {0, 1}:
-            return 0.
+            return 0
         elif axis in (0, 1, -1):
             output = np.zeros((self.shape[int(not axis)]), dtype=dtype)
             if out is not None:

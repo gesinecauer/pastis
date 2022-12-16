@@ -8,7 +8,8 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
-    from pastis.optimization.poisson import _stirling, _polyval
+    from pastis.optimization.likelihoods import _stirling
+    from pastis.optimization.polynomial import _polyval
 
 
 sterling_coefs = [

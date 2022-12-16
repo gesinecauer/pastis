@@ -52,6 +52,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
         struct_nan_tmp = struct_nan
     counts[struct_nan_tmp[struct_nan_tmp < counts.shape[0]], :] = 0
     counts[:, struct_nan_tmp[struct_nan_tmp < counts.shape[1]]] = 0
+    # counts[4, :] = 0; counts[:, 4] = 0  # FIXME
     counts = random_state.poisson(counts)
     counts = sparse.coo_matrix(counts)
 
@@ -60,9 +61,12 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
     true_counts_ambig_arr = decrease_counts_res(
         true_counts_ambig_arr_fullres, multiscale_factor=multiscale_factor,
         lengths=lengths, ploidy=ploidy).toarray()
+    beta_ambig = counts_py._ambiguate_beta(
+        beta, counts=counts, lengths=lengths, ploidy=ploidy)
     true_counts_ambig_object = {c.name: c for c in counts_py._format_counts(
         counts=true_counts_ambig_arr_fullres, lengths=lengths, ploidy=ploidy,
-        beta=beta, exclude_zeros=False, multiscale_factor=multiscale_factor)}
+        beta=beta_ambig, exclude_zeros=False,
+        multiscale_factor=multiscale_factor)}
 
     counts_ambig_object = [c.ambiguate() for c in counts_py._format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta,
@@ -75,7 +79,6 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
 
     # print_array_non0(true_counts_ambig_arr); print()
     # print_array_non0(counts_ambig_arr); print('\n')
-
     # print_array_non0(true_counts_ambig_object['ambig'].data); print()
     # print_array_non0(counts_ambig_object['ambig'].data); print('\n')
     # print_array_non0(counts_ambig_object['ambig0'].data); print('\n')

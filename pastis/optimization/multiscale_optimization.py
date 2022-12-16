@@ -223,8 +223,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
 
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
-                             dummy=False, exclude_each_fullres_zero=False,
-                             include_all_nan_groups=False):
+                             for_zero_counts_matrix=False):
     """Group together full-res counts corresponding to a given low-res distance.
 
     Prepare counts for multi-resolution optimization by aggregating sets of
@@ -243,126 +242,83 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 does not change the resolution.
-    dummy : bool, optional
-        Return zeros in the shape of the grouped counts array.
-    exclude_each_fullres_zero : bool, optional
+    for_zero_counts_matrix : bool, optional
+        TODO update
         If true: if any of the individual full-res bins in a group are zero,
         exclude the entire group of full-res bins from the output.
         Individual full-res bins that are NaN do not result in the group's
         exclusion. Groups where every single full-res bin is NaN are still
-        excluded from the ouptut by default, unless include_all_nan_groups=True
-    include_all_nan_groups : bool, optional
-        Whether groups where every single full-res bin is NaN are excluded from
-        the output. # TODO this doesn't even get used...
+        excluded from the ouptut.
 
     Returns
     -------
     data_grouped : array
         TODO
-    indices : tuple of arrays
+    idx : tuple of arrays
         TODO
-    indices3d : tuple of arrays
+    idx3d : tuple of arrays
         TODO
     shape_lowres : tuple of int
         TODO
     mask : array
         TODO
     """
-
-    revert_bug_fix = False  # TODO remove junk
-    unmask_zeros_in_sparse = False  # TODO remove junk
-    ignore_exclude_each_fullres_zero = False  # TODO remove junk
-
-    if ignore_exclude_each_fullres_zero:
-        exclude_each_fullres_zero = False
-    if unmask_zeros_in_sparse and exclude_each_fullres_zero:
-        data_grouped = indices = indices3d = mask = np.array([])
-        shape_lowres = (0,)
-        raise NotImplementedError("what should shape_lowres be here?")  # nnz_lowres = 0
-        return data_grouped, indices, indices3d, shape_lowres, mask
-
     from .counts import _counts_indices_to_3d_indices, _check_counts_matrix
-    from .counts import _row_and_col
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    counts = _check_counts_matrix(
+        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
 
-    if isinstance(counts, np.ndarray):
-        counts_coo = sparse.coo_matrix(counts)
-    else:
-        counts_coo = counts.tocoo()
+    if for_zero_counts_matrix:
+        mask_non0 = np.isnan(counts) | (counts != 0)
+        counts = counts + 1
+        counts[mask_non0] = 0
+
+    counts_coo = counts.copy()
+    counts_coo[np.isnan(counts_coo)] = 0
+    counts_coo = sparse.coo_matrix(counts_coo)
 
     if multiscale_factor > 1:
-        counts_arr = _check_counts_matrix(
-            counts_coo, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
-
         counts_lowres, rows_grp, cols_grp = decrease_counts_res(
             counts_coo, multiscale_factor=multiscale_factor,
             lengths=lengths, ploidy=ploidy, return_indices=True)
-        row_lowres = counts_lowres.row
-        col_lowres = counts_lowres.col
-        shape_lowres = counts_lowres.shape
 
-        if unmask_zeros_in_sparse:
-            counts_lowres, rows_grp, cols_grp = decrease_counts_res(
-                counts_arr, multiscale_factor=multiscale_factor,
-                lengths=lengths, ploidy=ploidy, return_indices=True)
-            row_lowres, col_lowres = _row_and_col(counts_lowres)
-            shape_lowres = counts_lowres.shape
-            raise NotImplementedError("what should shape_lowres be here?")  # FIXME nnz_lowres = len(row_lowres)
-
-        data_grouped = counts_arr[rows_grp, cols_grp].reshape(
+        data_grouped = counts[rows_grp, cols_grp].reshape(
             multiscale_factor ** 2, -1)
-        if not unmask_zeros_in_sparse:
-            # If every single full-res bin in a group is either NaN or zero,
-            # exlude that group from the output.
-            data_grouped = data_grouped[:, np.nansum(data_grouped, axis=0) != 0]
 
-        if revert_bug_fix or unmask_zeros_in_sparse:
-            exclude_each_fullres_zero = False
-            data_grouped[np.isnan(data_grouped)] = 0
+        # If every single full-res bin in a group is either NaN or zero,
+        # exlude that group from the output.
+        data_grouped = data_grouped[:, np.nansum(data_grouped, axis=0) != 0]
 
-        if exclude_each_fullres_zero:
-            #data_grouped[np.isnan(data_grouped)] = 0  # TODO remove junk
-            #min_gt0 = np.min(data_grouped, axis=0) != 0
-            #min_gt0 = data_grouped.min(axis=0) != 0
-
-            # latest bug fix 3/26:
-            ####### min_gt0 = data_grouped.min(axis=0) != 0
-            ####### min_gt0 = (data_grouped.min(axis=0) != 0) & (~np.isnan(data_grouped.min(axis=0)))
-
+        if for_zero_counts_matrix:
             # If any of the full-res bins are zero, remove the entire group.
             # Full-res NaN bins are ok and don't warrant the group's removal.
-            # However, we previously excluded groups where every single full-res
-            # bin was NaN.
             min_gt0 = np.nanmin(data_grouped, axis=0) != 0
             data_grouped = data_grouped[:, min_gt0]
             counts_lowres = sparse.coo_matrix((
                 counts_lowres.data[min_gt0],
-                (row_lowres[min_gt0], col_lowres[min_gt0])),
+                (counts_lowres.row[min_gt0], counts_lowres.col[min_gt0])),
                 shape=counts_lowres.shape)
-            row_lowres = counts_lowres.row
-            col_lowres = counts_lowres.col
-            shape_lowres = counts_lowres.shape
 
+        tmp_mask = (counts_lowres.row == 7) & (counts_lowres.col == 11)
+        print(f"{for_zero_counts_matrix=}... data_grouped[:, tmp_mask]")
+        print(data_grouped[:, tmp_mask]); print()
+
+        idx = counts_lowres.row, counts_lowres.col
+        idx3d = _counts_indices_to_3d_indices(
+            counts_lowres, nbeads_lowres=lengths_lowres.sum() * ploidy)
+        shape_lowres = counts_lowres.shape
         mask = ~np.isnan(data_grouped)
         data_grouped[~mask] = 0
-
-        indices = row_lowres, col_lowres
-        indices3d = _counts_indices_to_3d_indices(
-            counts_lowres, nbeads_lowres=lengths_lowres.sum() * ploidy)
-
-        if dummy:
-            data_grouped = np.zeros_like(data_grouped)
-        # shape_lowres = counts_lowres.shape
     else:
-        indices = counts_coo.row, counts_coo.col
-        indices3d = _counts_indices_to_3d_indices(
+        idx = counts_coo.row, counts_coo.col
+        idx3d = _counts_indices_to_3d_indices(
             counts_coo, nbeads_lowres=lengths_lowres.sum() * ploidy)
         data_grouped = counts_coo.data
-        mask = None
         shape_lowres = counts_coo.shape
+        mask = None
 
-    return data_grouped, indices, indices3d, shape_lowres, mask
+    return data_grouped, idx, idx3d, shape_lowres, mask
 
 
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
@@ -445,7 +401,7 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
 
     # Get rows & cols of dummy low-res counts matrix
     lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor=multiscale_factor)
+        lengths, multiscale_factor=multiscale_factor)
     counts_lowres_shape = np.array(
         counts_fullres_shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
     dummy_counts_lowres = np.ones(counts_lowres_shape)

@@ -58,7 +58,7 @@ def test_hsc_constraint(multiscale_factor):
     seed = 42
     true_interhmlg_dis = np.array([10.])  # Should be same shape as lengths
     alpha, beta = -3., 1.
-    nan_indices = np.array([0, 1, 2, 3, 12, 15, 25])
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
@@ -68,9 +68,9 @@ def test_hsc_constraint(multiscale_factor):
         coord = random_state.choice([0, 1, 2])
         struct_true[i:, coord] += random_state.choice([1, -1])
 
-    # Fill nan_indices of structure with nan
-    if nan_indices is not None:
-        struct_true[nan_indices] = np.nan
+    # Fill struct_nan of structure with nan
+    if struct_nan is not None:
+        struct_true[struct_nan] = np.nan
 
     # Separate homologs
     begin = end = 0
@@ -82,10 +82,10 @@ def test_hsc_constraint(multiscale_factor):
         struct_true[begin:end, 0] += true_interhmlg_dis[i]
         begin = end
 
-    # Fill nan_indices of structure with junk
-    if nan_indices is not None:
-        struct_true[nan_indices] = np.array([[100, 1000, 10000]]) * np.flip(
-            nan_indices + 1).reshape(-1, 1)
+    # Fill struct_nan of structure with junk
+    if struct_nan is not None:
+        struct_true[struct_nan] = np.array([[100, 1000, 10000]]) * np.flip(
+            struct_nan + 1).reshape(-1, 1)
 
     # Make counts
     dis = euclidean_distances(struct_true)
@@ -94,10 +94,10 @@ def test_hsc_constraint(multiscale_factor):
     counts_raw[np.isnan(counts_raw) | np.isinf(counts_raw)] = 0
     counts_raw = np.triu(counts_raw, 1)
 
-    # Zero out nan_indices of counts
-    if nan_indices is not None:
-        counts_raw[nan_indices, :] = 0
-        counts_raw[:, nan_indices] = 0
+    # Zero out struct_nan of counts
+    if struct_nan is not None:
+        counts_raw[struct_nan, :] = 0
+        counts_raw[:, struct_nan] = 0
     counts_raw = sparse.coo_matrix(counts_raw)
 
     counts, _, _, fullres_struct_nan = preprocess_counts(
