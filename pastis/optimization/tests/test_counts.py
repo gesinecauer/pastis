@@ -27,6 +27,8 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
     seed = 42
     alpha, beta = -3, 0.1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+    struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
+    struct_nan = np.append(struct_nan, 4)  # Test asymmetry in struct_nan
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
@@ -46,13 +48,8 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
         np.fill_diagonal(counts[n:, :], 0)
     elif ambiguity == 'ua':
         counts = np.triu(counts, 1)
-    if ploidy == 2:
-        struct_nan_tmp = np.concatenate([struct_nan, struct_nan + n])
-    else:
-        struct_nan_tmp = struct_nan
-    counts[struct_nan_tmp[struct_nan_tmp < counts.shape[0]], :] = 0
-    counts[:, struct_nan_tmp[struct_nan_tmp < counts.shape[1]]] = 0
-    # counts[4, :] = 0; counts[:, 4] = 0  # FIXME
+    counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
+    counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
     counts = random_state.poisson(counts)
     counts = sparse.coo_matrix(counts)
 
@@ -63,25 +60,31 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
         lengths=lengths, ploidy=ploidy).toarray()
     beta_ambig = counts_py._ambiguate_beta(
         beta, counts=counts, lengths=lengths, ploidy=ploidy)
-    true_counts_ambig_object = {c.name: c for c in counts_py._format_counts(
+    true_counts_ambig_objects = {c.name: c for c in counts_py._format_counts(
         counts=true_counts_ambig_arr_fullres, lengths=lengths, ploidy=ploidy,
         beta=beta_ambig, exclude_zeros=False,
         multiscale_factor=multiscale_factor)}
 
-    counts_ambig_object = [c.ambiguate() for c in counts_py._format_counts(
+    # counts_ambig_objects = [c.ambiguate() for c in counts_py._format_counts(
+    #     counts=counts, lengths=lengths, ploidy=ploidy, beta=beta,
+    #     exclude_zeros=False, multiscale_factor=multiscale_factor)]
+    # counts_ambig_objects = {
+    #     c.name: c for c in counts_ambig_objects if c is not None}
+
+    counts_objects = counts_py._format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta,
-        exclude_zeros=False, multiscale_factor=multiscale_factor)]
-    counts_ambig_object = {
-        c.name: c for c in counts_ambig_object if c is not None}
+        exclude_zeros=False, multiscale_factor=multiscale_factor)
+    counts_ambig_objects = {c.name: c for c in counts_py.ambiguate_counts(
+        counts_objects, lengths=lengths, ploidy=ploidy, exclude_zeros=False)}
     counts_ambig_arr = [
-        c.tocoo().toarray() for c in counts_ambig_object.values(
+        c.tocoo().toarray() for c in counts_ambig_objects.values(
         ) if c.sum() > 0][0]
 
     # print_array_non0(true_counts_ambig_arr); print()
     # print_array_non0(counts_ambig_arr); print('\n')
-    # print_array_non0(true_counts_ambig_object['ambig'].data); print()
-    # print_array_non0(counts_ambig_object['ambig'].data); print('\n')
-    # print_array_non0(counts_ambig_object['ambig0'].data); print('\n')
+    # print_array_non0(true_counts_ambig_objects['ambig'].data); print()
+    # print_array_non0(counts_ambig_objects['ambig'].data); print('\n')
+    # print_array_non0(counts_ambig_objects['ambig0'].data); print('\n')
 
     true_counts_ambig_non0 = np.invert(
         np.isnan(true_counts_ambig_arr)) & (true_counts_ambig_arr != 0)
@@ -91,25 +94,25 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
 
     assert_array_almost_equal(true_counts_ambig_arr, counts_ambig_arr)
 
-    assert true_counts_ambig_object.keys() == counts_ambig_object.keys()
-    for key in true_counts_ambig_object.keys():
+    assert true_counts_ambig_objects.keys() == counts_ambig_objects.keys()
+    for key in true_counts_ambig_objects.keys():
         print(key)
-        print(true_counts_ambig_object[key].row)
-        print(true_counts_ambig_object[key].col); print()
-        print(counts_ambig_object[key].row)
-        print(counts_ambig_object[key].col); print('\n')
+        print(true_counts_ambig_objects[key].row)
+        print(true_counts_ambig_objects[key].col); print()
+        print(counts_ambig_objects[key].row)
+        print(counts_ambig_objects[key].col); print('\n')
         assert_array_equal(
-            true_counts_ambig_object[key].row, counts_ambig_object[key].row)
+            true_counts_ambig_objects[key].row, counts_ambig_objects[key].row)
         assert_array_equal(
-            true_counts_ambig_object[key].col, counts_ambig_object[key].col)
+            true_counts_ambig_objects[key].col, counts_ambig_objects[key].col)
 
-        # print_array_non0(true_counts_ambig_object[key].data == counts_ambig_object[key].data)
-        # print(true_counts_ambig_object[key].data[:, 0])
-        # print(counts_ambig_object[key].data[:, 0])
+        # print_array_non0(true_counts_ambig_objects[key].data == counts_ambig_objects[key].data)
+        # print(true_counts_ambig_objects[key].data[:, 0])
+        # print(counts_ambig_objects[key].data[:, 0])
         assert_array_almost_equal(
-            true_counts_ambig_object[key].data.sum(axis=0),
-            counts_ambig_object[key].data.sum(axis=0))
+            true_counts_ambig_objects[key].data.sum(axis=0),
+            counts_ambig_objects[key].data.sum(axis=0))
 
         assert_array_almost_equal(
-            true_counts_ambig_object[key].data, counts_ambig_object[key].data)
-        assert true_counts_ambig_object[key] == counts_ambig_object[key]
+            true_counts_ambig_objects[key].data, counts_ambig_objects[key].data)
+        assert true_counts_ambig_objects[key] == counts_ambig_objects[key]

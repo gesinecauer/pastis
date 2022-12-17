@@ -29,6 +29,7 @@ def _setup_jax():
     # jax_config.update("jax_debug_infs", True)
     # jax_config.update("jax_check_tracer_leaks", True)
 
+
 _setup_jax()
 
 from typing import Any as Array
@@ -41,7 +42,6 @@ from jax.nn import relu
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
-
 
 
 def _get_output_files(outdir, seed=None):
@@ -259,7 +259,7 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
                 int(nbeads / c.shape[0]))
         inverse_struct_nan_mask += (axis0sum + axis1sum > threshold).astype(int)
 
-    struct_nan_mask = ~ inverse_struct_nan_mask.astype(bool)
+    struct_nan_mask = ~inverse_struct_nan_mask.astype(bool)
     struct_nan = np.where(struct_nan_mask)[0]
     return struct_nan
 

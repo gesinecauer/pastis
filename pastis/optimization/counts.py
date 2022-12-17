@@ -38,23 +38,54 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
 
     lengths = np.asarray(lengths)
     n = lengths.sum()
-
     if not isinstance(counts, list):
         counts = [counts]
+
+    if all([isinstance(c, CountsMatrix) for c in counts]):
+        multiscale_factor = set([c.multiscale_factor for c in counts])
+        if len(multiscale_factor) > 1:
+            raise ValueError("Mismatch in resolution of counts matrices")
+        multiscale_factor = multiscale_factor.pop()
+
+        if len(set([c.ambiguity for c in counts])) == 1 and (ploidy == 1 or set(
+                [c.shape for c in counts]) == {(n, n)}):
+            if exclude_zeros:
+                return [c for c in counts if c.sum() > 0]
+            else:
+                return counts
+
+        scm_ambig = {c.ambiguity: c._ambiguate() for c in counts if c.sum() > 0}
+
+        if exclude_zeros:
+            return [sum(scm_ambig.values())]
+
+        empty_idx = {k: find_beads_to_remove(
+            v, lengths=lengths, ploidy=1,
+            multiscale_factor=multiscale_factor) for k, v in scm_ambig.items()}
+        zcm_ambig = {c.ambiguity: c._ambiguate(
+            empty_idx=empty_idx[c.ambiguity],
+            non0_ambig=scm_ambig[c.ambiguity]) for c in counts if (
+            c.sum() == 0)}
+        scm_ambig = sum(scm_ambig.values())
+        zcm_ambig = sum([c for c in zcm_ambig.values() if c is not None])
+        if isinstance(zcm_ambig, int) and zcm_ambig == 0:
+            return [scm_ambig]
+        else:
+            return [scm_ambig, zcm_ambig]
 
     counts = [c for c in counts if c.sum() != 0]
 
     if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
         c = counts[0]
-        if not isinstance(c, np.ndarray):
-            c = c.toarray()
+        # if not isinstance(c, np.ndarray):  # TODO huh? Why was this here?
+        #     c = c.toarray()
         return _check_counts_matrix(
             c, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
     output = np.zeros((n, n))
     for c in counts:
-        if isinstance(c, ZeroCountsMatrix):
-            continue
+        # if isinstance(c, ZeroCountsMatrix):  # TODO remove
+        #     continue
         counts_sum = c.sum()
         counts_sum = counts_sum if not np.isnan(counts_sum) else np.nansum(c)
         if np.isnan(counts_sum) or counts_sum == 0:
@@ -885,7 +916,7 @@ class CountsMatrix(object):
         else:
             return self.mask.sum(axis=0)
 
-    def ambiguate(self, copy=True):
+    def _ambiguate(self, copy=True, empty_idx=None, non0_ambig=None):
         """Convert diploid counts to ambiguous.
 
         If  unambiguous or partially ambiguous diploid, convert to ambiguous. If
@@ -904,6 +935,13 @@ class CountsMatrix(object):
 
         if self.ploidy == 1 or self.ambiguity == 'ambig':
             return ambig
+        if self.sum() == 0:
+            if (empty_idx is None or non0_ambig is None):
+                raise ValueError("Must supply empty_idx & non0_ambig to"
+                                 " ambiguate ZeroCountsMatrix")
+            non0_ambig_idx = np.stack([non0_ambig.row, non0_ambig.col], axis=1)
+        else:
+            non0_ambig_idx = None
 
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)
@@ -934,11 +972,11 @@ class CountsMatrix(object):
             data['col'] = col_ambig
             data = data.groupby(['row', 'col']).size().reset_index()
             data = data[data.row != data.col]
-            data = data[data[0] == 4]  # FIXME wrong?
+            data = data[~(data[['row', 'col']].values == non0_ambig_idx[
+                :, None]).all(2).any(0)]
+            data = data[~data.row.isin(empty_idx) & ~data.col.isin(empty_idx)]
             if len(data) == 0:
                 return None
-            # FIXME the check for removing idx is incorrect if some enitre highres groups are NaN
-            # FIXME also have to deal with mask in this situation
             ambig._sum = 0
         else:
             data = self._data.T
@@ -971,12 +1009,15 @@ class CountsMatrix(object):
             mask['row'] = row_ambig
             mask['col'] = col_ambig
             mask['_size'] = 1
-            mask_ambig = mask.groupby(
+            mask = mask.groupby(
                 ['row', 'col', '_size']).sum().astype(bool).reset_index()
-            mask_ambig = mask_ambig[mask_ambig.row != mask_ambig.col]
+            mask = mask[mask.row != mask.col]
             if self.sum() == 0:
-                mask_ambig = mask_ambig[mask_ambig._size == 4]
-            ambig.mask = mask_ambig[[c for c in mask_ambig.columns if c not in (
+                mask = mask[~(mask[['row', 'col']].values == non0_ambig_idx[
+                    :, None]).all(2).any(0)]
+                mask = mask[
+                    ~mask.row.isin(empty_idx) & ~mask.col.isin(empty_idx)]
+            ambig.mask = mask[[c for c in mask.columns if c not in (
                 'row', 'col', '_size')]].astype(bool).values.T
 
         ambig.row3d, ambig.col3d = _counts_indices_to_3d_indices(
@@ -1145,7 +1186,8 @@ class SparseCountsMatrix(CountsMatrix):
         return coo
 
     def sum(self, axis=None, dtype=None, out=None):
-        if axis is None or set(list(axis)) == {0, 1}:
+        if (not isinstance(axis, int)) and (
+                axis is None or set(list(axis)) == {0, 1}):
             return self._sum
         return self.tocoo().sum(axis=axis, dtype=dtype, out=out)
 
@@ -1192,7 +1234,8 @@ class ZeroCountsMatrix(CountsMatrix):
             (np.zeros(self.row.size), (self.row, self.col)), shape=self.shape)
 
     def sum(self, axis=None, dtype=None, out=None):
-        if axis is None or set(list(axis)) == {0, 1}:
+        if (not isinstance(axis, int)) and (
+                axis is None or set(list(axis)) == {0, 1}):
             return 0
         elif axis in (0, 1, -1):
             output = np.zeros((self.shape[int(not axis)]), dtype=dtype)

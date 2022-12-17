@@ -210,6 +210,7 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
     seed = 42
     alpha, beta = -3., 1.
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+    struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
@@ -229,12 +230,8 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
         np.fill_diagonal(counts[n:, :], 0)
     elif ambiguity == 'ua':
         counts = np.triu(counts, 1)
-    if ploidy == 2:
-        struct_nan_tmp = np.concatenate([struct_nan, struct_nan + n])
-    else:
-        struct_nan_tmp = struct_nan
-    counts[struct_nan_tmp[struct_nan_tmp < counts.shape[0]], :] = 0
-    counts[:, struct_nan_tmp[struct_nan_tmp < counts.shape[1]]] = 0
+    counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
+    counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
     counts = sparse.coo_matrix(counts)
 
     counts_lowres_true = decrease_counts_res_correct(
