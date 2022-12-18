@@ -831,7 +831,7 @@ class CountsMatrix(object):
 
     def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
                  beta=1, weight=1):
-        self.beta = beta
+        self.beta = float(beta)
         self.weight = (1. if weight is None else weight)
         if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
             raise ValueError(f"Counts weight may not be {self.weight}.")
@@ -947,11 +947,11 @@ class CountsMatrix(object):
             if non0_ambig is None:
                 raise ValueError(
                     "Must supply non0_ambig to ambiguate ZeroCountsMatrix")
-            empty_idx = find_beads_to_remove(
+            empty_idx = find_beads_to_remove(  # TODO needed?
                 non0_ambig, lengths=self.lengths, ploidy=1,
                 multiscale_factor=self.multiscale_factor)
         else:
-            empty_idx = None
+            empty_idx = None  # TODO needed?
 
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)
@@ -982,7 +982,7 @@ class CountsMatrix(object):
             data = data[data.row != data.col]
             data = data[~_idx_isin(
                 data[['row', 'col']].values, (non0_ambig.row, non0_ambig.col))]
-            data = data[~data.row.isin(empty_idx) & ~data.col.isin(empty_idx)]
+            data = data[~data.row.isin(empty_idx) & ~data.col.isin(empty_idx)]  # TODO needed?
             if len(data) == 0:
                 return None
             ambig._sum = 0
@@ -1024,7 +1024,7 @@ class CountsMatrix(object):
                     mask[['row', 'col']].values,
                     (non0_ambig.row, non0_ambig.col))]
                 mask = mask[
-                    ~mask.row.isin(empty_idx) & ~mask.col.isin(empty_idx)]
+                    ~mask.row.isin(empty_idx) & ~mask.col.isin(empty_idx)]  # TODO needed?
                 ambig.mask = mask[[c for c in mask.columns if c not in (
                     'row', 'col')]].astype(bool).values.T
             else:

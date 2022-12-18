@@ -30,10 +30,10 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 2
     seed = 42
-    alpha, beta = -3, 0.05
+    alpha, beta = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
-    struct_nan = np.append(struct_nan, 4)  # Test asymmetry in struct_nan
+    struct_nan = np.append(struct_nan, [4, 5, 6, 7])  # Test asymmetry in struct_nan
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.rand(lengths.sum() * ploidy, 3)
