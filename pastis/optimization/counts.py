@@ -55,7 +55,6 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
                 return counts
 
         scm_ambig = {c.ambiguity: c._ambiguate() for c in counts if c.sum() > 0}
-
         if exclude_zeros:
             return [sum(scm_ambig.values())]
 
@@ -973,7 +972,7 @@ class CountsMatrix(object):
             data = data.groupby(['row', 'col']).size().reset_index()
             data = data[data.row != data.col]
             data = data[~(data[['row', 'col']].values == non0_ambig_idx[
-                :, None]).all(2).any(0)]
+                :, None]).all(2).any(0)]  # (row, col) not in non0_ambig_idx
             data = data[~data.row.isin(empty_idx) & ~data.col.isin(empty_idx)]
             if len(data) == 0:
                 return None
@@ -1014,7 +1013,7 @@ class CountsMatrix(object):
             mask = mask[mask.row != mask.col]
             if self.sum() == 0:
                 mask = mask[~(mask[['row', 'col']].values == non0_ambig_idx[
-                    :, None]).all(2).any(0)]
+                    :, None]).all(2).any(0)]  # (row, col) not in non0_ambig_idx
                 mask = mask[
                     ~mask.row.isin(empty_idx) & ~mask.col.isin(empty_idx)]
             ambig.mask = mask[[c for c in mask.columns if c not in (

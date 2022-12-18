@@ -300,10 +300,6 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                 (counts_lowres.row[min_gt0], counts_lowres.col[min_gt0])),
                 shape=counts_lowres.shape)
 
-        tmp_mask = (counts_lowres.row == 7) & (counts_lowres.col == 11)
-        print(f"{for_zero_counts_matrix=}... data_grouped[:, tmp_mask]")
-        print(data_grouped[:, tmp_mask]); print()
-
         idx = counts_lowres.row, counts_lowres.col
         idx3d = _counts_indices_to_3d_indices(
             counts_lowres, nbeads_lowres=lengths_lowres.sum() * ploidy)
