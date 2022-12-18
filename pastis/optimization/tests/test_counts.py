@@ -9,10 +9,15 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
+    from utils import get_counts
     import pastis.optimization.counts as counts_py
     from pastis.optimization.multiscale_optimization import decrease_counts_res
 
     from topsy.utils.debug import print_array_non0  # TODO remove
+
+
+def test_add_counts_haploid():
+    pass
 
 
 @pytest.mark.parametrize(
@@ -31,27 +36,11 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
     struct_nan = np.append(struct_nan, 4)  # Test asymmetry in struct_nan
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-
-    counts = beta * dis ** alpha
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    if ambiguity == 'ambig':
-        counts = counts[:n, :n] + counts[
-            n:, n:] + counts[:n, n:] + counts[n:, :n]
-        counts = np.triu(counts, 1)
-    elif ambiguity == 'pa':
-        counts = counts[:, :n] + counts[:, n:]
-        np.fill_diagonal(counts[:n, :], 0)
-        np.fill_diagonal(counts[n:, :], 0)
-    elif ambiguity == 'ua':
-        counts = np.triu(counts, 1)
-    counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
-    counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
-    counts = random_state.poisson(counts)
-    counts = sparse.coo_matrix(counts)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
+        use_poisson=True)
 
     true_counts_ambig_arr_fullres = counts_py.ambiguate_counts(
         counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
