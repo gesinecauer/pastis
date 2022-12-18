@@ -30,7 +30,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 2
     seed = 42
-    alpha, beta = -3, 0.1
+    alpha, beta = -3, 0.05
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
     struct_nan = np.append(struct_nan, 4)  # Test asymmetry in struct_nan
@@ -85,11 +85,11 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
 
     assert true_counts_ambig_objects.keys() == counts_ambig_objects.keys()
     for key in true_counts_ambig_objects.keys():
-        print(key)
-        print(true_counts_ambig_objects[key].row)
-        print(true_counts_ambig_objects[key].col); print()
-        print(counts_ambig_objects[key].row)
-        print(counts_ambig_objects[key].col); print('\n')
+        print('\nname:', key.upper())
+        # print(true_counts_ambig_objects[key].row)
+        # print(true_counts_ambig_objects[key].col); print()
+        # print(counts_ambig_objects[key].row)
+        # print(counts_ambig_objects[key].col); print('\n')
         assert_array_equal(
             true_counts_ambig_objects[key].row, counts_ambig_objects[key].row)
         assert_array_equal(
@@ -101,7 +101,18 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
         assert_array_almost_equal(
             true_counts_ambig_objects[key].data.sum(axis=0),
             counts_ambig_objects[key].data.sum(axis=0))
-
         assert_array_almost_equal(
             true_counts_ambig_objects[key].data, counts_ambig_objects[key].data)
+
+        if multiscale_factor > 1:
+            where_diff = np.where(true_counts_ambig_objects[key].mask != counts_ambig_objects[key].mask)
+            print('row', true_counts_ambig_objects[key].row[np.unique(where_diff[1])])
+            print('col', true_counts_ambig_objects[key].col[np.unique(where_diff[1])])
+            print_array_non0(true_counts_ambig_objects[key].mask[:10, :10]); print()
+            print_array_non0(counts_ambig_objects[key].mask[:10, :10]); print('\ndiff:')
+            print_array_non0((true_counts_ambig_objects[key].mask != counts_ambig_objects[key].mask)[:10, :10])
+            assert_array_equal(
+                true_counts_ambig_objects[key].mask,
+                counts_ambig_objects[key].mask)
+
         assert true_counts_ambig_objects[key] == counts_ambig_objects[key]

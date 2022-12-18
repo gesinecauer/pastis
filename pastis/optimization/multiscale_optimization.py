@@ -281,7 +281,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     if multiscale_factor > 1:
         counts_lowres, rows_grp, cols_grp = decrease_counts_res(
             counts_coo, multiscale_factor=multiscale_factor,
-            lengths=lengths, ploidy=ploidy, return_indices=True)
+            lengths=lengths, ploidy=ploidy, return_indices=True)  # TODO use _get_fullres_counts_index instead, right?
 
         data_grouped = counts[rows_grp, cols_grp].reshape(
             multiscale_factor ** 2, -1)
@@ -299,6 +299,26 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                 counts_lowres.data[min_gt0],
                 (counts_lowres.row[min_gt0], counts_lowres.col[min_gt0])),
                 shape=counts_lowres.shape)
+        else:
+            print(f'\n{counts.shape=}')
+            tmp_row = [2]
+            tmp_col = [11]
+            if counts.shape[0] > lengths.sum():
+                tmp_row.extend(tmp_row + lengths_lowres.sum())
+            if counts.shape[1] > lengths.sum():
+                tmp_col.extend(tmp_col + lengths_lowres.sum())
+            print(tmp_row, tmp_col)
+            tmp_mask = np.isin(counts_lowres.row, tmp_row) & np.isin(counts_lowres.col, tmp_col)
+            print(data_grouped[:, tmp_mask])
+
+            # print(f'row={counts_lowres.row[8]}, col={counts_lowres.col[8]}')
+            # print(data_grouped[:, 8])
+            # if max(counts.shape) > lengths.sum():
+            #     tmp_row = counts_lowres.row[8] + lengths_lowres.sum()
+            #     tmp_col = counts_lowres.col[8]
+            #     tmp_mask = (counts_lowres.row == tmp_row) & (counts_lowres.col == tmp_col)
+            #     print(data_grouped[:, tmp_mask])
+            print()
 
         idx = counts_lowres.row, counts_lowres.col
         idx3d = _counts_indices_to_3d_indices(

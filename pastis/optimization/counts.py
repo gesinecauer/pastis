@@ -14,6 +14,7 @@ from .utils_poisson import _intra_counts, _inter_counts, _counts_near_diag
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_counts_res
 from .multiscale_optimization import _group_counts_multiscale
+from .multiscale_optimization import _get_fullres_counts_index
 
 
 def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
@@ -61,6 +62,12 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
         empty_idx = {k: find_beads_to_remove(
             v, lengths=lengths, ploidy=1,
             multiscale_factor=multiscale_factor) for k, v in scm_ambig.items()}
+
+        ### XXX remove HERE ***
+        print(f'{empty_idx=}')
+        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+        print(f'{lengths_lowres=}')
+
         zcm_ambig = {c.ambiguity: c._ambiguate(
             empty_idx=empty_idx[c.ambiguity],
             non0_ambig=scm_ambig[c.ambiguity]) for c in counts if (
@@ -840,6 +847,7 @@ class CountsMatrix(object):
         self.row, self.col = None, None
         self.row3d, self.col3d = None, None
         self._sum = None
+        self._empty_idx_fullres = None
         if counts is not None:
             self._add_counts_bins(counts)
 
@@ -1000,24 +1008,47 @@ class CountsMatrix(object):
         ambig.col = data.col.values
 
         if self.multiscale_factor > 1:
-            mask = self.mask.T
-            mask[swap] = mask[swap].reshape(
-                swap.sum(), self.multiscale_factor,
-                self.multiscale_factor).reshape(swap.sum(), -1, order='f')
-            mask = pd.DataFrame(mask)
-            mask['row'] = row_ambig
-            mask['col'] = col_ambig
-            mask['_size'] = 1
-            mask = mask.groupby(
-                ['row', 'col', '_size']).sum().astype(bool).reset_index()
-            mask = mask[mask.row != mask.col]
             if self.sum() == 0:
+                mask = self.mask.T
+                mask[swap] = mask[swap].reshape(
+                    swap.sum(), self.multiscale_factor,
+                    self.multiscale_factor).reshape(swap.sum(), -1, order='f')
+                mask = pd.DataFrame(mask)
+                mask['row'] = row_ambig
+                mask['col'] = col_ambig
+                mask = mask.groupby(
+                    ['row', 'col']).sum().astype(bool).reset_index()
+                mask = mask[mask.row != mask.col]
                 mask = mask[~(mask[['row', 'col']].values == non0_ambig_idx[
                     :, None]).all(2).any(0)]  # (row, col) not in non0_ambig_idx
                 mask = mask[
                     ~mask.row.isin(empty_idx) & ~mask.col.isin(empty_idx)]
-            ambig.mask = mask[[c for c in mask.columns if c not in (
-                'row', 'col', '_size')]].astype(bool).values.T
+                ambig.mask = mask[[c for c in mask.columns if c not in (
+                    'row', 'col')]].astype(bool).values.T
+            else:
+                tmp_unique, tmp_counts = np.unique(
+                    np.append(self._empty_idx_fullres,
+                              self._empty_idx_fullres - self.lengths.sum()),
+                    return_counts=True)
+                _empty_idx_fullres = tmp_unique[tmp_counts == 2]
+                ambig._empty_idx_fullres = np.append(
+                    _empty_idx_fullres, _empty_idx_fullres + self.lengths.sum())
+
+                idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
+                    multiscale_factor=self.multiscale_factor,
+                    lengths=self.lengths, ploidy=self.ploidy,
+                    counts_fullres_shape=(
+                        self.lengths.sum(), self.lengths.sum()))
+                idx_lowres_all = np.stack(idx_lowres_all, axis=1)
+                idx_all_mask = (idx_lowres_all == data[['row', 'col']].values[
+                    :, None]).all(2).any(0)  # idx_lowres_all is in (row, col)
+                row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
+                    self.multiscale_factor ** 2,
+                    -1)[:, idx_all_mask] for x in idx_fullres_all]
+
+                ambig.mask = ~bad_idx_fullres & ~np.isin(
+                    row_fullres, _empty_idx_fullres) & ~np.isin(
+                    col_fullres, _empty_idx_fullres)
 
         ambig.row3d, ambig.col3d = _counts_indices_to_3d_indices(
             (ambig.row, ambig.col, ambig.shape), nbeads_lowres=n * self.ploidy)
@@ -1075,6 +1106,18 @@ class CountsMatrix(object):
                 combo._data = combo._data.astype(
                     sparse.sputils.get_index_dtype(maxval=combo._data.max()))
             combo._sum = combo._data.sum()
+
+        if self.multiscale_factor > 1:
+            if first.sum() > 0 and second.sum() > 0:
+                tmp_unique, tmp_counts = np.unique(
+                    np.append(first._empty_idx_fullres,
+                              second._empty_idx_fullres),
+                    return_counts=True)
+                combo._empty_idx_fullres = tmp_unique[tmp_counts == 2]
+            elif first.sum() > 0:
+                combo._empty_idx_fullres = first._empty_idx_fullres
+            elif second.sum() > 0:
+                combo._empty_idx_fullres = second._empty_idx_fullres
 
         if self.multiscale_factor > 1:
             mask = pd.DataFrame(
@@ -1153,6 +1196,10 @@ class SparseCountsMatrix(CountsMatrix):
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
         self.name = self.ambiguity
+
+        if self.multiscale_factor > 1:
+            self._empty_idx_fullres = find_beads_to_remove(
+                counts, lengths=self.lengths, ploidy=self.ploidy)
 
         tmp = _group_counts_multiscale(
             counts, lengths=self.lengths, ploidy=self.ploidy,
