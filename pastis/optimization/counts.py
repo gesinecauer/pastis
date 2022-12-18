@@ -59,17 +59,7 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
         if exclude_zeros:
             return [sum(scm_ambig.values())]
 
-        empty_idx = {k: find_beads_to_remove(
-            v, lengths=lengths, ploidy=1,
-            multiscale_factor=multiscale_factor) for k, v in scm_ambig.items()}
-
-        ### XXX remove HERE ***
-        print(f'{empty_idx=}')
-        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        print(f'{lengths_lowres=}')
-
         zcm_ambig = {c.ambiguity: c._ambiguate(
-            empty_idx=empty_idx[c.ambiguity],
             non0_ambig=scm_ambig[c.ambiguity]) for c in counts if (
             c.sum() == 0)}
         scm_ambig = sum(scm_ambig.values())
@@ -774,6 +764,17 @@ def _update_betas_in_counts_matrices(counts, beta):
     return counts
 
 
+def _idx_isin(idx1, idx2):
+    """Whether each (row, col) pair in idx1 (row1, col1) is in idx2 (row2, col2)
+    """
+
+    if isinstance(idx1, (list, tuple)):
+        idx1 = np.stack(idx1, axis=1)
+    if isinstance(idx2, (list, tuple)):
+        idx2 = np.stack(idx2, axis=1)
+    return (idx1 == idx2[:, None]).all(axis=2).any(axis=0)
+
+
 class CountsMatrix(object):
     """Stores counts data, indices, beta, weight, distance matrix indices, etc.
 
@@ -923,7 +924,7 @@ class CountsMatrix(object):
         else:
             return self.mask.sum(axis=0)
 
-    def _ambiguate(self, copy=True, empty_idx=None, non0_ambig=None):
+    def _ambiguate(self, copy=True, non0_ambig=None):
         """Convert diploid counts to ambiguous.
 
         If  unambiguous or partially ambiguous diploid, convert to ambiguous. If
@@ -943,12 +944,14 @@ class CountsMatrix(object):
         if self.ploidy == 1 or self.ambiguity == 'ambig':
             return ambig
         if self.sum() == 0:
-            if (empty_idx is None or non0_ambig is None):
-                raise ValueError("Must supply empty_idx & non0_ambig to"
-                                 " ambiguate ZeroCountsMatrix")
-            non0_ambig_idx = np.stack([non0_ambig.row, non0_ambig.col], axis=1)
+            if non0_ambig is None:
+                raise ValueError(
+                    "Must supply non0_ambig to ambiguate ZeroCountsMatrix")
+            empty_idx = find_beads_to_remove(
+                non0_ambig, lengths=self.lengths, ploidy=1,
+                multiscale_factor=self.multiscale_factor)
         else:
-            non0_ambig_idx = None
+            empty_idx = None
 
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)
@@ -974,13 +977,11 @@ class CountsMatrix(object):
         swap = row != row_ambig
 
         if self.sum() == 0:
-            data = pd.DataFrame()
-            data['row'] = row_ambig
-            data['col'] = col_ambig
-            data = data.groupby(['row', 'col']).size().reset_index()
+            data = pd.DataFrame({'row': row_ambig, 'col': col_ambig})
+            data = data.drop_duplicates().sort_values(['row', 'col'])
             data = data[data.row != data.col]
-            data = data[~(data[['row', 'col']].values == non0_ambig_idx[
-                :, None]).all(2).any(0)]  # (row, col) not in non0_ambig_idx
+            data = data[~_idx_isin(
+                data[['row', 'col']].values, (non0_ambig.row, non0_ambig.col))]
             data = data[~data.row.isin(empty_idx) & ~data.col.isin(empty_idx)]
             if len(data) == 0:
                 return None
@@ -1019,8 +1020,9 @@ class CountsMatrix(object):
                 mask = mask.groupby(
                     ['row', 'col']).sum().astype(bool).reset_index()
                 mask = mask[mask.row != mask.col]
-                mask = mask[~(mask[['row', 'col']].values == non0_ambig_idx[
-                    :, None]).all(2).any(0)]  # (row, col) not in non0_ambig_idx
+                mask = mask[~_idx_isin(
+                    mask[['row', 'col']].values,
+                    (non0_ambig.row, non0_ambig.col))]
                 mask = mask[
                     ~mask.row.isin(empty_idx) & ~mask.col.isin(empty_idx)]
                 ambig.mask = mask[[c for c in mask.columns if c not in (
@@ -1039,9 +1041,8 @@ class CountsMatrix(object):
                     lengths=self.lengths, ploidy=self.ploidy,
                     counts_fullres_shape=(
                         self.lengths.sum(), self.lengths.sum()))
-                idx_lowres_all = np.stack(idx_lowres_all, axis=1)
-                idx_all_mask = (idx_lowres_all == data[['row', 'col']].values[
-                    :, None]).all(2).any(0)  # idx_lowres_all is in (row, col)
+                idx_all_mask = _idx_isin(
+                    idx_lowres_all, data[['row', 'col']].values)
                 row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
                     self.multiscale_factor ** 2,
                     -1)[:, idx_all_mask] for x in idx_fullres_all]
