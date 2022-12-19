@@ -249,7 +249,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
         var_per_dis = 0
     data_per_bin = counts.fullres_per_lowres_dis()
 
-    lambda_intensity = ag_np.zeros(counts.nnz)
+    lambda_intensity = ag_np.zeros(counts.nbins)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
@@ -257,7 +257,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             tmp1 = ag_np.power(dis, alpha)
         else:
             tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
-        tmp = tmp1.reshape(-1, counts.nnz).sum(axis=0)
+        tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
         lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
             bias) * counts.beta * tmp
 
@@ -285,7 +285,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
     """Computes the objective function for a given individual counts matrix.
     """
 
-    if counts.nnz == 0 or counts.null or (bias is not None and bias.sum() == 0):
+    if counts.nbins == 0 or counts.null or (bias is not None and bias.sum() == 0):
         return 0.
     if np.isnan(counts.weight) or np.isinf(counts.weight) or counts.weight == 0:
         raise ValueError(f"Counts weight may not be {counts.weight}.")
@@ -439,10 +439,10 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
             mods=mods)
         obj_poisson[f"obj_{counts_maps.name}"] = obj_counts
-        obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nnz
+        obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nbins
 
     # Take weighted mean of poisson/negbinom obj terms
-    obj_poisson_mean = obj_poisson_sum / sum([c.nnz for c in counts])
+    obj_poisson_mean = obj_poisson_sum / sum([c.nbins for c in counts])
 
     obj = obj_poisson_mean + sum(obj_constraints.values())
 

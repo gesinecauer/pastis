@@ -464,4 +464,4 @@ def test_poisson_objective_multiscale_ambig():
         ploidy=ploidy, bias=None, multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances_true)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))

@@ -34,7 +34,7 @@ def test_poisson_objective_haploid():
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
 
 def test_poisson_objective_haploid_biased():
@@ -63,7 +63,7 @@ def test_poisson_objective_haploid_biased():
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
-    assert obj < (-1e3 / sum([c.nnz for c in counts]))
+    assert obj < (-1e3 / sum([c.nbins for c in counts]))
 
 
 def test_poisson_objective_diploid_unambig():
@@ -88,7 +88,7 @@ def test_poisson_objective_diploid_unambig():
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
 
 def test_poisson_objective_diploid_unambig_biased():
@@ -117,7 +117,7 @@ def test_poisson_objective_diploid_unambig_biased():
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
 
 def test_poisson_objective_diploid_ambig():
@@ -143,7 +143,7 @@ def test_poisson_objective_diploid_ambig():
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
 
 def test_poisson_objective_diploid_ambig_biased():
@@ -173,7 +173,7 @@ def test_poisson_objective_diploid_ambig_biased():
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
 
 def test_poisson_objective_diploid_partially_ambig():
@@ -200,7 +200,7 @@ def test_poisson_objective_diploid_partially_ambig():
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
 
 def test_poisson_objective_diploid_partially_ambig_biased():
@@ -232,4 +232,4 @@ def test_poisson_objective_diploid_partially_ambig_biased():
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias)
 
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))

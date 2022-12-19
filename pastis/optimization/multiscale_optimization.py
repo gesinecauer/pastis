@@ -301,8 +301,8 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
                 shape=counts_lowres.shape)
         else:
             print(f'\n{counts.shape=}')
-            tmp_row = [2]
-            tmp_col = [11]
+            tmp_row = [4]
+            tmp_col = [5]
             if counts.shape[0] > lengths.sum():
                 tmp_row.extend(tmp_row + lengths_lowres.sum())
             if counts.shape[1] > lengths.sum():

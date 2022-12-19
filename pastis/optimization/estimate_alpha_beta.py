@@ -53,7 +53,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 tmp1 = ag_np.power(dis, alpha)
             else:
                 tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
-            tmp = tmp1.reshape(-1, counts.nnz).sum(axis=0)
+            tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
             lambda_intensity_sum += ag_np.sum(gamma * counts.bias_per_bin(
                 bias) * num_highres_per_lowres_bins * tmp)
         else:

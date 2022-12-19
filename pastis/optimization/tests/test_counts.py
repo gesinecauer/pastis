@@ -31,9 +31,9 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
     ploidy = 2
     seed = 42
     alpha, beta = -3, 1
-    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
-    struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
-    struct_nan = np.append(struct_nan, [4, 5, 6, 7])  # Test asymmetry in struct_nan
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])  # NaN in both hmlgs
+    struct_nan = np.append(struct_nan, struct_nan + lengths.sum())  # Both hmlgs
+    struct_nan = np.append(struct_nan, [4, 5, 6, 7])  # NaN in one hmlg only
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.rand(lengths.sum() * ploidy, 3)
@@ -69,7 +69,8 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
         c.tocoo().toarray() for c in counts_ambig_objects.values(
         ) if c.sum() > 0][0]
 
-    # print_array_non0(true_counts_ambig_arr); print()
+    print_array_non0(counts); print()
+    print_array_non0(true_counts_ambig_arr); print()
     # print_array_non0(counts_ambig_arr); print('\n')
     # print_array_non0(true_counts_ambig_objects['ambig'].data); print()
     # print_array_non0(counts_ambig_objects['ambig'].data); print('\n')
@@ -86,10 +87,10 @@ def test_ambiguate_counts(ambiguity, multiscale_factor):
     assert true_counts_ambig_objects.keys() == counts_ambig_objects.keys()
     for key in true_counts_ambig_objects.keys():
         print('\nname:', key.upper())
-        # print(true_counts_ambig_objects[key].row)
-        # print(true_counts_ambig_objects[key].col); print()
-        # print(counts_ambig_objects[key].row)
-        # print(counts_ambig_objects[key].col); print('\n')
+        print(true_counts_ambig_objects[key].row)
+        print(true_counts_ambig_objects[key].col); print()
+        print(counts_ambig_objects[key].row)
+        print(counts_ambig_objects[key].col); print('\n')
         assert_array_equal(
             true_counts_ambig_objects[key].row, counts_ambig_objects[key].row)
         assert_array_equal(

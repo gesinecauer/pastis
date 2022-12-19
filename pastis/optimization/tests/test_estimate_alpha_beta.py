@@ -41,7 +41,7 @@ def test_estimate_alpha_beta_haploid():
         verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
@@ -77,7 +77,7 @@ def test_estimate_alpha_beta_haploid_biased():
         bias=bias, verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e3 / sum([c.nnz for c in counts]))
+    assert obj < (-1e3 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=1)
 
@@ -110,7 +110,7 @@ def test_estimate_alpha_beta_diploid_unambig():
         verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
@@ -146,7 +146,7 @@ def test_estimate_alpha_beta_diploid_unambig_biased():
         bias=bias, verbose=False).values())[0]
 
     #assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=1)
 
@@ -180,7 +180,7 @@ def test_estimate_alpha_beta_diploid_ambig():
         verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
@@ -217,7 +217,7 @@ def test_estimate_alpha_beta_diploid_ambig_biased():
         bias=bias, verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
@@ -252,7 +252,7 @@ def test_estimate_alpha_beta_diploid_partially_ambig():
         verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
@@ -291,7 +291,7 @@ def test_estimate_alpha_beta_diploid_partially_ambig_biased():
         bias=bias, verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
@@ -343,6 +343,6 @@ def test_estimate_alpha_beta_diploid_combo():
         bias=bias, verbose=False).values())[0]
 
     assert converged
-    assert obj < (-1e4 / sum([c.nnz for c in counts]))
+    assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=3)

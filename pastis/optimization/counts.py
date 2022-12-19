@@ -707,7 +707,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
                 lengths=lengths, ploidy=ploidy, counts=counts[i],
                 multiscale_factor=multiscale_factor, beta=beta[i],
                 weight=input_weight[i])
-            if zero_counts_maps.nnz > 0:
+            if zero_counts_maps.nbins > 0:
                 counts_reformatted.append(zero_counts_maps)
 
     return counts_reformatted
@@ -775,6 +775,9 @@ def _idx_isin(idx1, idx2):
     return (idx1 == idx2[:, None]).all(axis=2).any(axis=0)
 
 
+
+
+
 class CountsMatrix(object):
     """Stores counts data, indices, beta, weight, distance matrix indices, etc.
 
@@ -782,7 +785,7 @@ class CountsMatrix(object):
 
     Parameters
     ----------
-    counts : list of CountsMatrix subclass instances
+    counts : array or coo_matrix
         Preprocessed counts data.
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
@@ -853,7 +856,7 @@ class CountsMatrix(object):
             self._add_counts_bins(counts)
 
     @property
-    def nnz(self):
+    def nbins(self):
         """Number of stored values in counts matrix, at the current resolution.
         """
         return self.row.size
@@ -978,6 +981,8 @@ class CountsMatrix(object):
 
         if self.sum() == 0:
             data = pd.DataFrame({'row': row_ambig, 'col': col_ambig})
+            print(np.stack([self.row, self.col, data.row, data.col], axis=1))
+            print(data)
             data = data.drop_duplicates().sort_values(['row', 'col'])
             data = data[data.row != data.col]
             data = data[~_idx_isin(
@@ -1198,6 +1203,8 @@ class SparseCountsMatrix(CountsMatrix):
             sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
         self.name = self.ambiguity
 
+        print('_empty_idx_fullres', find_beads_to_remove(counts, lengths=self.lengths, ploidy=self.ploidy))
+
         if self.multiscale_factor > 1:
             self._empty_idx_fullres = find_beads_to_remove(
                 counts, lengths=self.lengths, ploidy=self.ploidy)
@@ -1212,6 +1219,54 @@ class SparseCountsMatrix(CountsMatrix):
             self._data = self._data.astype(
                 sparse.sputils.get_index_dtype(maxval=self._data.max()))
         self._sum = self._data.sum()
+
+    def _get_zero_bins(self):
+        _empty_idx_lowres = find_beads_to_remove(
+            self, lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor)
+
+        if self.multiscale_factor == 1:
+            dummy = _check_counts_matrix(
+                np.ones(self.shape), lengths=self.lengths, ploidy=self.ploidy,
+                exclude_zeros=True)
+
+            # Exclude loci that have no data + bins with non-0 counts
+            idx_all_mask = ~_idx_isin(
+                (dummy.row, dummy.col), (self.row, self.col)) & ~np.isin(
+                dummy.row, _empty_idx_lowres) & ~np.isin(
+                dummy.col, _empty_idx_lowres)
+
+            zeros.row = dummy.row[idx_all_mask]
+            zeros.col = dummy.col[idx_all_mask]
+            zeros.mask = None
+        else:
+            idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy,
+                counts_fullres_shape=(self.lengths.sum(), self.lengths.sum()))
+            row_lowres_all, col_lowres_all = idx_lowres_all
+
+            # Low-res: Exclude loci that have no data + bins with non-0 counts
+            idx_all_mask = ~_idx_isin(
+                idx_lowres_all, (self.row, self.col)) & ~np.isin(
+                row_lowres_all, _empty_idx_lowres) & ~np.isin(
+                col_lowres_all, _empty_idx_lowres)
+            zeros.row = row_lowres_all[idx_all_mask]
+            zeros.col = col_lowres_all[idx_all_mask]
+            row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
+                self.multiscale_factor ** 2,
+                -1)[:, idx_all_mask] for x in idx_fullres_all]
+
+            # Full-res loci that have no data should be False in mask
+            zeros.mask = ~bad_idx_fullres & ~np.isin(
+                row_fullres, self._empty_idx_fullres) & ~np.isin(
+                col_fullres, self._empty_idx_fullres)
+
+        n = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor).sum()
+        zeros.row3d, zeros.col3d = _counts_indices_to_3d_indices(
+            (zeros.row, zeros.col, zeros.shape), nbeads_lowres=n * self.ploidy)
+
 
     @property
     def data(self):
