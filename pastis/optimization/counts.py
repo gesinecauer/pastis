@@ -800,12 +800,20 @@ class CountsMatrix(object):
 
     Attributes
     ----------
-    row : array of int
-        Row index array of the matrix (COO format).
-    col : array of int
-        Column index array of the matrix (COO format).
-    shape : tuple of int
-        Shape of the matrix.
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 indicates full resolution.
+    null : bool
+        Whether the counts data should be excluded from the poisson component
+        of the objective function. The indices of the counts are still used to
+        compute the constraint components of the objective function.
+    beta : float, optional
+        Scaling parameter that determines the size of the structure, relative to
+        each counts matrix.
     ambiguity : {"ambig", "pa", "ua"}
         The ambiguity level of the counts data. "ambig" indicates ambiguous,
         "pa" indicates partially ambiguous, and "ua" indicates unambiguous
@@ -813,43 +821,38 @@ class CountsMatrix(object):
     name : {"ambig", "pa", "ua", "ambig0", "pa0", "ua0"}
         For nonzero counts data, this is the same as `ambiguity`. Otherwise,
         it is `amiguity` + "0".
-    null : bool
-        Whether the counts data should be excluded from the poisson component
-        of the objective function. The indices of the counts are still used to
-        compute the constraint components of the objective function.
-    fullres_per_lowres_bead : None or array of int
-        For multiscale optimization, this is the number of full-res beads
-        corresponding to each low-res bead.
+    shape : tuple of int
+        Shape of the matrix.
+    row : array of int
+        Row index array of the matrix (COO format).
+    col : array of int
+        Column index array of the matrix (COO format).
     row3d : array of int
         Distance matrix rows associated with counts matrix rows.
     col3d : array of int
         Distance matrix columns associated with counts matrix columns.
-    multiscale_factor : int, optional
-        Factor by which to reduce the resolution. A value of 2 halves the
-        resolution. A value of 1 indicates full resolution.
-    ploidy : {1, 2}
-        Ploidy, 1 indicates haploid, 2 indicates diploid.
-    TODO
+    mask : array of bool
+        For multiscale: returns mask for full-res counts data
     """
 
     def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
                  beta=1, weight=1):
-        self.beta = float(beta)
-        self.weight = (1. if weight is None else weight)
-        if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
-            raise ValueError(f"Counts weight may not be {self.weight}.")
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.null = False  # Set to True to exclude counts data from primary obj
+        self.beta = float(beta)
+        self.weight = (1. if weight is None else weight)
+        if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
+            raise ValueError(f"Counts weight may not be {self.weight}.")
 
         self.ambiguity = None
         self.name = None
-        self._data = None
         self.shape = None
-        self.mask = None
         self.row, self.col = None, None
         self.row3d, self.col3d = None, None
+        self.mask = None
+        self._data = None
         self._sum = None
         self._empty_idx_fullres = None
         if counts is not None:
