@@ -77,8 +77,49 @@ def compare_counts_objects(counts, counts_true):
     assert counts_true == counts
 
 
-def test_add_counts_haploid():
-    pass
+@pytest.mark.parametrize(
+    "multiscale_factor,beta", [
+    (1, 1), (1, 0.1), (1, 0.01),
+    (2, 1), (2, 0.1), (2, 0.01),
+    (4, 1), (4, 0.1), (4, 0.01),
+    (8, 1), (8, 0.1), (8, 0.01)])
+def test_add_counts_haploid(multiscale_factor, beta):
+    lengths = np.array([10, 21])
+    ploidy = 1
+    seed = 42
+    alpha = -3
+    struct_nan1 = np.array([0, 1, 2, 3, 12, 15, 25])
+    struct_nan2 = np.array([0, 1, 3, 12, 25])
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true1 = random_state.rand(lengths.sum() * ploidy, 3)
+    counts1 = get_counts(
+        struct_true1, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=None, struct_nan=struct_nan1, random_state=random_state,
+        use_poisson=True).toarray()
+    struct_true2 = random_state.rand(lengths.sum() * ploidy, 3)
+    counts2 = get_counts(
+        struct_true2, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=None, struct_nan=struct_nan2, random_state=random_state,
+        use_poisson=True).toarray()
+
+    # "True" summed counts: sum before converting to CountsMatrix
+    true_counts_sum_object = counts_py._format_counts(
+        counts=counts1 + counts2, lengths=lengths, ploidy=ploidy,
+        beta=beta * 2, exclude_zeros=False,
+        multiscale_factor=multiscale_factor)[0]
+
+    # Sum after converting to CountsMatrix
+    counts_object1 = counts_py._format_counts(
+        counts=counts1, lengths=lengths, ploidy=ploidy, beta=beta,
+        exclude_zeros=False, multiscale_factor=multiscale_factor)[0]
+    counts_object2 = counts_py._format_counts(
+        counts=counts2, lengths=lengths, ploidy=ploidy, beta=beta,
+        exclude_zeros=False, multiscale_factor=multiscale_factor)[0]
+    counts_sum_object = sum([counts_object1, counts_object2])
+
+    compare_counts_objects(
+        counts_sum_object, counts_true=true_counts_sum_object)
 
 
 @pytest.mark.parametrize(
@@ -114,9 +155,9 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
     # "True" ambiguated counts: ambiguate before converting to CountsMatrix
     true_counts_ambig_arr_fullres = counts_py.ambiguate_counts(
         counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
-    true_counts_ambig_arr = decrease_counts_res(
-        true_counts_ambig_arr_fullres, multiscale_factor=multiscale_factor,
-        lengths=lengths, ploidy=ploidy).toarray()
+    # true_counts_ambig_arr = decrease_counts_res(
+    #     true_counts_ambig_arr_fullres, multiscale_factor=multiscale_factor,
+    #     lengths=lengths, ploidy=ploidy).toarray()
     beta_ambig = counts_py._ambiguate_beta(
         beta, counts=counts, lengths=lengths, ploidy=ploidy)
     true_counts_ambig_object = counts_py._format_counts(
@@ -130,15 +171,15 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
         exclude_zeros=False, multiscale_factor=multiscale_factor)
     counts_ambig_object = counts_py.ambiguate_counts(
         counts_objects, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
-    counts_ambig_arr = counts_ambig_object.tocoo().toarray()
-
-    # print_array_non0(counts); print()
-    # print_array_non0(true_counts_ambig_arr); print()
-    # print_array_non0(counts_ambig_arr); print('\n')
-    # print_array_non0(true_counts_ambig_object['ambig'].data); print()
-    # print_array_non0(counts_ambig_object['ambig'].data); print('\n')
-    # print_array_non0(counts_ambig_object['ambig0'].data); print('\n')
+    # counts_ambig_arr = counts_ambig_object.tocoo().toarray()
 
     compare_counts_objects(
         counts_ambig_object, counts_true=true_counts_ambig_object)
 
+
+def test_zero_bins():
+    pass  # FIXME make unit test for this too
+    # _, (row, col), shape, mask = _group_counts_multiscale(
+    #     counts, lengths=self.lengths, ploidy=self.ploidy,
+    #     multiscale_factor=self.multiscale_factor,
+    #     for_zero_counts_matrix=True)

@@ -758,6 +758,12 @@ class CountsMatrix(object):
             bins.append(self.bins_zero)
         return bins
 
+    @property
+    def nbins(self):
+        """Number of bins at the current resolution.
+        """
+        return sum([x.nbins for x in self.bins])
+
     def toarray(self):
         """Convert counts matrix to numpy array format."""
         lengths_lowres = decrease_lengths_res(
@@ -980,27 +986,38 @@ class CountsMatrix(object):
             second = second.ambiguate(copy=True)
         if first.shape != second.shape:
             raise ValueError("Mismatch in shape")
+        if first.ambiguity != second.ambiguity:
+            raise ValueError("Mismatch in ambiguity")
 
         combo = CountsMatrix(
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor,
-            beta=first.beta + second.beta, weight=first.weight + second.weight)
+            beta=first.beta + second.beta,
+            weight=(
+                first.weight * first.nbins + second.weight * second.nbins) / (
+                first.nbins + second.nbins))
+        combo.shape = first.shape
+        combo.ambiguity = first.ambiguity
         data = pd.DataFrame(np.concatenate(
-            [first.bins_nonzero.data.T, second.bins_nonzero.data.T], axis=1))
+            [first.bins_nonzero.data.T, second.bins_nonzero.data.T]))
         data['row'] = np.concatenate(
             [first.bins_nonzero.row, second.bins_nonzero.row])
         data['col'] = np.concatenate(
             [first.bins_nonzero.col, second.bins_nonzero.col])
         data = data.groupby(['row', 'col']).sum().reset_index()
-        nonzero_row = data.row
-        nonzero_col = data.col
+        nonzero_row = data.row.values
+        nonzero_col = data.col.values
         nonzero_data = data[[c for c in data.columns if c not in (
             'row', 'col')]].values.T
+        if self.multiscale_factor == 1:
+            nonzero_data = nonzero_data.ravel()
         if np.array_equal(nonzero_data, nonzero_data.round()):  # TODO Use Mozes function for this
             nonzero_data = nonzero_data.astype(
                 sparse.sputils.get_index_dtype(maxval=nonzero_data.max()))
 
-        if self.multiscale_factor > 1:
+        if self.multiscale_factor == 1:
+            nonzero_mask = None
+        else:
             # Update _empty_idx_fullres
             tmp_unique, tmp_counts = np.unique(
                 np.append(first._empty_idx_fullres,
@@ -1023,22 +1040,13 @@ class CountsMatrix(object):
 
             # mask=False for full-res loci that have no data in any row/col
             nonzero_mask = ~bad_idx_fullres & ~np.isin(
-                row_fullres, _empty_idx_fullres) & ~np.isin(
-                col_fullres, _empty_idx_fullres)
-
-        # if self.multiscale_factor > 1:
-        #     mask = pd.DataFrame(
-        #         np.concatenate([first.bins_nonzero.mask.T, second.bins_nonzero.mask.T], axis=1))
-        #     mask['row'] = np.concatenate([first.bins_nonzero.row, second.row])
-        #     mask['col'] = np.concatenate([first.bins_nonzero.col, second.col])
-        #     mask = mask.groupby(['row', 'col']).sum().astype(bool).reset_index()
-        #     nonzero_mask = mask[[c for c in data.columns if c not in (
-        #         'row', 'col')]].values.T
+                row_fullres, combo._empty_idx_fullres) & ~np.isin(
+                col_fullres, combo._empty_idx_fullres)
 
         combo.bins_nonzero = CountsBins(
             meta=combo, row=nonzero_row, col=nonzero_col, data=nonzero_data,
             mask=nonzero_mask)
-        if self.bins_zero is not None:
+        if self.bins_zero is not None or other.bins_zero is not None:
             combo._create_bins_zero()
 
         return combo
@@ -1176,7 +1184,7 @@ class CountsBins(object):
 
     @property
     def nbins(self):
-        """Number of stored values in counts matrix, at the current resolution.
+        """Number of bins at the current resolution.
         """
         return self.row.size
 
@@ -1275,26 +1283,3 @@ class CountsBins(object):
                 x = tuple(x)
             __dict__.append(x)
         return hash(tuple(sorted(__dict__)))
-
-
-class ZeroCountsMatrix():
-    """Stores data for counts bins with 0 reads.
-    """
-
-    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
-                 beta=1, weight=1):
-        pass
-
-    def _add_counts_bins(self, counts):
-        self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
-        self.name = f'{self.ambiguity}0'
-
-        _, idx, self.shape, self.mask = _group_counts_multiscale(
-            counts, lengths=self.lengths, ploidy=self.ploidy,
-            multiscale_factor=self.multiscale_factor,
-            for_zero_counts_matrix=True)
-        self.row, self.col = idx
-        self.row3d, self.col3d = idx3d
-        self._data = None
-        self._sum = 0

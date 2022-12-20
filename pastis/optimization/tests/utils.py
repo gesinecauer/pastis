@@ -21,6 +21,8 @@ def get_new_bead(random_state, distance=1., noise=0.1, prev_bead=None):
 
 def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
                struct_nan=None, random_state=None, use_poisson=False):
+    if ambiguity is None:
+        ambiguity = 'ua'
     if ambiguity.lower() not in ('ua', 'ambig', 'pa'):
         raise ValueError(f"Ambiguity not understood: {ambiguity}")
     if use_poisson and random_state is None:
