@@ -1,7 +1,6 @@
 import numpy as np
 from scipy import optimize
 import warnings
-from sklearn.utils import check_random_state
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -10,7 +9,6 @@ from jax import grad
 
 
 from .poisson import _format_X, objective, get_gamma_moments
-from .counts import _update_betas_in_counts_matrices
 from .multiscale_optimization import decrease_lengths_res
 
 
@@ -105,15 +103,16 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
         mixture_coefs = [1.] * len(structures)
 
     # Estimate beta for each type of counts (ambig, pa, ua)
-    counts_sum = {c.ambiguity: c.sum() for c in counts if c.sum() > 0}
+    counts_sum = {c.ambiguity: c.sum() for c in counts}
     lambda_sum = {c.ambiguity: 0. for c in counts}
 
-    for counts_maps in counts:
-        lambda_sum[counts_maps.ambiguity] += _estimate_beta_single(
-            structures, counts_maps, alpha=alpha, lengths=lengths,
-            ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances,
-            epsilon=epsilon, mixture_coefs=mixture_coefs)
+    for i in range(len(counts)):
+        for counts_bins in counts[i].bins:
+            lambda_sum[counts[i].ambiguity] += _estimate_beta_single(
+                structures, counts_bins, alpha=alpha, lengths=lengths,
+                ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
+                multiscale_variances=multiscale_variances,
+                epsilon=epsilon, mixture_coefs=mixture_coefs)
 
     beta = {x: counts_sum[x] / lambda_sum[x] for x in counts_sum.keys()}
     for ambiguity, beta_maps in beta.items():
@@ -198,7 +197,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
         mixture_coefs=mixture_coefs)
-    counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
+    counts = [c.update_beta(beta) for c in counts]
 
     new_obj, obj_logs, structures, alpha, epsilon = objective_alpha(
         alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy, bias=bias,
@@ -229,7 +228,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
         mixture_coefs=mixture_coefs)
-    counts = _update_betas_in_counts_matrices(counts=counts, beta=new_beta)
+    counts = [c.update_beta(beta) for c in counts]
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -318,8 +317,6 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
-    if 'no0alpha' in mods:  # TODO
-        counts = [c for c in counts if c.sum() != 0]
     lengths = np.array(lengths)
     if bias is None:
         if multiscale_reform:
@@ -331,7 +328,6 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     # Initialize alpha if necessary
     if random_state is None:
         random_state = np.random.RandomState(seed=0)
-    random_state = check_random_state(random_state)
     if alpha_init is None:
         alpha_init = random_state.uniform(low=-4, high=-1)
 

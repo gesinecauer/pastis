@@ -386,8 +386,8 @@ class BeadChainConnectivity2022(Constraint):
 
         # Beta
         beta = _ambiguate_beta(
-            [c.beta for c in counts if c.sum() != 0], counts=counts,
-            lengths=self.lengths, ploidy=self.ploidy)
+            [c.beta for c in counts], counts=counts, lengths=self.lengths,
+            ploidy=self.ploidy)
 
         # Get indices of neighboring beads
         row_nghbr = _neighboring_bead_indices(
@@ -420,7 +420,7 @@ class BeadChainConnectivity2022(Constraint):
                 raise NotImplementedError(
                     "Need to include zero counts in ambiguated and also get counts_nghbr_mask")
 
-            counts_ambig = [c for c in counts if c.sum() != 0][0]  # FIXME
+            counts_ambig = counts[0]  # FIXME
             # counts_nghbr = _counts_near_diag(
             #     counts_ambig, self.lengths, ploidy=self.ploidy, nbins=1,
             #     exclude_zeros=True)
@@ -560,8 +560,8 @@ class HomologSeparating2022(Constraint):
             return self._var
 
         beta = _ambiguate_beta(
-            [c.beta for c in counts if c.sum() != 0], counts=counts,
-            lengths=self.lengths, ploidy=self.ploidy)
+            [c.beta for c in counts], counts=counts, lengths=self.lengths,
+            ploidy=self.ploidy)
         n = self.lengths_lowres.sum()
         mask_interchrom = np.invert(_intra_mask(
             (n, n), lengths_at_res=self.lengths_lowres))

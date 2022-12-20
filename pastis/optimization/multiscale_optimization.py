@@ -256,14 +256,12 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         TODO
     idx : tuple of arrays
         TODO
-    idx3d : tuple of arrays
-        TODO
     shape_lowres : tuple of int
         TODO
     mask : array
         TODO
     """
-    from .counts import _counts_indices_to_3d_indices, _check_counts_matrix
+    from .counts import _check_counts_matrix
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     counts = _check_counts_matrix(
@@ -279,11 +277,11 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     counts_coo = sparse.coo_matrix(counts_coo)
 
     if multiscale_factor > 1:
-        counts_lowres, rows_grp, cols_grp = decrease_counts_res(
+        counts_lowres, row_fullres, col_fullres = decrease_counts_res(
             counts_coo, multiscale_factor=multiscale_factor,
-            lengths=lengths, ploidy=ploidy, return_indices=True)  # TODO use _get_fullres_counts_index instead, right?
+            lengths=lengths, ploidy=ploidy, return_indices=True)
 
-        data_grouped = counts[rows_grp, cols_grp].reshape(
+        data_grouped = counts[row_fullres, col_fullres].reshape(
             multiscale_factor ** 2, -1)
 
         # If every single full-res bin in a group is either NaN or zero,
@@ -310,31 +308,19 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
             print(tmp_row, tmp_col)
             tmp_mask = np.isin(counts_lowres.row, tmp_row) & np.isin(counts_lowres.col, tmp_col)
             print(data_grouped[:, tmp_mask])
-
-            # print(f'row={counts_lowres.row[8]}, col={counts_lowres.col[8]}')
-            # print(data_grouped[:, 8])
-            # if max(counts.shape) > lengths.sum():
-            #     tmp_row = counts_lowres.row[8] + lengths_lowres.sum()
-            #     tmp_col = counts_lowres.col[8]
-            #     tmp_mask = (counts_lowres.row == tmp_row) & (counts_lowres.col == tmp_col)
-            #     print(data_grouped[:, tmp_mask])
             print()
 
         idx = counts_lowres.row, counts_lowres.col
-        idx3d = _counts_indices_to_3d_indices(
-            counts_lowres, nbeads_lowres=lengths_lowres.sum() * ploidy)
         shape_lowres = counts_lowres.shape
         mask = ~np.isnan(data_grouped)
         data_grouped[~mask] = 0
     else:
         idx = counts_coo.row, counts_coo.col
-        idx3d = _counts_indices_to_3d_indices(
-            counts_coo, nbeads_lowres=lengths_lowres.sum() * ploidy)
         data_grouped = counts_coo.data
         shape_lowres = counts_coo.shape
         mask = None
 
-    return data_grouped, idx, idx3d, shape_lowres, mask
+    return data_grouped, idx, shape_lowres, mask
 
 
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,

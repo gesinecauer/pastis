@@ -49,10 +49,12 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None, mean=True,
     else:
         fxn = ag_np.sum
     if data_per_bin is None:
-        if mask is None:
+        if mask is not None:
+            data_per_bin = mask.sum(axis=0).reshape(1, -1)
+        elif data is not None:
             data_per_bin = data.shape[0]
         else:
-            data_per_bin = mask.sum(axis=0).reshape(1, -1)
+            raise ValueError("Must input data_per_bin")
     if np.all(bias_per_bin == 1):
         bias_per_bin = None
 
@@ -65,7 +67,7 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None, mean=True,
     else:
         tmp1 = fxn(_masksum(-k * log1p_theta, mask=mask, axis=0) / data_per_bin)
 
-    if data.sum() == 0:
+    if data is None or data.sum() == 0:
         log_likelihood = tmp1
     else:
         k_plus_1 = k + 1
@@ -244,11 +246,11 @@ def poisson_nll(data, lambda_pois, mask=None, data_per_bin=1, mean=True):
     data = ag_np.asarray(data)
 
     obj = fxn(lambda_pois * data_per_bin)
-    non0 = (data != 0)
-    if np.any(non0):
-        if data.ndim > lambda_pois.ndim:
-            data = _masksum(data, mask=mask, axis=0)
-            # non0 = (data != 0)
-        # obj = obj - fxn(data[non0] * ag_np.log(lambda_pois[non0])) # TODO implement
-        obj = obj - fxn(data * ag_np.log(lambda_pois))
+
+    if data is None or data.sum() == 0:
+        return obj
+
+    if data.ndim > lambda_pois.ndim:
+        data = _masksum(data, mask=mask, axis=0)
+    obj = obj - fxn(data * ag_np.log(lambda_pois))
     return obj

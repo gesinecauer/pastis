@@ -15,7 +15,6 @@ from timeit import default_timer as timer
 from datetime import timedelta
 
 from .multiscale_optimization import decrease_lengths_res
-from .counts import _update_betas_in_counts_matrices
 from .utils_poisson import _print_code_header
 from .polynomial import _approx_ln_f
 from .likelihoods import _masksum, gamma_poisson_nll, poisson_nll
@@ -371,8 +370,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
     if lengths is None:
-        lengths = np.array([min([min(counts_maps.shape)
-                                 for counts_maps in counts])])
+        lengths = np.array([min([min(c.shape) for c in counts])])
     lengths = np.asarray(lengths)
     if bias is None:
         if multiscale_reform:
@@ -428,18 +426,19 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     obj_poisson = {}
     obj_poisson_sum = 0.
 
-    for counts_maps in counts:
-        obj_counts = _obj_single(
-            structures=structures, counts=counts_maps, alpha=alpha,
-            lengths=lengths, ploidy=ploidy, bias=bias,
-            multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances, epsilon=epsilon_tmp,
-            stretch_fullres_beads=stretch_fullres_beads,
-            mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
-            inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
-            mods=mods)
-        obj_poisson[f"obj_{counts_maps.name}"] = obj_counts
-        obj_poisson_sum = obj_poisson_sum + obj_counts * counts_maps.nbins
+    for i in range(len(counts)):
+        for counts_bins in counts[i].bins:
+            obj_counts = _obj_single(
+                structures=structures, counts=counts_bins, alpha=alpha,
+                lengths=lengths, ploidy=ploidy, bias=bias,
+                multiscale_factor=multiscale_factor,
+                multiscale_variances=multiscale_variances, epsilon=epsilon_tmp,
+                stretch_fullres_beads=stretch_fullres_beads,
+                mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
+                inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
+                mods=mods)
+            obj_poisson[f"obj_{counts_bins.name}"] = obj_counts
+            obj_poisson_sum = obj_poisson_sum + obj_counts * counts_bins.nbins
 
     # Take weighted mean of poisson/negbinom obj terms
     obj_poisson_mean = obj_poisson_sum / sum([c.nbins for c in counts])
@@ -882,12 +881,9 @@ class PastisPM(object):
 
         if self.null:
             print('GENERATING NULL STRUCTURE', flush=True)
-            # Dummy counts need to be inputted because we need to use the counts
-            # in calculation of the constraints
-            # Null counts need not be phased, only ambiguated data is used by
-            # constraints
-            self.counts = sum(self.counts).ambiguate()
-            self.counts.null = True
+            # Exclude the counts data from the primary objective function.
+            # Counts are still used in the calculation of the constraints.
+            self.counts = sum(self.counts).as_null()
 
         self._clear()
 
@@ -897,7 +893,7 @@ class PastisPM(object):
             self.alpha_ = self.alpha
         else:
             self.alpha_ = self.alpha_init
-        self.beta_ = [c.beta for c in self.counts if c.sum() != 0]
+        self.beta_ = [c.beta for c in self.counts]
         self.epsilon_ = self.epsilon
         self.obj_ = None
         self.alpha_obj_ = None
@@ -929,8 +925,7 @@ class PastisPM(object):
             mixture_coefs=self.mixture_coefs,
             reorienter=self.reorienter, verbose=verbose)
         if update_counts:
-            self.counts = _update_betas_in_counts_matrices(
-                counts=self.counts, beta=new_beta)
+            self.counts = [c.update_beta(beta) for c in self.counts]
         return list(new_beta.values())
 
     def _fit_structure(self, alpha_loop=None):

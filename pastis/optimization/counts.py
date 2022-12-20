@@ -43,45 +43,20 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
         counts = [counts]
 
     if all([isinstance(c, CountsMatrix) for c in counts]):
-        multiscale_factor = set([c.multiscale_factor for c in counts])
-        if len(multiscale_factor) > 1:
-            raise ValueError("Mismatch in resolution of counts matrices")
-        multiscale_factor = multiscale_factor.pop()
-
-        if len(set([c.ambiguity for c in counts])) == 1 and (ploidy == 1 or set(
-                [c.shape for c in counts]) == {(n, n)}):
-            if exclude_zeros:
-                return [c for c in counts if c.sum() > 0]
-            else:
-                return counts
-
-        scm_ambig = {c.ambiguity: c._ambiguate() for c in counts if c.sum() > 0}
+        counts_ambig = sum(counts).ambiguate()
         if exclude_zeros:
-            return [sum(scm_ambig.values())]
-
-        zcm_ambig = {c.ambiguity: c._ambiguate(
-            non0_ambig=scm_ambig[c.ambiguity]) for c in counts if (
-            c.sum() == 0)}
-        scm_ambig = sum(scm_ambig.values())
-        zcm_ambig = sum([c for c in zcm_ambig.values() if c is not None])
-        if isinstance(zcm_ambig, int) and zcm_ambig == 0:
-            return [scm_ambig]
-        else:
-            return [scm_ambig, zcm_ambig]
-
-    counts = [c for c in counts if c.sum() != 0]
+            counts_ambig.bins_zero = None
+        elif counts_ambig.bins_zero is None:
+            counts_ambig._create_bins_zero()
+        return counts_ambig
 
     if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
         c = counts[0]
-        # if not isinstance(c, np.ndarray):  # TODO huh? Why was this here?
-        #     c = c.toarray()
         return _check_counts_matrix(
             c, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
 
-    output = np.zeros((n, n))
+    counts_ambig = np.zeros((n, n))
     for c in counts:
-        # if isinstance(c, ZeroCountsMatrix):  # TODO remove
-        #     continue
         counts_sum = c.sum()
         counts_sum = counts_sum if not np.isnan(counts_sum) else np.nansum(c)
         if np.isnan(counts_sum) or counts_sum == 0:
@@ -101,11 +76,12 @@ def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
         else:
             c_ambig = np.nansum(
                 [c[:n, :n], c[:n, n:], c[:n, n:].T, c[n:, n:]], axis=0)
-        output[~np.isnan(c_ambig)] += c_ambig[~np.isnan(c_ambig)]
+        counts_ambig[~np.isnan(c_ambig)] += c_ambig[~np.isnan(c_ambig)]
 
-    output = np.triu(output, 1)
+    counts_ambig = np.triu(counts_ambig, 1)
     return _check_counts_matrix(
-        output, lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros)
+        counts_ambig, lengths=lengths, ploidy=ploidy,
+        exclude_zeros=exclude_zeros)
 
 
 def _ambiguate_beta(beta, counts, lengths, ploidy):
@@ -121,8 +97,6 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
         counts = [counts]
     if not isinstance(beta, list):
         beta = [beta]
-    counts = [c for c in counts if (
-        isinstance(c, np.ndarray) and np.nansum(c) != 0) or c.sum() != 0]
     if len(counts) != len(beta):
         raise ValueError(f"Inconsistent number of betas ({len(beta)}) and"
                          f" counts matrices ({len(counts)}).")
@@ -165,75 +139,6 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
         else:
             beta.append(beta_ambig * counts_sum / total_counts / 2)  # FIXME double check, make unit tests
     return beta
-
-
-def _included_dis_indices(counts, lengths, ploidy, multiscale_factor):
-    """Return row & col of distance matrix bins associated with counts data.
-    """
-
-    if not isinstance(counts, list):
-        counts = [counts]
-    if len(counts) == 0:
-        raise ValueError("Counts is an empty list.")
-    if all([isinstance(c, CountsMatrix) for c in counts]):
-        # If counts are already formatted, they may contain multiple resolutions
-        counts = [c for c in counts if c.multiscale_factor == multiscale_factor]
-    if len(counts) == 0:
-        raise ValueError(
-            "Resolution of counts is not consistent with lengths at"
-            f" multiscale_factor={multiscale_factor}.")
-
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-    nbeads_lowres = lengths_lowres.sum() * ploidy
-
-    row = []
-    col = []
-    for i in range(len(counts)):
-        if max(counts[i].shape) not in (nbeads_lowres, nbeads_lowres / ploidy):
-            raise ValueError(
-                "Resolution of counts is not consistent with lengths at"
-                f" multiscale_factor={multiscale_factor}. Counts shape is ("
-                f"{', '.join(map(str, counts[i].shape))}).")
-        if isinstance(counts[i], CountsMatrix):
-            row_i = counts[i].row3d
-            col_i = counts[i].col3d
-        else:
-            row_i, col_i = _counts_indices_to_3d_indices(
-                counts[i], nbeads_lowres=nbeads_lowres)
-        row.append(np.minimum(row_i, col_i))
-        col.append(np.maximum(row_i, col_i))
-
-    if len(counts) == 1:
-        return row[0], col[0]
-
-    row = np.atleast_2d(np.concatenate(row))
-    col = np.atleast_2d(np.concatenate(col))
-    idx = np.unique(np.concatenate([row, col], axis=0), axis=1)
-    row = idx[0]
-    col = idx[1]
-
-    return row, col
-
-
-def _create_unambig_dummy_counts(counts, lengths, ploidy, multiscale_factor=1):
-    """Create sparse matrix of 1's with same row and col as distance matrix.
-    """
-
-    rows, cols = _included_dis_indices(
-        counts, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor)
-
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
-    nbeads = lengths_lowres.sum() * ploidy
-
-    dummy_counts = sparse.coo_matrix(
-        (np.ones_like(rows), (rows, cols)), shape=(nbeads, nbeads)).toarray()
-    dummy_counts = sparse.coo_matrix(np.triu(
-        np.maximum(dummy_counts + dummy_counts.T, 1), 1))
-
-    return dummy_counts
 
 
 def _check_counts_matrix(counts, lengths, ploidy, exclude_zeros=False,
@@ -395,7 +300,6 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     """
 
     # FIXME what about if betas are different?
-    # if all([isinstance(c, CountsMatrix) for c in counts]):
 
     if simple_diploid:
         if ploidy != 2:
@@ -695,20 +599,16 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
     else:
         input_weight = [1.] * len(counts)
 
-    # Reformat counts as SparseCountsMatrix or ZeroCountsMatrix instance
+    # Reformat counts as CountsMatrix instance
     counts_reformatted = []
     for i in range(len(counts)):
-        counts_reformatted.append(SparseCountsMatrix(
+        counts_matrix = CountsMatrix(
             lengths=lengths, ploidy=ploidy, counts=counts[i],
             multiscale_factor=multiscale_factor, beta=beta[i],
-            weight=input_weight[i]))
-        if not exclude_zeros and (counts[i] == 0).sum() > 0:
-            zero_counts_maps = ZeroCountsMatrix(
-                lengths=lengths, ploidy=ploidy, counts=counts[i],
-                multiscale_factor=multiscale_factor, beta=beta[i],
-                weight=input_weight[i])
-            if zero_counts_maps.nbins > 0:
-                counts_reformatted.append(zero_counts_maps)
+            weight=input_weight[i])
+        if not exclude_zeros:
+            counts_matrix._create_bins_zero()
+        counts_reformatted.append(counts_matrix)
 
     return counts_reformatted
 
@@ -755,15 +655,6 @@ def _counts_indices_to_3d_indices(data, nbeads_lowres):
     return row3d, col3d
 
 
-def _update_betas_in_counts_matrices(counts, beta):
-    """Updates betas in list of CountsMatrix instances with provided values.
-    """
-
-    for counts_maps in counts:
-        counts_maps.beta = beta[counts_maps.ambiguity]
-    return counts
-
-
 def _idx_isin(idx1, idx2):
     """Whether each (row, col) pair in idx1 (row1, col1) is in idx2 (row2, col2)
     """
@@ -775,10 +666,432 @@ def _idx_isin(idx1, idx2):
     return (idx1 == idx2[:, None]).all(axis=2).any(axis=0)
 
 
-
-
-
 class CountsMatrix(object):
+    """Stores counts data, indices, beta, weight, distance matrix indices, etc.
+
+    Counts data and information associated with this counts matrix.
+
+    Parameters
+    ----------
+    counts : array or coo_matrix
+        Preprocessed counts data.
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 indicates full resolution.
+    beta : float, optional
+        Scaling parameter that determines the size of the structure, relative to
+        each counts matrix.
+
+    Attributes
+    ----------
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 indicates full resolution.
+    null : bool
+        Whether the counts data should be excluded from the primary objective
+        function. Counts are still used in the calculation of the constraints.
+    beta : float, optional
+        Scaling parameter that determines the size of the structure, relative to
+        each counts matrix.
+    ambiguity : {"ambig", "pa", "ua"}
+        The ambiguity level of the counts data. "ambig" indicates ambiguous,
+        "pa" indicates partially ambiguous, and "ua" indicates unambiguous
+        or haploid.
+    shape : tuple of int
+        Shape of the matrix.
+    bins_nonzero : CountsBins instance
+        Data for counts bins with >0 counts
+    bins_zero : CountsBins instance or None
+        Data for counts bins with 0 counts
+    bins : list
+        Contains bins_nonzero and bins_zero
+    """
+
+    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
+                 beta=1, weight=1):
+        self.lengths = lengths
+        self.ploidy = ploidy
+        self.multiscale_factor = multiscale_factor
+        self.null = False  # If True, exclude counts data from primary obj
+        self.beta = float(beta)
+        self.weight = (1. if weight is None else float(weight))
+        if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
+            raise ValueError(f"Counts weight may not be {self.weight}.")
+
+        self.ambiguity = None
+        self.shape = None
+        self._empty_idx_fullres = None  # Full-res loci without any data
+        self.bins_nonzero = None
+        self.bins_zero = None
+
+        if counts is not None:
+            self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
+                sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
+
+            if self.multiscale_factor > 1:
+                self._empty_idx_fullres = find_beads_to_remove(
+                    counts, lengths=self.lengths, ploidy=self.ploidy)
+
+            data, (row, col), self.shape, mask = _group_counts_multiscale(
+                counts, lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor)
+            if np.array_equal(data, data.round()):  # TODO Use Mozes function for this
+                data = data.astype(
+                    sparse.sputils.get_index_dtype(maxval=data.max()))
+            self.bins_nonzero = CountsBins(
+                meta=self, row=row, col=col, data=data, mask=mask)
+
+    @property
+    def bins(self):
+        bins = []
+        if self.bins_nonzero is not None:
+            bins.append(self.bins_nonzero)
+        if self.bins_zero is not None:
+            bins.append(self.bins_zero)
+        return bins
+
+    def toarray(self):
+        """Convert counts matrix to numpy array format."""
+        lengths_lowres = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor)
+        return _check_counts_matrix(
+            self.tocoo().toarray(), lengths=lengths_lowres, ploidy=self.ploidy,
+            exclude_zeros=False)
+
+    def tocoo(self):
+        """Convert counts matrix to scipy sparse COO format."""
+        data = self.bins_nonzero.data
+        if len(data.shape) > 1:
+            data = data.sum(axis=0)
+        coo = sparse.coo_matrix(
+            (data, (self.bins_nonzero.row, self.bins_nonzero.col)),
+            shape=self.shape)
+        return coo
+
+    def sum(self, axis=None, dtype=None, out=None):
+        """Sum of current counts matrix."""
+        if (not isinstance(axis, int)) and (
+                axis is None or set(list(axis)) == {0, 1}):
+            return self.bins_nonzero._sum
+        return self.tocoo().sum(axis=axis, dtype=dtype, out=out)
+
+    def copy(self):  # XXX
+        """Copy counts matrix."""
+        return copy.deepcopy(self)
+
+    def update_beta(self, beta):
+        """Update beta."""
+        if isinstance(beta, dict):
+            beta = beta[self.ambiguity]
+        self.beta = beta
+        if self.bins_nonzero is not None:
+            self.bins_nonzero.beta = self.beta
+        if self.bins_zero is not None:
+            self.bins_zero.beta = self.beta
+        return self
+
+    def as_null(self):
+        """
+        Exclude the counts data from the primary objective function.
+
+        Counts are still used in the calculation of the constraints.
+        """
+        self = self.ambiguate(copy=False)  # Null counts need not be phased
+        self.null = True
+        if self.bins_nonzero is not None:
+            self.bins_nonzero.null = True
+        if self.bins_zero is not None:
+            self.bins_zero.null = True
+        return self
+
+    def _create_bins_zero(self):
+        _empty_idx_lowres = find_beads_to_remove(
+            self, lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor)
+
+        if self.multiscale_factor == 1:
+            zero_mask = None
+            dummy = _check_counts_matrix(
+                np.ones(self.shape), lengths=self.lengths, ploidy=self.ploidy,
+                exclude_zeros=True)
+
+            # Exclude low-res bins that contain any nonzero counts
+            # Exclude low-res loci that have no data in any low-res row/col bin
+            idx_all_mask = ~_idx_isin(
+                (dummy.row, dummy.col),
+                (self.bins_nonzero.row, self.bins_nonzero.col)) & ~np.isin(
+                dummy.row, _empty_idx_lowres) & ~np.isin(
+                dummy.col, _empty_idx_lowres)
+            zero_row = dummy.row[idx_all_mask]
+            zero_col = dummy.col[idx_all_mask]
+        else:
+            idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy,
+                counts_fullres_shape=(self.lengths.sum(), self.lengths.sum()))
+            row_lowres_all, col_lowres_all = idx_lowres_all
+
+            # Exclude low-res bins that contain any nonzero counts
+            # Exclude low-res loci that have no data in any low-res row/col bin
+            idx_all_mask = ~_idx_isin(
+                idx_lowres_all,
+                (self.bins_nonzero.row, self.bins_nonzero.col)) & ~np.isin(
+                row_lowres_all, _empty_idx_lowres) & ~np.isin(
+                col_lowres_all, _empty_idx_lowres)
+            zero_row = row_lowres_all[idx_all_mask]
+            zero_col = col_lowres_all[idx_all_mask]
+            row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
+                self.multiscale_factor ** 2,
+                -1)[:, idx_all_mask] for x in idx_fullres_all]
+
+            # mask=False for full-res loci that have no data in any row/col
+            zero_mask = ~bad_idx_fullres & ~np.isin(
+                row_fullres, self._empty_idx_fullres) & ~np.isin(
+                col_fullres, self._empty_idx_fullres)
+
+        if zero_row.size == 0:
+            self.bins_zero = None
+        else:
+            self.bins_zero = CountsBins(
+                meta=self, row=zero_row, col=zero_col, mask=zero_mask)
+
+    def ambiguate(self, copy=True):
+        """Convert diploid counts to ambiguous.
+
+        If  unambiguous or partially ambiguous diploid, convert to ambiguous. If
+        haploid or ambiguous diploid, return current counts matrix.
+
+        Returns
+        -------
+        CountsMatrix object
+            Ambiguated contact counts matrix.
+        """
+
+        if self.ploidy == 1 or self.ambiguity == 'ambig':
+            if copy:
+                return self.copy()
+            else:
+                return self
+
+        lengths_lowres = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor)
+        n = lengths_lowres.sum()
+
+        if copy:
+            ambig = CountsMatrix(
+                lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor, beta=self.beta,
+                weight=self.weight)
+        else:
+            ambig = self
+        if self.ambiguity == 'pa':
+            ambig.beta *= 2
+        ambig.shape = (n, n)
+        ambig.ambiguity = 'ambig'
+
+        row = self.bins_nonzero.row.copy()
+        col = self.bins_nonzero.col.copy()
+        row[row >= n] -= n
+        col[col >= n] -= n
+        row_ambig = np.minimum(row, col)
+        col_ambig = np.maximum(row, col)
+        swap = row != row_ambig
+
+        data = self.bins_nonzero.data.T
+        if self.multiscale_factor > 1:
+            data[swap] = data[swap].reshape(
+                swap.sum(), self.multiscale_factor,
+                self.multiscale_factor).reshape(swap.sum(), -1, order='f')
+        data = pd.DataFrame(data)
+        data['row'] = row_ambig
+        data['col'] = col_ambig
+        data = data.groupby(['row', 'col']).sum().reset_index()
+        data = data[data.row != data.col]
+        nonzero_data = data[[c for c in data.columns if c not in (
+            'row', 'col')]].values.T
+        if self.multiscale_factor == 1:
+            nonzero_data = nonzero_data.ravel()
+        if np.array_equal(nonzero_data, nonzero_data.round()):  # TODO Use Mozes function for this
+            nonzero_data = nonzero_data.astype(
+                sparse.sputils.get_index_dtype(maxval=nonzero_data.max()))
+        nonzero_row = data.row.values
+        nonzero_col = data.col.values
+
+        if self.multiscale_factor == 1:
+            nonzero_mask = None
+        else:
+            # Update _empty_idx_fullres
+            tmp_unique, tmp_counts = np.unique(
+                np.append(self._empty_idx_fullres,
+                          self._empty_idx_fullres - self.lengths.sum()),
+                return_counts=True)
+            _empty_idx_fullres = tmp_unique[tmp_counts == 2]
+            ambig._empty_idx_fullres = np.append(
+                _empty_idx_fullres, _empty_idx_fullres + self.lengths.sum())
+
+            idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
+                multiscale_factor=self.multiscale_factor,
+                lengths=self.lengths, ploidy=self.ploidy,
+                counts_fullres_shape=(
+                    self.lengths.sum(), self.lengths.sum()))
+
+            # Only include low-res bins associated for relevant row & col
+            idx_all_mask = _idx_isin(
+                idx_lowres_all, data[['row', 'col']].values)
+            row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
+                self.multiscale_factor ** 2,
+                -1)[:, idx_all_mask] for x in idx_fullres_all]
+
+            # mask=False for full-res loci that have no data in any row/col
+            nonzero_mask = ~bad_idx_fullres & ~np.isin(
+                row_fullres, _empty_idx_fullres) & ~np.isin(
+                col_fullres, _empty_idx_fullres)
+
+        ambig.bins_nonzero = CountsBins(
+            meta=ambig, row=nonzero_row, col=nonzero_col, data=nonzero_data,
+            mask=nonzero_mask)
+        if self.bins_zero is not None:
+            ambig._create_bins_zero()
+
+        return ambig
+
+    def __add__(self, other):
+        if self.ploidy != other.ploidy:
+            raise ValueError("Mismatch in ploidy")
+        if self.multiscale_factor != other.multiscale_factor:
+            raise ValueError("Mismatch in multiscale_factor")
+        if not np.array_equal(self.lengths, other.lengths):
+            raise ValueError("Mismatch in number of beads per chromosome")
+        if self.null != other.null:
+            raise ValueError("Mismatch in null attribute")
+
+        first = self
+        second = other
+        if self.shape != other.shape and self.ploidy == 2:
+            first = first.ambiguate(copy=True)
+            second = second.ambiguate(copy=True)
+        if first.shape != second.shape:
+            raise ValueError("Mismatch in shape")
+
+        combo = CountsMatrix(
+            lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor,
+            beta=first.beta + second.beta, weight=first.weight + second.weight)
+        data = pd.DataFrame(np.concatenate(
+            [first.bins_nonzero.data.T, second.bins_nonzero.data.T], axis=1))
+        data['row'] = np.concatenate(
+            [first.bins_nonzero.row, second.bins_nonzero.row])
+        data['col'] = np.concatenate(
+            [first.bins_nonzero.col, second.bins_nonzero.col])
+        data = data.groupby(['row', 'col']).sum().reset_index()
+        nonzero_row = data.row
+        nonzero_col = data.col
+        nonzero_data = data[[c for c in data.columns if c not in (
+            'row', 'col')]].values.T
+        if np.array_equal(nonzero_data, nonzero_data.round()):  # TODO Use Mozes function for this
+            nonzero_data = nonzero_data.astype(
+                sparse.sputils.get_index_dtype(maxval=nonzero_data.max()))
+
+        if self.multiscale_factor > 1:
+            # Update _empty_idx_fullres
+            tmp_unique, tmp_counts = np.unique(
+                np.append(first._empty_idx_fullres,
+                          second._empty_idx_fullres),
+                return_counts=True)
+            combo._empty_idx_fullres = tmp_unique[tmp_counts == 2]
+
+            idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
+                multiscale_factor=self.multiscale_factor,
+                lengths=self.lengths, ploidy=self.ploidy,
+                counts_fullres_shape=(
+                    self.lengths.sum(), self.lengths.sum()))
+
+            # Only include low-res bins associated for relevant row & col
+            idx_all_mask = _idx_isin(
+                idx_lowres_all, data[['row', 'col']].values)
+            row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
+                self.multiscale_factor ** 2,
+                -1)[:, idx_all_mask] for x in idx_fullres_all]
+
+            # mask=False for full-res loci that have no data in any row/col
+            nonzero_mask = ~bad_idx_fullres & ~np.isin(
+                row_fullres, _empty_idx_fullres) & ~np.isin(
+                col_fullres, _empty_idx_fullres)
+
+        # if self.multiscale_factor > 1:
+        #     mask = pd.DataFrame(
+        #         np.concatenate([first.bins_nonzero.mask.T, second.bins_nonzero.mask.T], axis=1))
+        #     mask['row'] = np.concatenate([first.bins_nonzero.row, second.row])
+        #     mask['col'] = np.concatenate([first.bins_nonzero.col, second.col])
+        #     mask = mask.groupby(['row', 'col']).sum().astype(bool).reset_index()
+        #     nonzero_mask = mask[[c for c in data.columns if c not in (
+        #         'row', 'col')]].values.T
+
+        combo.bins_nonzero = CountsBins(
+            meta=combo, row=nonzero_row, col=nonzero_col, data=nonzero_data,
+            mask=nonzero_mask)
+        if self.bins_zero is not None:
+            combo._create_bins_zero()
+
+        return combo
+
+    def __radd__(self, other):
+        if other == 0:
+            return self
+        else:
+            return self.__add__(other)
+
+    def __eq__(self, other):  # TODO remove print statements
+        if type(other) is type(self):
+            # return self.__dict__ == other.__dict__
+            if self.__dict__.keys() != other.__dict__.keys():
+                print('~~~~~~ __dict__ keys mismatch')
+                return False
+            for key in self.__dict__.keys():
+                if type(self.__dict__[key]) is not type(other.__dict__[key]):
+                    print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')
+                    print(f"{type(self.__dict__[key])=}")
+                    print(f"{type(other.__dict__[key])=}")
+                    return False
+                if isinstance(self.__dict__[key], (list, np.ndarray)):
+                    if ((self.__dict__[key].dtype.char in np.typecodes[
+                            'AllInteger']) and (other.__dict__[
+                            key].dtype.char in np.typecodes['AllInteger'])):
+                        if not np.array_equal(
+                                self.__dict__[key], other.__dict__[key]):
+                            print(f'~~~~~~ __dict__ array not equal int: {key}')
+                            return False
+                    elif not np.allclose(
+                            self.__dict__[key], other.__dict__[key]):
+                        print(f'~~~~~~ __dict__ array not equal: {key}')
+                        return False
+                elif self.__dict__[key] != other.__dict__[key]:
+                    print(f'~~~~~~ __dict__ value not equal: {key}')
+                    return False
+            return True
+        return NotImplemented
+
+    def __hash__(self):  # XXX
+        __dict__ = []
+        for x in self.__dict__.items():
+            if isinstance(x, np.ndarray):
+                x = x.tolist()
+            if isinstance(x, list):
+                x = tuple(x)
+            __dict__.append(x)
+        return hash(tuple(sorted(__dict__)))
+
+
+
+class CountsBins(object):
     """Stores counts data, indices, beta, weight, distance matrix indices, etc.
 
     Counts data and information associated with this counts matrix.
@@ -835,28 +1148,31 @@ class CountsMatrix(object):
         For multiscale: returns mask for full-res counts data
     """
 
-    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
-                 beta=1, weight=1):
-        self.lengths = lengths
-        self.ploidy = ploidy
-        self.multiscale_factor = multiscale_factor
-        self.null = False  # Set to True to exclude counts data from primary obj
-        self.beta = float(beta)
-        self.weight = (1. if weight is None else weight)
-        if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
-            raise ValueError(f"Counts weight may not be {self.weight}.")
+    def __init__(self, meta, row, col, data=None, mask=None):
+        self.lengths = meta.lengths
+        self.ploidy = meta.ploidy
+        self.multiscale_factor = meta.multiscale_factor
+        self.null = meta.null  # If True, exclude counts data from primary obj
+        self.beta = meta.beta
+        self.weight = meta.weight
+        self.ambiguity = meta.ambiguity
+        self.shape = meta.shape
 
-        self.ambiguity = None
-        self.name = None
-        self.shape = None
-        self.row, self.col = None, None
-        self.row3d, self.col3d = None, None
-        self.mask = None
-        self._data = None
-        self._sum = None
-        self._empty_idx_fullres = None
-        if counts is not None:
-            self._add_counts_bins(counts)
+        self.row = row
+        self.col = col
+        self.data = data
+        self.mask = mask
+        if self.data is None:
+            self._sum = 0
+            self.name = f"{self.ambiguity}0"
+        else:
+            self._sum = self.data.sum()
+            self.name = self.ambiguity
+
+        n = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor).sum()
+        self.row3d, self.col3d = _counts_indices_to_3d_indices(
+            (self.row, self.col, self.shape), nbeads_lowres=n * self.ploidy)
 
     @property
     def nbins(self):
@@ -864,35 +1180,9 @@ class CountsMatrix(object):
         """
         return self.row.size
 
-    @property
-    def data(self):
-        """Data array of the matrix (COO format).
-        """
-        pass
-
-    def _add_counts_bins(self, counts):
-        """Incorporate counts data to object"""
-        pass
-
-    def toarray(self):
-        """Convert counts matrix to numpy array format.
-        """
-        pass
-
-    def tocoo(self):
-        """Convert counts matrix to scipy sparse COO format.
-        """
-        pass
-
-    def copy(self):
-        """Copy counts matrix.
-        """
+    def copy(self):  # TODO don't include this method?
+        """Copy counts matrix."""
         return copy.deepcopy(self)
-
-    def sum(self, axis=None, dtype=None, out=None):
-        """Sum of current counts matrix.
-        """
-        pass
 
     def bias_per_bin(self, bias):
         """Determines bias corresponding to each bin of the distance matrix.
@@ -917,6 +1207,22 @@ class CountsMatrix(object):
             bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
             return bias[self.row3d] * bias[self.col3d]
 
+    def sum(self, axis=None, dtype=None, out=None):
+        """TODO"""
+        if (not isinstance(axis, int)) and (
+                axis is None or set(list(axis)) == {0, 1}):
+            return self._sum
+        elif self._sum == 0:
+            if axis in (0, 1, -1):
+                output = np.zeros((self.shape[int(not axis)]), dtype=dtype)
+                if out is not None:
+                    output = output.reshape(out.shape)
+                return output
+            else:
+                raise ValueError(f"Axis ({axis}) not understood")
+        else:
+            return self.tocoo().sum(axis=axis, dtype=dtype, out=out)
+
     @property
     def fullres_per_lowres_dis(self):
         """
@@ -930,235 +1236,15 @@ class CountsMatrix(object):
         else:
             return self.mask.sum(axis=0)
 
-    def _ambiguate(self, copy=True, non0_ambig=None):
-        """Convert diploid counts to ambiguous.
-
-        If  unambiguous or partially ambiguous diploid, convert to ambiguous. If
-        haploid or ambiguous diploid, return current counts matrix.
-
-        Returns
-        -------
-        CountsMatrix object
-            Ambiguated contact counts matrix.
-        """
-
-        if copy:
-            ambig = self.copy()
-        else:
-            ambig = self
-
-        if self.ploidy == 1 or self.ambiguity == 'ambig':
-            return ambig
-        if self.sum() == 0:
-            if non0_ambig is None:
-                raise ValueError(
-                    "Must supply non0_ambig to ambiguate ZeroCountsMatrix")
-            empty_idx = find_beads_to_remove(  # TODO needed?
-                non0_ambig, lengths=self.lengths, ploidy=1,
-                multiscale_factor=self.multiscale_factor)
-        else:
-            empty_idx = None  # TODO needed?
-
-        lengths_lowres = decrease_lengths_res(
-            self.lengths, multiscale_factor=self.multiscale_factor)
-        n = lengths_lowres.sum()
-
-        if self.ambiguity == 'pa':
-            ambig.beta = self.beta * 2
-        else:
-            ambig.beta = self.beta
-        ambig.shape = (n, n)
-        ambig.ambiguity = 'ambig'
-        if self.sum() == 0:
-            ambig.name = 'ambig0'
-        else:
-            ambig.name = 'ambig'
-
-        row = self.row.copy()
-        col = self.col.copy()
-        row[row >= n] -= n
-        col[col >= n] -= n
-        row_ambig = np.minimum(row, col)
-        col_ambig = np.maximum(row, col)
-        swap = row != row_ambig
-
-        if self.sum() == 0:
-            data = pd.DataFrame({'row': row_ambig, 'col': col_ambig})
-            print(np.stack([self.row, self.col, data.row, data.col], axis=1))
-            print(data)
-            data = data.drop_duplicates().sort_values(['row', 'col'])
-            data = data[data.row != data.col]
-            data = data[~_idx_isin(
-                data[['row', 'col']].values, (non0_ambig.row, non0_ambig.col))]
-            data = data[~data.row.isin(empty_idx) & ~data.col.isin(empty_idx)]  # TODO needed?
-            if len(data) == 0:
-                return None
-            ambig._sum = 0
-        else:
-            data = self._data.T
-            if self.multiscale_factor > 1:
-                data[swap] = data[swap].reshape(
-                    swap.sum(), self.multiscale_factor,
-                    self.multiscale_factor).reshape(swap.sum(), -1, order='f')
-            data = pd.DataFrame(data)
-            data['row'] = row_ambig
-            data['col'] = col_ambig
-            data = data.groupby(['row', 'col']).sum().reset_index()
-            data = data[data.row != data.col]
-            ambig._data = data[[c for c in data.columns if c not in (
-                'row', 'col')]].values.T
-            if self.multiscale_factor == 1:
-                ambig._data = ambig._data.ravel()
-            if np.array_equal(ambig._data, ambig._data.round()):  # TODO Use Mozes function for this
-                ambig._data = ambig._data.astype(
-                    sparse.sputils.get_index_dtype(maxval=ambig._data.max()))
-            ambig._sum = ambig._data.sum()
-        ambig.row = data.row.values
-        ambig.col = data.col.values
-
-        if self.multiscale_factor > 1:
-            if self.sum() == 0:
-                mask = self.mask.T
-                mask[swap] = mask[swap].reshape(
-                    swap.sum(), self.multiscale_factor,
-                    self.multiscale_factor).reshape(swap.sum(), -1, order='f')
-                mask = pd.DataFrame(mask)
-                mask['row'] = row_ambig
-                mask['col'] = col_ambig
-                mask = mask.groupby(
-                    ['row', 'col']).sum().astype(bool).reset_index()
-                mask = mask[mask.row != mask.col]
-                mask = mask[~_idx_isin(
-                    mask[['row', 'col']].values,
-                    (non0_ambig.row, non0_ambig.col))]
-                mask = mask[
-                    ~mask.row.isin(empty_idx) & ~mask.col.isin(empty_idx)]  # TODO needed?
-                ambig.mask = mask[[c for c in mask.columns if c not in (
-                    'row', 'col')]].astype(bool).values.T
-            else:
-                tmp_unique, tmp_counts = np.unique(
-                    np.append(self._empty_idx_fullres,
-                              self._empty_idx_fullres - self.lengths.sum()),
-                    return_counts=True)
-                _empty_idx_fullres = tmp_unique[tmp_counts == 2]
-                ambig._empty_idx_fullres = np.append(
-                    _empty_idx_fullres, _empty_idx_fullres + self.lengths.sum())
-
-                idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
-                    multiscale_factor=self.multiscale_factor,
-                    lengths=self.lengths, ploidy=self.ploidy,
-                    counts_fullres_shape=(
-                        self.lengths.sum(), self.lengths.sum()))
-                idx_all_mask = _idx_isin(
-                    idx_lowres_all, data[['row', 'col']].values)
-                row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
-                    self.multiscale_factor ** 2,
-                    -1)[:, idx_all_mask] for x in idx_fullres_all]
-
-                ambig.mask = ~bad_idx_fullres & ~np.isin(
-                    row_fullres, _empty_idx_fullres) & ~np.isin(
-                    col_fullres, _empty_idx_fullres)
-
-        ambig.row3d, ambig.col3d = _counts_indices_to_3d_indices(
-            (ambig.row, ambig.col, ambig.shape), nbeads_lowres=n * self.ploidy)
-
-        return ambig
-
-    def __add__(self, other):
-        if self.ploidy != other.ploidy:
-            raise ValueError("Mismatch in ploidy")
-        if self.multiscale_factor != other.multiscale_factor:
-            raise ValueError("Mismatch in multiscale_factor")
-        if not np.array_equal(self.lengths, other.lengths):
-            raise ValueError("Mismatch in number of beads per chromosome")
-        if self.null != other.null:
-            raise ValueError("Mismatch in null attribute")
-
-        first = self
-        second = other
-        if first.shape != second.shape and self.ploidy == 2:
-            first = first.ambiguate(copy=True)
-            second = second.ambiguate(copy=True)
-        if first.shape != second.shape:
-            raise ValueError("Mismatch in shape")
-
-        beta = first.beta + second.beta
-        weight = first.weight + second.weight
-
-        if first.sum() == 0 and second.sum() == 0:
-            combo = ZeroCountsMatrix.__init__(
-                lengths=self.lengths, ploidy=self.ploidy,
-                multiscale_factor=self.multiscale_factor, beta=beta,
-                weight=weight)
-            row = np.concatenate([first.row, second.row])
-            col = np.concatenate([first.col, second.col])
-            combo.row, combo.col = np.unique(
-                np.stack([row, col], axis=1), axis=0).T
-            combo._data = None
-            combo.name = f'{combo.name}0'
-            combo._sum = 0
-        else:
-            combo = SparseCountsMatrix.__init__(
-                lengths=self.lengths, ploidy=self.ploidy,
-                multiscale_factor=self.multiscale_factor, beta=beta,
-                weight=weight)
-            data = pd.DataFrame(
-                np.concatenate([first.data.T, second.data.T], axis=1))
-            data['row'] = np.concatenate([first.row, second.row])
-            data['col'] = np.concatenate([first.col, second.col])
-            data = data.groupby(['row', 'col']).sum().reset_index()
-            combo.row = data.row
-            combo.col = data.col
-            combo._data = data[[c for c in data.columns if c not in (
-                'row', 'col')]].values.T
-            if np.array_equal(combo._data, combo._data.round()):  # TODO Use Mozes function for this
-                combo._data = combo._data.astype(
-                    sparse.sputils.get_index_dtype(maxval=combo._data.max()))
-            combo._sum = combo._data.sum()
-
-        if self.multiscale_factor > 1:
-            if first.sum() > 0 and second.sum() > 0:
-                tmp_unique, tmp_counts = np.unique(
-                    np.append(first._empty_idx_fullres,
-                              second._empty_idx_fullres),
-                    return_counts=True)
-                combo._empty_idx_fullres = tmp_unique[tmp_counts == 2]
-            elif first.sum() > 0:
-                combo._empty_idx_fullres = first._empty_idx_fullres
-            elif second.sum() > 0:
-                combo._empty_idx_fullres = second._empty_idx_fullres
-
-        if self.multiscale_factor > 1:
-            mask = pd.DataFrame(
-                np.concatenate([first.mask.T, second.mask.T], axis=1))
-            mask['row'] = np.concatenate([first.row, second.row])
-            mask['col'] = np.concatenate([first.col, second.col])
-            mask = mask.groupby(['row', 'col']).sum().astype(bool).reset_index()
-            combo.mask = mask[[c for c in data.columns if c not in (
-                'row', 'col')]].values.T
-
-        n = decrease_lengths_res(
-            self.lengths, multiscale_factor=self.multiscale_factor).sum()
-        combo.row3d, combo.col3d = _counts_indices_to_3d_indices(
-            (combo.row, combo.col, combo.shape), nbeads_lowres=n * self.ploidy)
-
-        return combo
-
-    def __radd__(self, other):
-        if other == 0:
-            return self
-        else:
-            return self.__add__(other)
-
-    def __eq__(self, other):
+    def __eq__(self, other):  # TODO remove print statements
         if type(other) is type(self):
             # return self.__dict__ == other.__dict__
             if self.__dict__.keys() != other.__dict__.keys():
-                print('~~~~~~ __dict__ keys mismatch')  # TODO remove
+                print('~~~~~~ __dict__ keys mismatch')
                 return False
             for key in self.__dict__.keys():
                 if type(self.__dict__[key]) is not type(other.__dict__[key]):
-                    print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')  # TODO remove
+                    print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')
                     print(f"{type(self.__dict__[key])=}")
                     print(f"{type(other.__dict__[key])=}")
                     return False
@@ -1168,14 +1254,14 @@ class CountsMatrix(object):
                             key].dtype.char in np.typecodes['AllInteger'])):
                         if not np.array_equal(
                                 self.__dict__[key], other.__dict__[key]):
-                            print(f'~~~~~~ __dict__ array not equal int: {key}')  # TODO remove
+                            print(f'~~~~~~ __dict__ array not equal int: {key}')
                             return False
                     elif not np.allclose(
                             self.__dict__[key], other.__dict__[key]):
-                        print(f'~~~~~~ __dict__ array not equal: {key}')  # TODO remove
+                        print(f'~~~~~~ __dict__ array not equal: {key}')
                         return False
                 elif self.__dict__[key] != other.__dict__[key]:
-                    print(f'~~~~~~ __dict__ value not equal: {key}')  # TODO remove
+                    print(f'~~~~~~ __dict__ value not equal: {key}')
                     return False
             return True
         return NotImplemented
@@ -1191,128 +1277,20 @@ class CountsMatrix(object):
         return hash(tuple(sorted(__dict__)))
 
 
-class SparseCountsMatrix(CountsMatrix):
-    """Stores data for counts bins with >0 reads.
-    """
-
-    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
-                 beta=1, weight=1):
-        CountsMatrix.__init__(
-            self, lengths=lengths, ploidy=ploidy, counts=counts,
-            multiscale_factor=multiscale_factor, beta=beta, weight=weight)
-
-    def _add_counts_bins(self, counts):
-        self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
-            sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
-        self.name = self.ambiguity
-
-        print('_empty_idx_fullres', find_beads_to_remove(counts, lengths=self.lengths, ploidy=self.ploidy))
-
-        if self.multiscale_factor > 1:
-            self._empty_idx_fullres = find_beads_to_remove(
-                counts, lengths=self.lengths, ploidy=self.ploidy)
-
-        tmp = _group_counts_multiscale(
-            counts, lengths=self.lengths, ploidy=self.ploidy,
-            multiscale_factor=self.multiscale_factor)
-        self._data, idx, idx3d, self.shape, self.mask = tmp
-        self.row, self.col = idx
-        self.row3d, self.col3d = idx3d
-        if np.array_equal(self._data, self._data.round()):  # TODO Use Mozes function for this
-            self._data = self._data.astype(
-                sparse.sputils.get_index_dtype(maxval=self._data.max()))
-        self._sum = self._data.sum()
-
-    def _get_zero_bins(self):
-        _empty_idx_lowres = find_beads_to_remove(
-            self, lengths=self.lengths, ploidy=self.ploidy,
-            multiscale_factor=self.multiscale_factor)
-
-        if self.multiscale_factor == 1:
-            dummy = _check_counts_matrix(
-                np.ones(self.shape), lengths=self.lengths, ploidy=self.ploidy,
-                exclude_zeros=True)
-
-            # Exclude loci that have no data + bins with non-0 counts
-            idx_all_mask = ~_idx_isin(
-                (dummy.row, dummy.col), (self.row, self.col)) & ~np.isin(
-                dummy.row, _empty_idx_lowres) & ~np.isin(
-                dummy.col, _empty_idx_lowres)
-
-            zeros.row = dummy.row[idx_all_mask]
-            zeros.col = dummy.col[idx_all_mask]
-            zeros.mask = None
-        else:
-            idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
-                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-                ploidy=self.ploidy,
-                counts_fullres_shape=(self.lengths.sum(), self.lengths.sum()))
-            row_lowres_all, col_lowres_all = idx_lowres_all
-
-            # Low-res: Exclude loci that have no data + bins with non-0 counts
-            idx_all_mask = ~_idx_isin(
-                idx_lowres_all, (self.row, self.col)) & ~np.isin(
-                row_lowres_all, _empty_idx_lowres) & ~np.isin(
-                col_lowres_all, _empty_idx_lowres)
-            zeros.row = row_lowres_all[idx_all_mask]
-            zeros.col = col_lowres_all[idx_all_mask]
-            row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
-                self.multiscale_factor ** 2,
-                -1)[:, idx_all_mask] for x in idx_fullres_all]
-
-            # Full-res loci that have no data should be False in mask
-            zeros.mask = ~bad_idx_fullres & ~np.isin(
-                row_fullres, self._empty_idx_fullres) & ~np.isin(
-                col_fullres, self._empty_idx_fullres)
-
-        n = decrease_lengths_res(
-            self.lengths, multiscale_factor=self.multiscale_factor).sum()
-        zeros.row3d, zeros.col3d = _counts_indices_to_3d_indices(
-            (zeros.row, zeros.col, zeros.shape), nbeads_lowres=n * self.ploidy)
-
-
-    @property
-    def data(self):
-        return self._data
-
-    def toarray(self):
-        lengths_lowres = decrease_lengths_res(
-            self.lengths, multiscale_factor=self.multiscale_factor)
-        return _check_counts_matrix(
-            self.tocoo().toarray(), lengths=lengths_lowres, ploidy=self.ploidy,
-            exclude_zeros=False)
-
-    def tocoo(self):
-        data = self.data
-        if len(data.shape) > 1:
-            data = data.sum(axis=0)
-        coo = sparse.coo_matrix(
-            (data, (self.row, self.col)), shape=self.shape)
-        return coo
-
-    def sum(self, axis=None, dtype=None, out=None):
-        if (not isinstance(axis, int)) and (
-                axis is None or set(list(axis)) == {0, 1}):
-            return self._sum
-        return self.tocoo().sum(axis=axis, dtype=dtype, out=out)
-
-
-class ZeroCountsMatrix(CountsMatrix):
+class ZeroCountsMatrix():
     """Stores data for counts bins with 0 reads.
     """
 
     def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
                  beta=1, weight=1):
-        CountsMatrix.__init__(
-            self, lengths=lengths, ploidy=ploidy, counts=counts,
-            multiscale_factor=multiscale_factor, beta=beta, weight=weight)
+        pass
 
     def _add_counts_bins(self, counts):
         self.ambiguity = {1: 'ambig', 1.5: 'pa', 2: 'ua'}[
             sum(counts.shape) / (self.lengths.sum() * self.ploidy)]
         self.name = f'{self.ambiguity}0'
 
-        _, idx, idx3d, self.shape, self.mask = _group_counts_multiscale(
+        _, idx, self.shape, self.mask = _group_counts_multiscale(
             counts, lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor,
             for_zero_counts_matrix=True)
@@ -1320,32 +1298,3 @@ class ZeroCountsMatrix(CountsMatrix):
         self.row3d, self.col3d = idx3d
         self._data = None
         self._sum = 0
-
-    @property
-    def data(self):
-        if self.multiscale_factor == 1:
-            return np.zeros(self.row.size, dtype=np.uint16)
-        else:
-            return np.zeros((np.square(self.multiscale_factor), self.row.size),
-                            dtype=np.uint16)
-
-    def toarray(self):
-        array = np.full(self.shape, np.nan)
-        array[self.row, self.col] = 0
-        return array
-
-    def tocoo(self):
-        return sparse.coo_matrix(
-            (np.zeros(self.row.size), (self.row, self.col)), shape=self.shape)
-
-    def sum(self, axis=None, dtype=None, out=None):
-        if (not isinstance(axis, int)) and (
-                axis is None or set(list(axis)) == {0, 1}):
-            return 0
-        elif axis in (0, 1, -1):
-            output = np.zeros((self.shape[int(not axis)]), dtype=dtype)
-            if out is not None:
-                output = output.reshape(out.shape)
-            return output
-        else:
-            raise ValueError(f"Axis ({axis}) not understood")

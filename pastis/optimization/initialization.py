@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.utils import check_random_state
 from .multiscale_optimization import increase_struct_res_gaussian
 from .multiscale_optimization import increase_struct_res, decrease_struct_res
 from .multiscale_optimization import decrease_lengths_res
@@ -17,21 +16,18 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     if verbose:
         print('INITIALIZATION: multi-dimensional scaling', flush=True)
 
-    random_state = check_random_state(random_state)
 
-    ua_index = [i for i in range(len(counts)) if counts[i].name == 'ua']
-    ua_index = [i for i in ua_index if (
-        counts[i].multiscale_factor == multiscale_factor)]
-    if len(ua_index) == 1:
-        ua_index = ua_index[0]
-    elif len(ua_index) != 0:
+    ua_counts = [c for c in counts if c.ambiguity == 'ua' and (
+        c.multiscale_factor == multiscale_factor)]
+    if len(ua_counts) == 1:
+        ua_counts = ua_counts[0]
+    elif len(ua_counts) != 0:
         raise ValueError(
             "Multiple unambiguous counts matrices detected."
             " Pool data from unambiguous counts matrices before inference.")
     else:
         raise ValueError("Unambiguous counts needed to initialize via MDS.")
 
-    ua_counts = counts[ua_index]
     ua_beta = ua_counts.beta
     if ua_beta is not None:
         ua_beta = ua_beta * multiscale_factor ** 2
@@ -40,11 +36,6 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
         bias_per_bin = np.tile(bias, ploidy)
     else:
         bias_per_bin = None
-
-    # print(type(ua_counts_arr))
-    # print(bias)
-    # print(type(bias), bias.dtype)
-    # print(np.nansum(ua_counts_arr.toarray()))
 
     if alpha is None:
         raise ValueError("Must supply alpha for MDS initialization.")
@@ -70,14 +61,12 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     """Initialize structure, randomly or via MDS of unambig counts.
     """
 
-    random_state = check_random_state(random_state)
-
     if mixture_coefs is None:
         mixture_coefs = [1.]
 
     if not isinstance(counts, list):
         counts = [counts]
-    ua_index = [i for i in range(len(counts)) if counts[i].name == 'ua']
+    have_unambig = ([c for c in counts if c.ambiguity == 'ua'])
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
@@ -89,13 +78,13 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         if verbose:
             print('INITIALIZATION: 3D structure', flush=True)
         structures = _format_structures(init, mixture_coefs=mixture_coefs)
-    elif isinstance(init, str) and (init.lower() in ("mds", "mds2")) and len(ua_index) != 0:
+    elif isinstance(init, str) and (init.lower() == "mds") and have_unambig:
         struct = _initialize_struct_mds(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state,
             multiscale_factor=multiscale_factor, verbose=verbose)
         structures = [struct] * len(mixture_coefs)
-    elif isinstance(init, str) and (init.lower() in ("random", "rand", "mds", "mds2")):
+    elif isinstance(init, str) and (init.lower() in ("random", "rand", "mds")):
         if verbose:
             print('INITIALIZATION: random points', flush=True)
         structures = [random_state.uniform(
@@ -191,7 +180,7 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
         If array of float, this will be used for initialization. Structures
         will be re-sized to the appropriate resolution, and NaN beads will be
         linearly interpolated. If str, indicates the method of initalization:
-        random ("random" or "rand") or MDS2 ("mds2" or "mds").
+        random ("random" or "rand") or MDS2 ("mds").
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
     alpha : float, optional
@@ -214,7 +203,6 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
         random_state = np.random.RandomState()
     elif isinstance(random_state, int):
         random_state = np.random.RandomState(random_state)
-    random_state = check_random_state(random_state)
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)

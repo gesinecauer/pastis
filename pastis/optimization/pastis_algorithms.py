@@ -78,7 +78,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
         input_weight=input_weight, verbose=False, mixture_coefs=mixture_coefs,
         mods=mods)
-    beta = [c.beta for c in counts_preprocess if c.sum() != 0]
+    beta = [c.beta for c in counts_preprocess]
 
     if infer_draft_fullres:
         if verbose and infer_draft_lowres:
@@ -223,8 +223,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
             beta_init = beta_init * 2
     if verbose:
         print('BETA: ' + ', '.join(
-            [f'{c.ambiguity}={c.beta:.3g}' for c in counts if c.sum() != 0]),
-            flush=True)
+            [f'{c.ambiguity}={c.beta:.3g}' for c in counts]), flush=True)
         if alpha is None:
             print(f'ALPHA: to be inferred, init = {alpha_init:.3g}', flush=True)
         else:
@@ -507,7 +506,6 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         mean_fullres_nghbr_dis, ploidy) = prepped
 
     # INFER STRUCTURE
-    # original_counts_beta = [c.beta for c in counts if c.sum() != 0]
     pm = PastisPM(
         counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
         init=struct_init, bias=bias, constraints=constraints,
@@ -551,8 +549,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         'multiscale_variances': multiscale_variances, 'alpha_loop': alpha_loop,
         'rescale_by': rescale_by}
     if constraints is not None:
-        hsc19 = [c for c in constraints if (
-            c.name == "Homolog separating (2019)" and c.lambda_val > 0)]
+        hsc19 = [x for x in constraints if (
+            x.name == "Homolog separating (2019)" and x.lambda_val > 0)]
         if len(hsc19) == 1:
             infer_param['est_hmlg_sep'] = hsc19[0].hparams['est_hmlg_sep']
     if reorienter is not None and reorienter.reorient:
