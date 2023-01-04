@@ -13,11 +13,10 @@ from jax.nn import relu
 from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
-from .multiscale_optimization import _group_counts_multiscale
 from .utils_poisson import find_beads_to_remove, _euclidean_distance
 from .utils_poisson import relu_min, relu_max
 from .utils_poisson import _inter_counts, _counts_near_diag, _intra_mask
-from .counts import ambiguate_counts, _ambiguate_beta
+from .counts import ambiguate_counts, _ambiguate_beta, _get_nonzero_mask
 from .likelihoods import poisson_nll, gamma_poisson_nll
 from .poisson import get_gamma_moments
 from ..io.read import load_data
@@ -413,42 +412,70 @@ class BeadChainConnectivity2022(Constraint):
             counts_nghbr[np.isnan(counts_nghbr)] = np.nanmean(counts_nghbr)
             counts_nghbr_mask = None
         else:
-            if len(counts) > 2:
-                raise NotImplementedError(
-                    "Make .add and .ambiguate methods for counts object")
-            if not (bias is None or np.all(bias == 1)):
-                raise NotImplementedError(
-                    "Need to include zero counts in ambiguated and also get counts_nghbr_mask")
-
-            counts_ambig = counts[0]  # FIXME
-            # counts_nghbr = _counts_near_diag(
-            #     counts_ambig, self.lengths, ploidy=self.ploidy, nbins=1,
-            #     exclude_zeros=True)
-            # tmp = _group_counts_multiscale(
-            #     counts_nghbr, lengths=self.lengths, ploidy=self.ploidy,
-            #     multiscale_factor=self.multiscale_factor)
-            # counts_nghbr, indices, indices3d, counts_shape, counts_mask = tmp
-
             row_nghbr_ambig_lowres = _neighboring_bead_indices(
                 lengths=self.lengths, ploidy=1,
                 multiscale_factor=self.multiscale_factor)
-            mask = (counts_ambig.col == counts_ambig.row + 1) & np.isin(
-                counts_ambig.row, row_nghbr_ambig_lowres)
-            row_nghbr_counts = counts_ambig.row[mask]
+            counts_nghbr_object = sum(counts).ambiguate().filter(
+                row=row_nghbr_ambig_lowres, col=row_nghbr_ambig_lowres + 1,
+                copy=False)
 
-            if not np.array_equal(row_nghbr_counts, row_nghbr_ambig_lowres):
-                counts_nghbr = np.zeros((counts_ambig.data.shape[0], row_nghbr_ambig_lowres.size))
-                print(counts_nghbr.shape, row_nghbr_counts.shape, counts_ambig.data.shape, mask.shape)
-                print(row_nghbr_counts.max(), row_nghbr_ambig_lowres.shape)
-                counts_nghbr[:, row_nghbr_counts] = counts_ambig.data[:, mask]
-                tmp = ~np.isin(row_nghbr_ambig_lowres, row_nghbr_counts)
-                counts_nghbr[:, tmp] = np.mean(
-                    counts_nghbr[:, row_nghbr_counts])
-                raise NotImplementedError("double check this code")
-            else:
-                counts_nghbr = counts_ambig.data[:, mask]
+            mask_bin_nonzero = np.isin(
+                row_nghbr_ambig_lowres, counts_nghbr_object.bins_nonzero.row)
+            mask_bin_zero = np.isin(
+                row_nghbr_ambig_lowres, counts_nghbr_object.bins_zero.row)
+            mask_no_data = (~mask_bin_nonzero) & (~mask_bin_zero)
+            assert np.array_equal(
+                row_nghbr_ambig_lowres[mask_bin_nonzero],
+                counts_nghbr_object.bins_nonzero.row)
+            assert np.array_equal(
+                row_nghbr_ambig_lowres[mask_bin_zero],
+                counts_nghbr_object.bins_zero.row)  # TODO remove
 
-            counts_nghbr_mask = None  # FIXME
+            # Get mask associated with neighbor beads
+            counts_nghbr_mask = _get_nonzero_mask(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, row=row_nghbr_ambig_lowres,
+                col=row_nghbr_ambig_lowres + 1,
+                empty_idx_fullres=counts_nghbr_object._empty_idx_fullres)
+            counts_nghbr_mask_no_data = _get_nonzero_mask(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, row=row_nghbr_ambig_lowres[mask_no_data],
+                col=row_nghbr_ambig_lowres[mask_no_data] + 1,
+                empty_idx_fullres=None)
+            counts_nghbr_mask[:, mask_no_data] = counts_nghbr_mask_no_data
+
+            # Get counts associated with neighbor beads
+            counts_nghbr = np.zeros(counts_nghbr_mask.shape)
+            counts_nghbr[
+                :, mask_bin_nonzero] = counts_nghbr_object.bins_nonzero.data
+
+            # If an entire lowres distance bin has no counts associated with it,
+            # set those counts to the mean of all high-res counts
+            counts_nghbr[
+                :, mask_no_data] = counts_nghbr_object.bins_nonzero.data.mean()
+            counts_nghbr[~counts_nghbr_mask] = 0
+
+            # print(f"{counts_nghbr.shape=}\n{counts_nghbr_mask.shape=}")
+            # print(f"{np.tile(counts_nghbr, 2).shape=}")
+            # print(np.isnan(counts_nghbr).sum(), np.isnan(counts_nghbr_mask).sum(), np.isnan(bias_nghbr).sum())
+            # print((counts_nghbr[counts_nghbr_mask] == 0).sum())
+
+            # mask = (counts_ambig.col == counts_ambig.row + 1) & np.isin(
+            #     counts_ambig.row, row_nghbr_ambig_lowres)
+            # row_nghbr_counts = counts_ambig.row[mask]
+
+            # if not np.array_equal(row_nghbr_counts, row_nghbr_ambig_lowres):
+            #     counts_nghbr = np.zeros((counts_ambig.data.shape[0], row_nghbr_ambig_lowres.size))
+            #     print(counts_nghbr.shape, row_nghbr_counts.shape, counts_ambig.data.shape, mask.shape)
+            #     print(row_nghbr_counts.max(), row_nghbr_ambig_lowres.shape)
+            #     counts_nghbr[:, row_nghbr_counts] = counts_ambig.data[:, mask]
+            #     tmp = ~np.isin(row_nghbr_ambig_lowres, row_nghbr_counts)
+            #     counts_nghbr[:, tmp] = np.mean(
+            #         counts_nghbr[:, row_nghbr_counts])
+            #     raise NotImplementedError("double check this code")
+            # else:
+            #     counts_nghbr = counts_ambig.data[:, mask]
+
 
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
@@ -467,17 +494,20 @@ class BeadChainConnectivity2022(Constraint):
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self._setup(counts=counts, bias=bias)
 
+        if var['bias_nghbr'] is None or np.all(var['bias_nghbr'] == 1):
+            bias_per_bin = 1
+        else:
+            bias_per_bin = np.tile(var['bias_nghbr'], 2)
+        if var['counts_nghbr_mask'] is None:
+            mask = None
+        else:
+            mask = np.tile(var['counts_nghbr_mask'], 2)
         counts_inter_mean = self.hparams['data_interchrom']['mean'] / 2
 
         if self.multiscale_factor == 1:
             nghbr_dis = _euclidean_distance(
                 struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
-            bias_nghbr = var['bias_nghbr']
-            if not np.all(bias_nghbr == 1):
-                bias_nghbr = np.tile(bias_nghbr, self.ploidy)
-            else:
-                bias_nghbr = 1
-            lambda_pois = (2 * var['beta']) * bias_nghbr * ag_np.power(
+            lambda_pois = (2 * var['beta']) * bias_per_bin * ag_np.power(
                 nghbr_dis, alpha)
 
             if 'bcc22_c_inter' in self.mods:
@@ -503,8 +533,7 @@ class BeadChainConnectivity2022(Constraint):
             k = ag_np.square(gamma_mean) / gamma_var
             obj = gamma_poisson_nll(
                 theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
-                bias_per_bin=var['bias_nghbr'], mask=var['counts_nghbr_mask'],
-                mods=self.mods)
+                bias_per_bin=bias_per_bin, mask=mask, mods=self.mods)
             lambda_pois = gamma_mean  # TODO temp
 
         if 'debug2' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
@@ -610,10 +639,10 @@ class HomologSeparating2022(Constraint):
             n, p = _get_hsc_negbinom_params(
                 struct, row=row, col=col, alpha=alpha, beta=var["beta"],
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon, mods=self.mods)
-            lambda_pmf = ag_np.exp(logpmf_negbinom(
-                self.hparams['data_interchrom']['x'], n=n, p=p))
+            log_lambda_pmf = logpmf_negbinom(
+                self.hparams['data_interchrom']['x'], n=n, p=p)
             obj = obj + _kl_divergence(
-                p=self.hparams['data_interchrom']['y'], q=lambda_pmf)
+                p=self.hparams['data_interchrom']['y'], log_q=log_lambda_pmf)
 
         if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
             row_all = ag_np.concatenate([row for row, col in idx])
@@ -674,13 +703,22 @@ def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
     return n, p
 
 
-def _kl_divergence(p, q):
-    """TODO"""
+def _kl_divergence(p, log_q):
+    """Measures KL divergence between two discrete distributions.
+
+    Parameters
+    ----------
+    p : array
+        The target probability distribution from the data.
+    log_q : array
+        The natural log of the approximated probability distribution.
+    """
     mask = (p != 0)
     if mask.sum() == mask.size:
-        tmp = p * ag_np.log(p / q)
+        tmp = p * (ag_np.log(p) - log_q)
     else:
-        tmp = p[mask] * ag_np.log(p[mask] / q[mask])
+        tmp = p[mask] * (ag_np.log(p[mask]) - log_q[mask])
+
     return ag_np.sum(tmp)
 
 

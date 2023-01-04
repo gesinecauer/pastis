@@ -666,6 +666,32 @@ def _idx_isin(idx1, idx2):
     return (idx1 == idx2[:, None]).all(axis=2).any(axis=0)
 
 
+def _get_nonzero_mask(multiscale_factor, lengths, ploidy, row, col,
+                      empty_idx_fullres=None):
+    """TODO"""
+
+    if multiscale_factor == 1:
+        return None
+
+    idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
+        counts_fullres_shape=(lengths.sum(), lengths.sum()))
+
+    # Only include low-res bins associated for relevant row & col
+    idx_all_mask = _idx_isin(idx_lowres_all, (row, col))
+    row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
+        multiscale_factor ** 2, -1)[:, idx_all_mask] for x in idx_fullres_all]
+
+    # mask is False for full-res loci that have no data in any row/col
+    nonzero_mask = ~bad_idx_fullres
+    if empty_idx_fullres is not None:
+        nonzero_mask = nonzero_mask & ~np.isin(
+            row_fullres, empty_idx_fullres) & ~np.isin(
+            col_fullres, empty_idx_fullres)
+
+    return nonzero_mask
+
+
 class CountsMatrix(object):
     """Stores counts data, indices, beta, weight, distance matrix indices, etc.
 
@@ -751,6 +777,7 @@ class CountsMatrix(object):
 
     @property
     def bins(self):
+        """TODO"""
         bins = []
         if self.bins_nonzero is not None:
             bins.append(self.bins_nonzero)
@@ -760,9 +787,22 @@ class CountsMatrix(object):
 
     @property
     def nbins(self):
-        """Number of bins at the current resolution.
-        """
+        """Number of bins at the current resolution."""
         return sum([x.nbins for x in self.bins])
+
+    def filter(self, row, col, copy=True):
+        """Filter data for the given indices."""
+        if copy:
+            filtered = self.copy()
+        else:
+            filtered = self
+        if self.bins_nonzero is not None:
+            filtered.bins_nonzero = filtered.bins_nonzero.filter(
+                row=row, col=col, copy=False)
+        if self.bins_zero is not None:
+            filtered.bins_zero = filtered.bins_zero.filter(
+                row=row, col=col, copy=False)
+        return filtered
 
     def toarray(self):
         """Convert counts matrix to numpy array format."""
@@ -934,7 +974,6 @@ class CountsMatrix(object):
         if self.multiscale_factor == 1:
             nonzero_mask = None
         else:
-            # Update _empty_idx_fullres
             tmp_unique, tmp_counts = np.unique(
                 np.append(self._empty_idx_fullres,
                           self._empty_idx_fullres - self.lengths.sum()),
@@ -943,23 +982,10 @@ class CountsMatrix(object):
             ambig._empty_idx_fullres = np.append(
                 _empty_idx_fullres, _empty_idx_fullres + self.lengths.sum())
 
-            idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
-                multiscale_factor=self.multiscale_factor,
-                lengths=self.lengths, ploidy=self.ploidy,
-                counts_fullres_shape=(
-                    self.lengths.sum(), self.lengths.sum()))
-
-            # Only include low-res bins associated for relevant row & col
-            idx_all_mask = _idx_isin(
-                idx_lowres_all, data[['row', 'col']].values)
-            row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
-                self.multiscale_factor ** 2,
-                -1)[:, idx_all_mask] for x in idx_fullres_all]
-
-            # mask=False for full-res loci that have no data in any row/col
-            nonzero_mask = ~bad_idx_fullres & ~np.isin(
-                row_fullres, _empty_idx_fullres) & ~np.isin(
-                col_fullres, _empty_idx_fullres)
+            nonzero_mask = _get_nonzero_mask(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, row=data.row.values, col=data.col.values,
+                empty_idx_fullres=ambig._empty_idx_fullres)
 
         ambig.bins_nonzero = CountsBins(
             meta=ambig, row=nonzero_row, col=nonzero_col, data=nonzero_data,
@@ -1025,23 +1051,10 @@ class CountsMatrix(object):
                 return_counts=True)
             combo._empty_idx_fullres = tmp_unique[tmp_counts == 2]
 
-            idx_fullres_all, idx_lowres_all = _get_fullres_counts_index(
-                multiscale_factor=self.multiscale_factor,
-                lengths=self.lengths, ploidy=self.ploidy,
-                counts_fullres_shape=(
-                    self.lengths.sum(), self.lengths.sum()))
-
-            # Only include low-res bins associated for relevant row & col
-            idx_all_mask = _idx_isin(
-                idx_lowres_all, data[['row', 'col']].values)
-            row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
-                self.multiscale_factor ** 2,
-                -1)[:, idx_all_mask] for x in idx_fullres_all]
-
-            # mask=False for full-res loci that have no data in any row/col
-            nonzero_mask = ~bad_idx_fullres & ~np.isin(
-                row_fullres, combo._empty_idx_fullres) & ~np.isin(
-                col_fullres, combo._empty_idx_fullres)
+            nonzero_mask = _get_nonzero_mask(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, row=data.row.values, col=data.col.values,
+                empty_idx_fullres=combo._empty_idx_fullres)
 
         combo.bins_nonzero = CountsBins(
             meta=combo, row=nonzero_row, col=nonzero_col, data=nonzero_data,
@@ -1191,6 +1204,32 @@ class CountsBins(object):
     def copy(self):  # TODO don't include this method?
         """Copy counts matrix."""
         return copy.deepcopy(self)
+
+    def filter(self, row, col, copy=True):
+        """Filter data for the given indices."""
+        if copy:
+            filtered = self.copy()
+        else:
+            filtered = self
+
+        filter_mask = _idx_isin((self.row, self.col), (row, col))
+        filtered.row = self.row[filter_mask]
+        filtered.col = self.col[filter_mask]
+        if self.multiscale_factor == 1:
+            filtered.data = self.data[filter_mask]
+            filtered.mask = None
+        else:
+            if self.data is not None:
+                filtered.data = self.data[:, filter_mask]
+            filtered.mask = self.mask[:, filter_mask]
+
+        n = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor).sum()
+        filtered.row3d, filtered.col3d = _counts_indices_to_3d_indices(
+            (filtered.row, filtered.col, self.shape),
+            nbeads_lowres=n * self.ploidy)
+
+        return filtered
 
     def bias_per_bin(self, bias):
         """Determines bias corresponding to each bin of the distance matrix.
