@@ -4,18 +4,18 @@ if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
 import numpy as np
-import re
+from scipy import sparse
 
 from .utils_poisson import _setup_jax
 _setup_jax()
 import jax.numpy as ag_np
 from jax.nn import relu
 from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
-from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
+from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .utils_poisson import find_beads_to_remove, _euclidean_distance
-from .utils_poisson import relu_min, relu_max
-from .utils_poisson import _inter_counts, _counts_near_diag, _intra_mask
+from .utils_poisson import relu_min
+from .utils_poisson import _inter_counts, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta, _get_nonzero_mask
 from .likelihoods import poisson_nll, gamma_poisson_nll
 from .poisson import get_gamma_moments
@@ -404,12 +404,16 @@ class BeadChainConnectivity2022(Constraint):
 
         # Get counts corresponding to neighboring beads
         if self.multiscale_factor == 1:
+            # TODO update this whole chunk
             counts_ambig = ambiguate_counts(
                 counts=counts, lengths=self.lengths, ploidy=self.ploidy,
                 exclude_zeros=False)
             counts_nghbr = counts_ambig[
                 row_nghbr_ambig_fullres, row_nghbr_ambig_fullres + 1]
             counts_nghbr[np.isnan(counts_nghbr)] = np.nanmean(counts_nghbr)
+            if np.array_equal(counts_nghbr, counts_nghbr.round()):  # TODO Use Mozes function for this
+                counts_nghbr = counts_nghbr.astype(
+                    sparse.sputils.get_index_dtype(maxval=counts_nghbr.max()))
             counts_nghbr_mask = None
         else:
             row_nghbr_ambig_lowres = _neighboring_bead_indices(
@@ -437,15 +441,18 @@ class BeadChainConnectivity2022(Constraint):
                 ploidy=self.ploidy, row=row_nghbr_ambig_lowres,
                 col=row_nghbr_ambig_lowres + 1,
                 empty_idx_fullres=counts_nghbr_object._empty_idx_fullres)
-            counts_nghbr_mask_no_data = _get_nonzero_mask(
+            counts_nghbr_mask[:, mask_no_data] = _get_nonzero_mask(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
                 ploidy=self.ploidy, row=row_nghbr_ambig_lowres[mask_no_data],
                 col=row_nghbr_ambig_lowres[mask_no_data] + 1,
                 empty_idx_fullres=None)
-            counts_nghbr_mask[:, mask_no_data] = counts_nghbr_mask_no_data
 
             # Get counts associated with neighbor beads
-            counts_nghbr = np.zeros(counts_nghbr_mask.shape)
+            counts_nghbr = np.zeros(
+                counts_nghbr_mask.shape,
+                dtype=counts_nghbr_object.bins_nonzero.data.dtype)
+            if counts_nghbr.dtype.char not in np.typecodes['AllInteger']:
+                print('counts_nghbr.dtype is not integer???', flush=True)  # TODO remove
             counts_nghbr[
                 :, mask_bin_nonzero] = counts_nghbr_object.bins_nonzero.data
 
@@ -454,28 +461,6 @@ class BeadChainConnectivity2022(Constraint):
             counts_nghbr[
                 :, mask_no_data] = counts_nghbr_object.bins_nonzero.data.mean()
             counts_nghbr[~counts_nghbr_mask] = 0
-
-            # print(f"{counts_nghbr.shape=}\n{counts_nghbr_mask.shape=}")
-            # print(f"{np.tile(counts_nghbr, 2).shape=}")
-            # print(np.isnan(counts_nghbr).sum(), np.isnan(counts_nghbr_mask).sum(), np.isnan(bias_nghbr).sum())
-            # print((counts_nghbr[counts_nghbr_mask] == 0).sum())
-
-            # mask = (counts_ambig.col == counts_ambig.row + 1) & np.isin(
-            #     counts_ambig.row, row_nghbr_ambig_lowres)
-            # row_nghbr_counts = counts_ambig.row[mask]
-
-            # if not np.array_equal(row_nghbr_counts, row_nghbr_ambig_lowres):
-            #     counts_nghbr = np.zeros((counts_ambig.data.shape[0], row_nghbr_ambig_lowres.size))
-            #     print(counts_nghbr.shape, row_nghbr_counts.shape, counts_ambig.data.shape, mask.shape)
-            #     print(row_nghbr_counts.max(), row_nghbr_ambig_lowres.shape)
-            #     counts_nghbr[:, row_nghbr_counts] = counts_ambig.data[:, mask]
-            #     tmp = ~np.isin(row_nghbr_ambig_lowres, row_nghbr_counts)
-            #     counts_nghbr[:, tmp] = np.mean(
-            #         counts_nghbr[:, row_nghbr_counts])
-            #     raise NotImplementedError("double check this code")
-            # else:
-            #     counts_nghbr = counts_ambig.data[:, mask]
-
 
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,

@@ -769,9 +769,9 @@ class CountsMatrix(object):
             data, (row, col), self.shape, mask = _group_counts_multiscale(
                 counts, lengths=self.lengths, ploidy=self.ploidy,
                 multiscale_factor=self.multiscale_factor)
-            if np.array_equal(data, data.round()):  # TODO Use Mozes function for this
-                data = data.astype(
-                    sparse.sputils.get_index_dtype(maxval=data.max()))
+            # if np.array_equal(data, data.round()):  # TODO Use Mozes function for this
+            #     data = data.astype(  # TODO Not necessary, since code is repeated in CountsBins
+            #         sparse.sputils.get_index_dtype(maxval=data.max()))
             self.bins_nonzero = CountsBins(
                 meta=self, row=row, col=col, data=data, mask=mask)
 
@@ -965,9 +965,9 @@ class CountsMatrix(object):
             'row', 'col')]].values.T
         if self.multiscale_factor == 1:
             nonzero_data = nonzero_data.ravel()
-        if np.array_equal(nonzero_data, nonzero_data.round()):  # TODO Use Mozes function for this
-            nonzero_data = nonzero_data.astype(
-                sparse.sputils.get_index_dtype(maxval=nonzero_data.max()))
+        # if np.array_equal(nonzero_data, nonzero_data.round()):  # TODO Use Mozes function for this
+        #     nonzero_data = nonzero_data.astype(  # TODO Not necessary, since code is repeated in CountsBins
+        #         sparse.sputils.get_index_dtype(maxval=nonzero_data.max()))
         nonzero_row = data.row.values
         nonzero_col = data.col.values
 
@@ -1037,9 +1037,9 @@ class CountsMatrix(object):
             'row', 'col')]].values.T
         if self.multiscale_factor == 1:
             nonzero_data = nonzero_data.ravel()
-        if np.array_equal(nonzero_data, nonzero_data.round()):  # TODO Use Mozes function for this
-            nonzero_data = nonzero_data.astype(
-                sparse.sputils.get_index_dtype(maxval=nonzero_data.max()))
+        # if np.array_equal(nonzero_data, nonzero_data.round()):  # TODO Use Mozes function for this
+        #     nonzero_data = nonzero_data.astype(  # TODO Not necessary, since code is repeated in CountsBins
+        #         sparse.sputils.get_index_dtype(maxval=nonzero_data.max()))
 
         if self.multiscale_factor == 1:
             nonzero_mask = None
@@ -1111,7 +1111,6 @@ class CountsMatrix(object):
         return hash(tuple(sorted(__dict__)))
 
 
-
 class CountsBins(object):
     """Stores counts data, indices, beta, weight, distance matrix indices, etc.
 
@@ -1181,14 +1180,17 @@ class CountsBins(object):
 
         self.row = row
         self.col = col
-        self.data = data
         self.mask = mask
-        if self.data is None:
+        if data is None:
             self._sum = 0
             self.name = f"{self.ambiguity}0"
         else:
-            self._sum = self.data.sum()
+            if np.array_equal(data, data.round()):  # TODO Use Mozes function for this
+                data = data.astype(
+                    sparse.sputils.get_index_dtype(maxval=data.max()))
+            self._sum = data.sum()
             self.name = self.ambiguity
+        self.data = data
 
         n = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor).sum()
