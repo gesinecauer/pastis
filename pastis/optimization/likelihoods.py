@@ -236,11 +236,21 @@ def negbinom_nll(data, n, p, mean=True, use_scipy=False, num_stable=True):
     return -log_likelihood
 
 
-def poisson_nll(data, lambda_pois, mask=None, data_per_bin=1, mean=True):
+def poisson_nll(data, lambda_pois, mask=None, data_per_bin=None, mean=True):
     if mean:
         fxn = ag_np.mean
     else:
         fxn = ag_np.sum
+    if data_per_bin is None:
+        if mask is not None:
+            data_per_bin = mask.sum(axis=0).reshape(1, -1)
+        elif data is not None:
+            if data.ndim == 2:
+                data_per_bin = data.shape[0]
+            else:
+                data_per_bin = 1
+        else:
+            raise ValueError("Must input data_per_bin")
 
     lambda_pois = ag_np.asarray(lambda_pois)
     data = ag_np.asarray(data)
