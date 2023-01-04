@@ -42,7 +42,6 @@ def _get_bias(bias, lengths):
     return bias
 
 
-
 def _get_chrom(chrom, lengths=None):
     """Load chromosome names from file, or reformat chromosome names object.
     """
@@ -72,19 +71,27 @@ def _get_counts(counts, lengths):
     output = []
     for f in counts:
         if isinstance(f, np.ndarray) or sparse.issparse(f):
-            counts_maps = f
-        elif f.endswith(".npy"):
-            counts_maps = np.load(f)
+            counts_i = f
+        elif f.endswith(".npy") or f.endswith(".npz"):
+            counts_i = np.load(f)
         elif f.endswith(".matrix") or f.endswith(".matrix.gz"):
-            counts_maps = load_hiclib_counts(f, lengths=lengths)
+            counts_i = load_hiclib_counts(f, lengths=lengths)
         else:
             raise ValueError(
                 "Counts data must be formatted as a numpy binary file (.npy) or"
                 " hiclib file (.matrix or .matrix.gz).")
-        if sparse.issparse(counts_maps):
-            counts_maps = counts_maps.toarray()
-        counts_maps[np.isnan(counts_maps)] = 0
-        output.append(sparse.coo_matrix(counts_maps))
+        if np.any(counts_i.data < 0):
+            raise ValueError("Counts may not be < 0.")
+        if isinstance(counts_i, np.ndarray):
+            counts_i[~np.isfinite(counts_i)] = 0
+            counts_i = sparse.coo_matrix(counts_i, dtype=FIXME)
+        elif (~np.isfinite(counts_i.data)).sum() > 0:
+            mask = np.isfinite(counts_i.data)
+            counts_i = sparse.coo_matrix(
+                (counts_i.data[mask],
+                    (counts_i.row[mask], counts_i.col[mask])),
+                shape=counts_i.shape, dtype=FIXME)
+        output.append(counts_i)
     return output
 
 

@@ -16,7 +16,6 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     if verbose:
         print('INITIALIZATION: multi-dimensional scaling', flush=True)
 
-
     ua_counts = [c for c in counts if c.ambiguity == 'ua' and (
         c.multiscale_factor == multiscale_factor)]
     if len(ua_counts) == 1:
