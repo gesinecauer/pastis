@@ -197,7 +197,6 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     """Computes the multiscale objective function for a given counts matrix.
     """
 
-    data_per_bin = counts.fullres_per_lowres_dis().reshape(1, -1)
     bias_per_bin = counts.bias_per_bin(bias)  # TODO
 
     obj = 0
@@ -221,8 +220,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             if eps_gt0.sum() < eps_gt0.size:
                 obj = obj + poisson_nll(
                     data=counts.data[:, ~eps_gt0], lambda_pois=dis_alpha_eps0,
-                    mask=counts.mask[:, ~eps_gt0],
-                    data_per_bin=data_per_bin[:, ~eps_gt0])
+                    mask=counts.mask[:, ~eps_gt0])
 
     if not ag_np.isfinite(obj):
         raise ValueError(
@@ -246,7 +244,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             var_per_dis = multiscale_variances * 2
     else:
         var_per_dis = 0
-    data_per_bin = counts.fullres_per_lowres_dis()
+    data_per_bin = counts.fullres_per_lowres_dis
 
     lambda_intensity = ag_np.zeros(counts.nbins)
     for struct, mix_coef in zip(structures, mixture_coefs):
