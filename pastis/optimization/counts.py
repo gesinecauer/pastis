@@ -17,6 +17,35 @@ from .multiscale_optimization import _group_counts_multiscale
 from .multiscale_optimization import _get_fullres_counts_index
 
 
+def _best_counts_dtype(counts):
+    """Choose best dtype for counts matrix"""
+
+    if sparse.issparse(counts):
+        data = counts.data
+    else:
+        data = np.asarray(counts)
+
+    if (~np.isfinite(data)).sum() > 0:
+        raise ValueError("Counts may not contain NaN or Inf.")
+    if np.any(data < 0):
+        raise ValueError("Counts must not be < 0.")
+
+    max_val = data.max()
+
+    if not np.array_equal(data, data.round()):
+        warn("Counts matrix should only contain integers.")
+
+        for dtype in [np.float16, np.float32, np.float64, np.float128]:
+            if max_val <= np.finfo(dtype).max:
+                return dtype
+    else:
+        for dtype in [np.uint8, np.uint16, np.uint32, np.uint64]:
+            if max_val <= np.iinfo(dtype).max:
+                return dtype
+
+    return data.dtype
+
+
 def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
     """Convert diploid counts to ambiguous & aggregate counts across matrices.
 
