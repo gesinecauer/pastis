@@ -4,7 +4,7 @@ from scipy import sparse
 from iced.io import load_lengths
 from .hiclib import load_hiclib_counts
 from ...optimization.utils_poisson import subset_chrom_of_data
-from ...optimization.counts import _prep_counts
+from ...optimization.counts import _prep_counts, _best_counts_dtype
 
 
 def _get_lengths(lengths):
@@ -78,19 +78,19 @@ def _get_counts(counts, lengths):
             counts_i = load_hiclib_counts(f, lengths=lengths)
         else:
             raise ValueError(
-                "Counts data must be formatted as a numpy binary file (.npy) or"
-                " hiclib file (.matrix or .matrix.gz).")
-        if np.any(counts_i.data < 0):
-            raise ValueError("Counts may not be < 0.")
+                "Counts must be saved as a numpy binary file (.npy/.npz) or"
+                " a hiclib file (.matrix/.matrix.gz).")
         if isinstance(counts_i, np.ndarray):
             counts_i[~np.isfinite(counts_i)] = 0
-            counts_i = sparse.coo_matrix(counts_i, dtype=FIXME)
+            counts_i = sparse.coo_matrix(
+                counts_i, dtype=_best_counts_dtype(counts_i))
         elif (~np.isfinite(counts_i.data)).sum() > 0:
             mask = np.isfinite(counts_i.data)
             counts_i = sparse.coo_matrix(
                 (counts_i.data[mask],
                     (counts_i.row[mask], counts_i.col[mask])),
-                shape=counts_i.shape, dtype=FIXME)
+                shape=counts_i.shape,
+                dtype=_best_counts_dtype(counts_i.data[mask]))
         output.append(counts_i)
     return output
 

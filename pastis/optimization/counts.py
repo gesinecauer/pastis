@@ -18,32 +18,29 @@ from .multiscale_optimization import _get_fullres_counts_index
 
 
 def _best_counts_dtype(counts):
-    """Choose best dtype for counts matrix"""
+    """Choose most memory-efficient dtype for counts matrix"""
 
     if sparse.issparse(counts):
         data = counts.data
     else:
         data = np.asarray(counts)
 
+    if not (np.issubdtype(data.dtype, np.floating) or np.issubdtype(
+            data.dtype, np.integer)):
+        raise ValueError(f"Counts dtype is {data.dtype}, must be float or int.")
     if (~np.isfinite(data)).sum() > 0:
-        raise ValueError("Counts may not contain NaN or Inf.")
+        raise ValueError(f"Counts may not contain {data.sum()}.")
     if np.any(data < 0):
         raise ValueError("Counts must not be < 0.")
 
     max_val = data.max()
+    if np.issubdtype(data.dtype, np.floating):
+        if np.array_equal(data, data.round()):
+            max_val = int(max_val)
+        else:
+            warn("Counts matrix should only contain integers.")
 
-    if not np.array_equal(data, data.round()):
-        warn("Counts matrix should only contain integers.")
-
-        for dtype in [np.float16, np.float32, np.float64, np.float128]:
-            if max_val <= np.finfo(dtype).max:
-                return dtype
-    else:
-        for dtype in [np.uint8, np.uint16, np.uint32, np.uint64]:
-            if max_val <= np.iinfo(dtype).max:
-                return dtype
-
-    return data.dtype
+    return np.min_scalar_type(max_val)
 
 
 def ambiguate_counts(counts, lengths, ploidy, exclude_zeros=False):
@@ -1101,29 +1098,28 @@ class CountsMatrix(object):
 
     def __eq__(self, other):  # TODO remove print statements
         if type(other) is type(self):
-            # return self.__dict__ == other.__dict__
             if self.__dict__.keys() != other.__dict__.keys():
                 print('~~~~~~ __dict__ keys mismatch')
                 return False
             for key in self.__dict__.keys():
-                if type(self.__dict__[key]) is not type(other.__dict__[key]):
+                self_val = self.__dict__[key]
+                other_val = other.__dict__[key]
+                if type(self_val) is not type(other_val):
                     print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')
-                    print(f"{type(self.__dict__[key])=}")
-                    print(f"{type(other.__dict__[key])=}")
+                    print(f"{type(self_val)=}\n{type(other_val)=}")
                     return False
-                if isinstance(self.__dict__[key], (list, np.ndarray)):
-                    if ((self.__dict__[key].dtype.char in np.typecodes[
-                            'AllInteger']) and (other.__dict__[
-                            key].dtype.char in np.typecodes['AllInteger'])):
-                        if not np.array_equal(
-                                self.__dict__[key], other.__dict__[key]):
+                if isinstance(self_val, np.ndarray):
+                    if np.issubdtype(
+                            self_val.dtype, np.floating) or np.issubdtype(
+                            other_val.dtype, np.floating):
+                        if not np.allclose(self_val, other_val):
+                            print(f'~~~~~~ __dict__ array not equal: {key}')
+                            return False
+                    else:  # Arrays with non-float dtypes must be exactly equal
+                        if not np.array_equal(self_val, other_val):
                             print(f'~~~~~~ __dict__ array not equal int: {key}')
                             return False
-                    elif not np.allclose(
-                            self.__dict__[key], other.__dict__[key]):
-                        print(f'~~~~~~ __dict__ array not equal: {key}')
-                        return False
-                elif self.__dict__[key] != other.__dict__[key]:
+                elif self_val != other_val:
                     print(f'~~~~~~ __dict__ value not equal: {key}')
                     return False
             return True
@@ -1316,29 +1312,28 @@ class CountsBins(object):
 
     def __eq__(self, other):  # TODO remove print statements
         if type(other) is type(self):
-            # return self.__dict__ == other.__dict__
             if self.__dict__.keys() != other.__dict__.keys():
                 print('~~~~~~ __dict__ keys mismatch')
                 return False
             for key in self.__dict__.keys():
-                if type(self.__dict__[key]) is not type(other.__dict__[key]):
+                self_val = self.__dict__[key]
+                other_val = other.__dict__[key]
+                if type(self_val) is not type(other_val):
                     print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')
-                    print(f"{type(self.__dict__[key])=}")
-                    print(f"{type(other.__dict__[key])=}")
+                    print(f"{type(self_val)=}\n{type(other_val)=}")
                     return False
-                if isinstance(self.__dict__[key], (list, np.ndarray)):
-                    if ((self.__dict__[key].dtype.char in np.typecodes[
-                            'AllInteger']) and (other.__dict__[
-                            key].dtype.char in np.typecodes['AllInteger'])):
-                        if not np.array_equal(
-                                self.__dict__[key], other.__dict__[key]):
+                if isinstance(self_val, np.ndarray):
+                    if np.issubdtype(
+                            self_val.dtype, np.floating) or np.issubdtype(
+                            other_val.dtype, np.floating):
+                        if not np.allclose(self_val, other_val):
+                            print(f'~~~~~~ __dict__ array not equal: {key}')
+                            return False
+                    else:  # Arrays with non-float dtypes must be exactly equal
+                        if not np.array_equal(self_val, other_val):
                             print(f'~~~~~~ __dict__ array not equal int: {key}')
                             return False
-                    elif not np.allclose(
-                            self.__dict__[key], other.__dict__[key]):
-                        print(f'~~~~~~ __dict__ array not equal: {key}')
-                        return False
-                elif self.__dict__[key] != other.__dict__[key]:
+                elif self_val != other_val:
                     print(f'~~~~~~ __dict__ value not equal: {key}')
                     return False
             return True

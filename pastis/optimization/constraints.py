@@ -451,7 +451,7 @@ class BeadChainConnectivity2022(Constraint):
             counts_nghbr = np.zeros(
                 counts_nghbr_mask.shape,
                 dtype=counts_nghbr_object.bins_nonzero.data.dtype)
-            if counts_nghbr.dtype.char not in np.typecodes['AllInteger']:
+            if not np.issubdtype(counts_nghbr.dtype, np.integer):
                 print('counts_nghbr.dtype is not integer???', flush=True)  # TODO remove
             counts_nghbr[
                 :, mask_bin_nonzero] = counts_nghbr_object.bins_nonzero.data
