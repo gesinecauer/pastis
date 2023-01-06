@@ -228,7 +228,8 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
     from .multiscale_optimization import decrease_lengths_res
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    nbeads = lengths_lowres.sum() * ploidy
+    n = lengths_lowres.sum()
+    nbeads = n * ploidy
 
     if not isinstance(counts, list):
         counts = [counts]
@@ -237,26 +238,16 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
 
     inverse_struct_nan_mask = np.zeros(int(nbeads))
     for c in counts:
-        if max(c.shape) not in (nbeads, nbeads / ploidy):
+        if set(c.shape) not in ({n}, {nbeads}, {nbeads, n}):
             raise ValueError(
                 "Resolution of counts is not consistent with lengths at"
-                f" multiscale_factor={multiscale_factor}. Counts shape is ("
-                f"{', '.join(map(str, c.shape))}).")
-
-        if isinstance(c, np.ndarray):
-            axis0sum = np.tile(
-                np.array(np.nansum(c, axis=0).flatten()).flatten(),
-                int(nbeads / c.shape[1]))
-            axis1sum = np.tile(
-                np.array(np.nansum(c, axis=1).flatten()).flatten(),
-                int(nbeads / c.shape[0]))
-        else:
-            axis0sum = np.tile(
-                np.array(c.sum(axis=0).flatten()).flatten(),
-                int(nbeads / c.shape[1]))
-            axis1sum = np.tile(
-                np.array(c.sum(axis=1).flatten()).flatten(),
-                int(nbeads / c.shape[0]))
+                f" multiscale_factor={multiscale_factor}. Counts={c.shape}.")
+        axis0sum = np.tile(
+            np.array(c.sum(axis=0).flatten()).flatten(),
+            int(nbeads / c.shape[1]))
+        axis1sum = np.tile(
+            np.array(c.sum(axis=1).flatten()).flatten(),
+            int(nbeads / c.shape[0]))
         inverse_struct_nan_mask += (axis0sum + axis1sum > threshold).astype(int)
 
     struct_nan_mask = ~inverse_struct_nan_mask.astype(bool)
@@ -369,7 +360,7 @@ jax_max.defjvps(
     lambda g2, ans, x1, x2: lax.select(x1 < x2, g2, lax.full_like(g2, 0)))
 
 
-def subset_chrom(lengths_full, chrom_full, chrom_subset=None):
+def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
     """Return lengths, names, and indices for selected chromosomes only.
 
     If `chrom_subset` is None, return original lengths and chromosome names.
@@ -395,7 +386,7 @@ def subset_chrom(lengths_full, chrom_full, chrom_subset=None):
     chrom_subset : array of str
         Label for each chromosome in the subsetted data, in the order indicated
         by `chrom_full`.
-    subset_index : array or None
+    subset_idx : array or None
         If `chrom_subset` is None or is equivalent to `chrom_full`, return None.
         Otherwise, return array with mask of subsetted chrom, of size
         `lengths_full.sum() * ploidy`.
@@ -424,23 +415,22 @@ def subset_chrom(lengths_full, chrom_full, chrom_subset=None):
     if np.array_equal(chrom_subset, chrom_full):
         # Not subsetting chrom
         lengths_subset = lengths_full.copy()
-        subset_index = None
+        subset_idx = None
     else:
         # Subsetting chrom
-        lengths_subset = np.array([lengths_full[i] for i in range(
-            len(chrom_full)) if chrom_full[i] in chrom_subset])
-        subset_index = []
+        lengths_subset = lengths_full[np.isin(chrom_full, chrom_subset)]
+        subset_mask = []
         for i in range(len(lengths_full)):
-            subset_index.append(
+            subset_mask.append(
                 np.full((lengths_full[i],), chrom_full[i] in chrom_subset))
-        subset_index = np.concatenate(subset_index)
+        subset_mask = np.concatenate(subset_mask)
+        subset_idx = np.where(subset_mask)[0]
 
-    return lengths_subset, chrom_subset, subset_index
+    return lengths_subset, chrom_subset, subset_idx
 
 
 def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
-                         counts=None, bias=None, structures=None,
-                         exclude_zeros=False):
+                         counts=None, bias=None, structures=None):
     """Return data for selected chromosomes only.
 
     If `chrom_subset` is None, return original data. Otherwise, only return
@@ -481,28 +471,27 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
 
     from .counts import check_counts
 
-    lengths_subset, chrom_subset, subset_index = subset_chrom(
+    lengths_subset, chrom_subset, subset_idx = subset_chromosomes(
         lengths_full=lengths_full, chrom_full=chrom_full,
         chrom_subset=chrom_subset)
 
-    if subset_index is not None and ploidy == 2:
-        subset_index = np.tile(subset_index, 2)
+    if subset_idx is not None and ploidy == 2:
+        subset_idx = np.append(subset_idx, subset_idx + lengths_full.sum())
 
     if counts is not None:
         counts = check_counts(
             counts, lengths=lengths_full, ploidy=ploidy,
-            exclude_zeros=exclude_zeros, chrom_subset_index=subset_index)
+            chrom_subset_idx=subset_idx)
 
-    if subset_index is not None and bias is not None:
-        bias = bias[subset_index]
+    if subset_idx is not None and bias is not None:
+        bias = bias[subset_idx]
 
-    if subset_index is not None and structures is not None:
+    if subset_idx is not None and structures is not None:
         if isinstance(structures, list):
             for i in range(len(structures)):
-                structures[i] = structures[i].reshape(-1, 3)[
-                    subset_index].reshape(*structures[i].shape)
+                structures[i] = structures[i].reshape(-1, 3)[subset_idx]
         else:
-            structures = structures.reshape(-1, 3)[subset_index]
+            structures = structures.reshape(-1, 3)[subset_idx]
 
     data_subset = {'counts': counts, 'bias': bias, 'struct': structures}
     return lengths_subset, chrom_subset, data_subset
@@ -511,14 +500,13 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
 def _intra_mask(data, lengths_at_res):
     """Return mask of intra-chromosomal rows/cols for given counts/dis data.  # TODO move to counts.py??
     """
-    from .counts import _row_and_col
-
     if (isinstance(data, (tuple, list)) and len(data) == 2) or (
             isinstance(data, np.ndarray) and data.size == 2):
         shape = data
         row, col = (x.flatten() for x in np.indices(shape))
     else:
-        row, col = _row_and_col(data)
+        row = data.row
+        col = data.col
         shape = data.shape
 
     bins_for_row = np.tile(
@@ -536,11 +524,10 @@ def _intra_mask(data, lengths_at_res):
     return np.equal(row_binned, col_binned)
 
 
-def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
-                         nbins=None, exclude_zeros=False):
+def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
     """Return masked counts.  # TODO move to counts.py
     """
-    from .counts import _check_counts_matrix, _row_and_col
+    from .counts import _check_counts_matrix
 
     sections = sections.lower()
     options = ['inter', 'intra', 'near diag']
@@ -549,9 +536,7 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
     if sections == 'near diag' and nbins is None:
         raise ValueError("Must input nbins.")
 
-    counts = _check_counts_matrix(
-        counts, lengths=lengths_at_res, ploidy=ploidy,
-        exclude_zeros=exclude_zeros)
+    counts = _check_counts_matrix(counts, lengths=lengths_at_res, ploidy=ploidy)
 
     mask_intra = _intra_mask(counts, lengths_at_res)
     if sections == 'intra':
@@ -559,7 +544,8 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
     elif sections == 'inter':
         mask = ~mask_intra
     elif sections == 'near diag':
-        row, col = _row_and_col(counts)
+        row = counts.row
+        col = counts.col
         if counts.shape[0] != counts.shape[1]:
             row = row.copy()
             col = col.copy()
@@ -569,7 +555,7 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
         mask_near_diag = np.abs(row - col) <= nbins
         mask = mask_intra & mask_near_diag
     # elif sections == 'lowres nghbr':
-    #     row, col = _row_and_col(counts)
+    #     row = counts.row; col = counts.col
     #     row = row.copy()
     #     col = col.copy()
     #     if counts.shape[0] != counts.shape[1]:
@@ -585,39 +571,30 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy,
     #         col / nbins)) == 1
     #     mask = mask_intra & mask_lowres_nghbr
 
-    if exclude_zeros:
-        return sparse.coo_matrix(
-            (counts.data[mask], (counts.row[mask], counts.col[mask])),
-            shape=counts.shape)
-    else:
-        row, col = _row_and_col(counts)
-        row = row[mask]
-        col = col[mask]
-        counts_new = np.full_like(counts, np.nan)
-        counts_new[row, col] = counts[row, col]
-        return counts_new
+    return sparse.coo_matrix(
+        (counts.data[mask], (counts.row[mask], counts.col[mask])),
+        shape=counts.shape)
 
 
-def _intra_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
+def _intra_counts(counts, lengths_at_res, ploidy):
     """Return intra-chromosomal counts.  # TODO move to counts.py
     """
     return _get_counts_sections(
         counts=counts, sections='intra', lengths_at_res=lengths_at_res,
-        ploidy=ploidy, exclude_zeros=exclude_zeros)
+        ploidy=ploidy)
 
 
-def _inter_counts(counts, lengths_at_res, ploidy, exclude_zeros=False):
+def _inter_counts(counts, lengths_at_res, ploidy):
     """Return inter-chromosomal counts.  # TODO move to counts.py
     """
     return _get_counts_sections(
         counts=counts, sections='inter', lengths_at_res=lengths_at_res,
-        ploidy=ploidy, exclude_zeros=exclude_zeros)
+        ploidy=ploidy)
 
 
-def _counts_near_diag(counts, lengths_at_res, ploidy, nbins,
-                      exclude_zeros=False):
+def _counts_near_diag(counts, lengths_at_res, ploidy, nbins):
     """Return intra-chromosomal counts within `nbins` of diagonal.  # TODO move to counts.py
     """
     return _get_counts_sections(
         counts=counts, sections='near diag', lengths_at_res=lengths_at_res,
-        ploidy=ploidy, nbins=nbins, exclude_zeros=exclude_zeros)
+        ploidy=ploidy, nbins=nbins)

@@ -55,7 +55,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        exclude_zeros=exclude_zeros, struct_true=struct_true, verbose=False)
+        struct_true=struct_true, verbose=False)
 
     multiscale_factor_for_lowres = _choose_max_multiscale_factor(
         lengths=lengths, min_beads=hsc_min_beads)
@@ -479,7 +479,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        exclude_zeros=exclude_zeros, struct_true=struct_true, verbose=verbose)
+        struct_true=struct_true, verbose=verbose)
 
     # PREP FOR INFERENCE
     prepped = _prep_inference(
@@ -627,8 +627,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             counts=counts, lengths_full=lengths, ploidy=ploidy,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-            exclude_zeros=exclude_zeros, struct_true=struct_true,
-            verbose=verbose)
+            struct_true=struct_true, verbose=verbose)
         # Get initial beta
         if first_alpha_loop and beta_init is None:
             if beta is not None:
@@ -652,11 +651,9 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         bias = _bias
         struct_true = _struct_true
         filter_threshold = 0  # Counts have already been filtered
-        chrom_subset = None # Chromosomes have already been selected
+        chrom_subset = None  # Chromosomes have already been selected
         lengths = lengths_subset
         chrom_full = chrom_subset
-    # Get neighbor counts (if needed)
-
 
     # OPTIONALLY INFER ALPHA VIA SINGLERES
     if first_alpha_loop and multiscale_rounds > 1:

@@ -154,7 +154,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
 
     # "True" ambiguated counts: ambiguate before converting to CountsMatrix
     true_counts_ambig_arr_fullres = counts_py.ambiguate_counts(
-        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True)
+        counts, lengths=lengths, ploidy=ploidy)
     # true_counts_ambig_arr = decrease_counts_res(
     #     true_counts_ambig_arr_fullres, multiscale_factor=multiscale_factor,
     #     lengths=lengths, ploidy=ploidy).toarray()
@@ -170,7 +170,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta,
         exclude_zeros=False, multiscale_factor=multiscale_factor)
     counts_ambig_object = counts_py.ambiguate_counts(
-        counts_objects, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
+        counts_objects, lengths=lengths, ploidy=ploidy)
     # counts_ambig_arr = counts_ambig_object.tocoo().toarray()
 
     compare_counts_objects(

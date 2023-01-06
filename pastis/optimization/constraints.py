@@ -4,7 +4,6 @@ if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
 import numpy as np
-from scipy import sparse
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -17,6 +16,7 @@ from .utils_poisson import find_beads_to_remove, _euclidean_distance
 from .utils_poisson import relu_min
 from .utils_poisson import _inter_counts, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta, _get_nonzero_mask
+from .counts import _best_counts_dtype
 from .likelihoods import poisson_nll, gamma_poisson_nll
 from .poisson import get_gamma_moments
 from ..io.read import load_data
@@ -404,6 +404,8 @@ class BeadChainConnectivity2022(Constraint):
 
         # Get counts corresponding to neighboring beads
         if self.multiscale_factor == 1:
+            raise NotImplementedError
+
             # TODO update this whole chunk
             counts_ambig = ambiguate_counts(
                 counts=counts, lengths=self.lengths, ploidy=self.ploidy,
@@ -411,9 +413,7 @@ class BeadChainConnectivity2022(Constraint):
             counts_nghbr = counts_ambig[
                 row_nghbr_ambig_fullres, row_nghbr_ambig_fullres + 1]
             counts_nghbr[np.isnan(counts_nghbr)] = np.nanmean(counts_nghbr)
-            if np.array_equal(counts_nghbr, counts_nghbr.round()):  # TODO Use Mozes function for this
-                counts_nghbr = counts_nghbr.astype(
-                    sparse.sputils.get_index_dtype(maxval=counts_nghbr.max()))
+            counts_nghbr = counts_nghbr.astype(_best_counts_dtype(counts_nghbr))
             counts_nghbr_mask = None
         else:
             row_nghbr_ambig_lowres = _neighboring_bead_indices(
@@ -770,7 +770,7 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     counts, bias, lengths, _, _, _, _ = load_data(
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        exclude_zeros=False, verbose=False)
+        verbose=False)
     if lengths.size == 1:
         raise ValueError(
             "Must input counts_interchrom if inferring a single chromosome.")
@@ -779,10 +779,9 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
 
     # Get inter-chromosomal ambiguated counts
     counts_ambig = ambiguate_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
+        counts=counts, lengths=lengths, ploidy=ploidy)
     counts_interchrom = _inter_counts(
-        counts_ambig, lengths, ploidy=ploidy, exclude_zeros=False)
-
+        counts_ambig, lengths_at_res=lengths, ploidy=ploidy)
 
     if bias is not None and not np.all(bias == 1):
         raise ValueError("What do do with this? Do I need this?")

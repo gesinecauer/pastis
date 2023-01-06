@@ -22,16 +22,15 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
         ua_counts = ua_counts[0]
     elif len(ua_counts) != 0:
         raise ValueError(
-            "Multiple unambiguous counts matrices detected."
-            " Pool data from unambiguous counts matrices before inference.")
+            "Multiple unambiguous counts matrices detected. Pool data from"
+            " unambiguous counts matrices before inference.")
     else:
         raise ValueError("Unambiguous counts needed to initialize via MDS.")
 
     ua_beta = ua_counts.beta
     if ua_beta is not None:
         ua_beta = ua_beta * multiscale_factor ** 2
-    ua_counts_arr = ua_counts.tocoo().toarray()
-    if bias is not None:
+    if bias is not None and not np.all(bias == 1):
         bias_per_bin = np.tile(bias, ploidy)
     else:
         bias_per_bin = None
@@ -40,7 +39,7 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
         raise ValueError("Must supply alpha for MDS initialization.")
 
     struct = estimate_X(
-        ua_counts_arr, alpha=alpha, beta=ua_beta,
+        ua_counts.tocoo(), alpha=alpha, beta=ua_beta,
         verbose=False, use_zero_entries=False, precompute_distances='auto',
         bias=bias_per_bin, random_state=random_state, type="MDS2", factr=1e12,
         maxiter=10000, ini=None)

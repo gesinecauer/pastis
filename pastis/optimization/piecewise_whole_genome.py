@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.metrics import euclidean_distances
 import os
 from scipy import linalg
-from .utils_poisson import subset_chrom_of_data, subset_chrom
+from .utils_poisson import subset_chrom_of_data, subset_chromosomes
 from .pastis_algorithms import infer, _infer_draft
 from .utils_poisson import _print_code_header, _load_infer_param
 from .utils_poisson import _format_structures, _output_subdir
@@ -287,7 +287,7 @@ def _orient_single_fullres_chrom(struct_genome_lowres, struct_chrom_fullres,
     import quaternion
 
     # Extract the chromosome from low-res whole-genome structure
-    chrom_lengths_lowres, _, index = subset_chrom(
+    chrom_lengths_lowres, _, index = subset_chromosomes(
         lengths_full=decrease_lengths_res(lengths, piecewise_factor),
         chrom_full=chromosomes, chrom_subset=[chrom])
     struct_lowres_genome2chrom = struct_genome_lowres[index]
@@ -570,7 +570,7 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
                 counts=counts_raw, ploidy=ploidy, lengths_full=lengths,
                 chrom_full=chromosomes, chrom_subset=chrom,
                 exclude_zeros=exclude_zeros, bias=bias, struct_true=struct_true)
-            index = subset_chrom(
+            index = subset_chromosomes(
                 lengths_full=lengths, chrom_full=chromosomes,
                 chrom_subset=chrom)[-1]
             if ploidy == 2:

@@ -4,7 +4,7 @@ from scipy import sparse
 from iced.io import load_lengths
 from .hiclib import load_hiclib_counts
 from ...optimization.utils_poisson import subset_chrom_of_data
-from ...optimization.counts import _prep_counts, _best_counts_dtype
+from ...optimization.counts import _prep_counts, _check_counts_matrix
 
 
 def _get_lengths(lengths):
@@ -61,43 +61,35 @@ def _get_chrom(chrom, lengths=None):
     return chrom
 
 
-def _get_counts(counts, lengths):
+def _get_counts(counts, lengths, ploidy):
     """Load counts from file, or reformat counts object.
     """
 
     if not isinstance(counts, list):
         counts = [counts]
     lengths = _get_lengths(lengths)
-    output = []
-    for f in counts:
-        if isinstance(f, np.ndarray) or sparse.issparse(f):
-            counts_i = f
-        elif f.endswith(".npy") or f.endswith(".npz"):
-            counts_i = np.load(f)
-        elif f.endswith(".matrix") or f.endswith(".matrix.gz"):
-            counts_i = load_hiclib_counts(f, lengths=lengths)
+
+    for i in range(len(counts)):
+        if isinstance(counts[i], np.ndarray) or sparse.issparse(counts[i]):
+            pass
+        elif counts[i].endswith(".npy") or counts[i].endswith(".npz"):
+            counts[i] = np.load(counts[i])
+        elif counts[i].endswith(".matrix") or counts[i].endswith(".matrix.gz"):
+            counts[i] = load_hiclib_counts(counts[i], lengths=lengths)
         else:
             raise ValueError(
                 "Counts must be saved as a numpy binary file (.npy/.npz) or"
                 " a hiclib file (.matrix/.matrix.gz).")
-        if isinstance(counts_i, np.ndarray):
-            counts_i[~np.isfinite(counts_i)] = 0
-            counts_i = sparse.coo_matrix(
-                counts_i, dtype=_best_counts_dtype(counts_i))
-        elif (~np.isfinite(counts_i.data)).sum() > 0:
-            mask = np.isfinite(counts_i.data)
-            counts_i = sparse.coo_matrix(
-                (counts_i.data[mask],
-                    (counts_i.row[mask], counts_i.col[mask])),
-                shape=counts_i.shape,
-                dtype=_best_counts_dtype(counts_i.data[mask]))
-        output.append(counts_i)
-    return output
+
+        counts[i] = _check_counts_matrix(
+            counts[i], lengths=lengths, ploidy=ploidy, copy=False)
+
+    return counts
 
 
 def load_data(counts, lengths_full, ploidy, chrom_full=None,
               chrom_subset=None, filter_threshold=0.04, normalize=True,
-              bias=None, exclude_zeros=False, struct_true=None, verbose=False):
+              bias=None, struct_true=None, verbose=False):
     """Load all input data from files, and/or reformat data objects.
 
     If files are provided, load data from files. Also reformats data objects.
@@ -148,7 +140,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     # Load
     lengths_full = _get_lengths(lengths_full)
     chrom_full = _get_chrom(chrom_full, lengths=lengths_full)
-    counts = _get_counts(counts, lengths=lengths_full)
+    counts = _get_counts(counts, lengths=lengths_full, ploidy=ploidy)
     bias = _get_bias(bias, lengths=lengths_full)
     if struct_true is not None and isinstance(struct_true, str):
         struct_true = np.loadtxt(struct_true).reshape(-1, 3)
@@ -157,7 +149,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     lengths_subset, chrom_subset, data_subset = subset_chrom_of_data(
         ploidy=ploidy, lengths_full=lengths_full, chrom_full=chrom_full,
         chrom_subset=chrom_subset, counts=counts, bias=bias,
-        structures=struct_true, exclude_zeros=exclude_zeros)
+        structures=struct_true)
     counts = data_subset['counts']
     bias = data_subset['bias']
     struct_true = data_subset['struct']
@@ -166,7 +158,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     counts, bias = _prep_counts(
         counts, lengths=lengths_subset, ploidy=ploidy,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        exclude_zeros=exclude_zeros, verbose=verbose)
+        verbose=verbose)
 
     return (counts, bias, lengths_subset, chrom_subset, lengths_full,
             chrom_full, struct_true)

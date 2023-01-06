@@ -28,7 +28,8 @@ def test_3d_indices_haploid():
     counts = sparse.coo_matrix(counts)
 
     row3d, col3d = process_counts._counts_indices_to_3d_indices(
-        counts=counts, nbeads=n * ploidy)
+        counts=counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
 
     assert np.array_equal(counts.row, row3d)
     assert np.array_equal(counts.col, col3d)
@@ -51,7 +52,8 @@ def test_3d_indices_diploid_unambig():
     counts = sparse.coo_matrix(counts)
 
     row3d, col3d = process_counts._counts_indices_to_3d_indices(
-        counts=counts, nbeads=n * ploidy)
+        counts=counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
 
     assert np.array_equal(counts.row, row3d)
     assert np.array_equal(counts.col, col3d)
@@ -75,7 +77,8 @@ def test_3d_indices_diploid_ambig():
     counts = sparse.coo_matrix(counts)
 
     row3d, col3d = process_counts._counts_indices_to_3d_indices(
-        counts=counts, nbeads=n * ploidy)
+        counts=counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
 
     row3d_true = np.concatenate([np.tile(counts.row, 2), np.tile(counts.row, 2) + n])
     col3d_true = np.tile(np.concatenate([counts.col, counts.col + n]), 2)
@@ -102,7 +105,8 @@ def test_3d_indices_diploid_partially_ambig():
     counts = sparse.coo_matrix(counts)
 
     row3d, col3d = process_counts._counts_indices_to_3d_indices(
-        counts=counts, nbeads=n * ploidy)
+        counts=counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
 
     row3d_true = np.tile(counts.row, 2)
     col3d_true = np.concatenate([counts.col, counts.col + n])

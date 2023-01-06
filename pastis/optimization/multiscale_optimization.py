@@ -5,8 +5,6 @@ from scipy import sparse
 from scipy.interpolate import interp1d
 from iced.io import load_lengths
 from .utils_poisson import _struct_replace_nan
-import warnings
-
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
@@ -339,19 +337,16 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
         `multiscale_factor`.
     """
 
-    from .counts import _row_and_col, _check_counts_matrix
+    from .counts import _check_counts_matrix
 
     if multiscale_factor == 1:
         if return_indices:
-            rows, cols = _row_and_col(counts)
-            return counts, rows, cols
+            return counts, counts.row, counts.col
         else:
             return counts
 
-    input_is_sparse = sparse.issparse(counts)
-
     counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=True).toarray()
+        counts, lengths=lengths, ploidy=ploidy).toarray()
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
@@ -371,11 +366,6 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
         (data_lowres[data_lowres != 0],
             (row_lowres[data_lowres != 0], col_lowres[data_lowres != 0])),
         shape=counts_lowres_shape)
-
-    if not input_is_sparse:
-        counts_lowres = _check_counts_matrix(
-            counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-            exclude_zeros=False, remove_diag=remove_diag)
 
     if return_indices:
         return counts_lowres, row_fullres, col_fullres
@@ -397,7 +387,7 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
     dummy_counts_lowres = np.ones(counts_lowres_shape)
     dummy_counts_lowres = _check_counts_matrix(
         dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-        exclude_zeros=True, remove_diag=remove_diag)
+        remove_diag=remove_diag)
     row_lowres = dummy_counts_lowres.row
     col_lowres = dummy_counts_lowres.col
 
