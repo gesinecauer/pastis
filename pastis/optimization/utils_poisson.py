@@ -461,7 +461,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     chrom_subset : array of str
         Label for each chromosome in the subsetted data, in the order indicated
         by `chrom_full`.
-    counts : list of array or coo_matrix, or None
+    counts : list of coo_matrix, or None
         If `counts` is inputted, subsetted counts data containing only the
         specified chromosomes. Otherwise, None.
     structures : array, list of array, or None

@@ -90,7 +90,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     counts = (counts if isinstance(counts, list) else [counts])
     if lengths is None:
         lengths = np.array([min([min(c.shape) for c in counts])])
-    lengths = np.array(lengths)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     if bias is None:
         if multiscale_reform:
             bias = np.ones((lengths.sum(),))
@@ -317,7 +317,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
-    lengths = np.array(lengths)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     if bias is None:
         if multiscale_reform:
             bias = np.ones((lengths.sum(),))

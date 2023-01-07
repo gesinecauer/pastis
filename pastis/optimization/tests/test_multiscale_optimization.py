@@ -13,7 +13,7 @@ if sys.version_info[0] >= 3:
     from pastis.optimization import multiscale_optimization
     from pastis.optimization import pastis_algorithms
     from pastis.optimization import poisson
-    from pastis.optimization.counts import _format_counts, preprocess_counts
+    from pastis.optimization.counts import preprocess_counts
 
 
 def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
@@ -21,7 +21,7 @@ def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
         return struct
 
     struct = struct.copy().reshape(-1, 3)
-    lengths = np.array(lengths).astype(int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
 
     struct_lowres = []
     begin = end = 0
@@ -83,7 +83,7 @@ def decrease_counts_res_correct(counts, multiscale_factor, lengths):
     is_sparse = sparse.issparse(counts)
     if is_sparse:
         counts = counts.toarray()
-    lengths = np.array(lengths).astype(int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     triu = counts.shape[0] == counts.shape[1]
     if triu:
         counts = np.triu(counts, 1)

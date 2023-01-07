@@ -1,7 +1,6 @@
 import sys
 import pytest
 import numpy as np
-from sklearn.metrics import euclidean_distances
 from scipy import sparse
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
@@ -11,9 +10,36 @@ pytestmark = pytest.mark.skipif(
 if sys.version_info[0] >= 3:
     from utils import get_counts
     import pastis.optimization.counts as counts_py
-    from pastis.optimization.multiscale_optimization import decrease_counts_res
 
     from topsy.utils.debug import print_array_non0  # TODO remove
+
+
+def ambiguate_counts_correct(counts, lengths, ploidy):
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    n = lengths.sum()
+    if not isinstance(counts, list):
+        counts = [counts]
+
+    if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
+        return counts[0]
+
+    counts_ambig = np.zeros((n, n))
+    for c in counts:
+        c = c.toarray()
+        if c.shape[0] > c.shape[1]:
+            c_ambig = np.sum(
+                [c[:n, :], c[n:, :], c[:n, :].T, c[n:, :].T], axis=0)
+        elif c.shape[0] < c.shape[1]:
+            c_ambig = np.sum(
+                [c[:, :n].T, c[:, n:].T, c[:, :n], c[:, n:]], axis=0)
+        elif c.shape[0] == n:
+            c_ambig = c
+        else:
+            c_ambig = np.sum(
+                [c[:n, :n], c[:n, n:], c[:n, n:].T, c[n:, n:]], axis=0)
+        counts_ambig += c_ambig
+
+    return sparse.coo_matrix(counts_ambig)
 
 
 def compare_counts_bins_objects(bins, bins_true):
@@ -79,10 +105,10 @@ def compare_counts_objects(counts, counts_true):
 
 @pytest.mark.parametrize(
     "multiscale_factor,beta", [
-    (1, 1), (1, 0.1), (1, 0.01),
-    (2, 1), (2, 0.1), (2, 0.01),
-    (4, 1), (4, 0.1), (4, 0.01),
-    (8, 1), (8, 0.1), (8, 0.01)])
+        (1, 1), (1, 0.1), (1, 0.01),
+        (2, 1), (2, 0.1), (2, 0.01),
+        (4, 1), (4, 0.1), (4, 0.01),
+        (8, 1), (8, 0.1), (8, 0.01)])
 def test_add_counts_haploid(multiscale_factor, beta):
     lengths = np.array([10, 21])
     ploidy = 1
@@ -124,18 +150,18 @@ def test_add_counts_haploid(multiscale_factor, beta):
 
 @pytest.mark.parametrize(
     "ambiguity,multiscale_factor,beta", [
-    ('ambig', 1, 1), ('pa', 1, 1), ('ua', 1, 1),
-    ('ambig', 2, 1), ('pa', 2, 1), ('ua', 2, 1),
-    ('ambig', 4, 1), ('pa', 4, 1), ('ua', 4, 1),
-    ('ambig', 8, 1), ('pa', 8, 1), ('ua', 8, 1),
-    ('ambig', 1, 0.1), ('pa', 1, 0.1), ('ua', 1, 0.1),
-    ('ambig', 2, 0.1), ('pa', 2, 0.1), ('ua', 2, 0.1),
-    ('ambig', 4, 0.1), ('pa', 4, 0.1), ('ua', 4, 0.1),
-    ('ambig', 8, 0.1), ('pa', 8, 0.1), ('ua', 8, 0.1),
-    ('ambig', 1, 0.01), ('pa', 1, 0.01), ('ua', 1, 0.01),
-    ('ambig', 2, 0.01), ('pa', 2, 0.01), ('ua', 2, 0.01),
-    ('ambig', 4, 0.01), ('pa', 4, 0.01), ('ua', 4, 0.01),
-    ('ambig', 8, 0.01), ('pa', 8, 0.01), ('ua', 8, 0.01)])
+        ('ambig', 1, 1), ('pa', 1, 1), ('ua', 1, 1),
+        ('ambig', 2, 1), ('pa', 2, 1), ('ua', 2, 1),
+        ('ambig', 4, 1), ('pa', 4, 1), ('ua', 4, 1),
+        ('ambig', 8, 1), ('pa', 8, 1), ('ua', 8, 1),
+        ('ambig', 1, 0.1), ('pa', 1, 0.1), ('ua', 1, 0.1),
+        ('ambig', 2, 0.1), ('pa', 2, 0.1), ('ua', 2, 0.1),
+        ('ambig', 4, 0.1), ('pa', 4, 0.1), ('ua', 4, 0.1),
+        ('ambig', 8, 0.1), ('pa', 8, 0.1), ('ua', 8, 0.1),
+        ('ambig', 1, 0.01), ('pa', 1, 0.01), ('ua', 1, 0.01),
+        ('ambig', 2, 0.01), ('pa', 2, 0.01), ('ua', 2, 0.01),
+        ('ambig', 4, 0.01), ('pa', 4, 0.01), ('ua', 4, 0.01),
+        ('ambig', 8, 0.01), ('pa', 8, 0.01), ('ua', 8, 0.01)])
 def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
     lengths = np.array([10, 21])
     ploidy = 2
@@ -153,7 +179,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
         use_poisson=True)
 
     # "True" ambiguated counts: ambiguate before converting to CountsMatrix
-    true_counts_ambig_arr_fullres = counts_py.ambiguate_counts(
+    true_counts_ambig_arr_fullres = ambiguate_counts_correct(
         counts, lengths=lengths, ploidy=ploidy)
     # true_counts_ambig_arr = decrease_counts_res(
     #     true_counts_ambig_arr_fullres, multiscale_factor=multiscale_factor,
@@ -175,11 +201,3 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
 
     compare_counts_objects(
         counts_ambig_object, counts_true=true_counts_ambig_object)
-
-
-def test_zero_bins():
-    pass  # FIXME make unit test for this too
-    # _, (row, col), shape, mask = _group_counts_multiscale(
-    #     counts, lengths=self.lengths, ploidy=self.ploidy,
-    #     multiscale_factor=self.multiscale_factor,
-    #     for_zero_counts_matrix=True)

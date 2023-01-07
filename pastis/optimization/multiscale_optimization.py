@@ -32,7 +32,7 @@ def decrease_lengths_res(lengths, multiscale_factor):
     """
 
     if multiscale_factor == 1:
-        return np.asarray(lengths)
+        return np.array(lengths, copy=False, ndmin=1, dtype=int)
     else:
         return np.ceil(
             np.asarray(lengths, dtype=float) / multiscale_factor).astype(int)
@@ -89,7 +89,7 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     struct = struct.reshape(-1, 3)
     if isinstance(lengths, str):
         lengths = load_lengths(lengths)
-    lengths = np.array(lengths).astype(int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     lengths_current = decrease_lengths_res(
         lengths=lengths, multiscale_factor=current_multiscale_factor)
     if random_state is None:
@@ -165,7 +165,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
     struct = struct.reshape(-1, 3)
     if isinstance(lengths, str):
         lengths = load_lengths(lengths)
-    lengths = np.array(lengths).astype(int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     lengths_lowres = decrease_lengths_res(
         lengths=lengths, multiscale_factor=multiscale_factor)
 
@@ -221,7 +221,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
 
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
-                             for_zero_counts_matrix=False):
+                             exclude_zeros=False):
     """Group together full-res counts corresponding to a given low-res distance.
 
     Prepare counts for multi-resolution optimization by aggregating sets of
@@ -230,9 +230,8 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
 
     Parameters
     ----------
-    counts : array or coo_matrix
-        Counts data at full resolution, ideally without normalization or
-        filtering.
+    counts : coo_matrix
+        Counts data at full resolution.
     lengths : array_like of int
         Number of beads per homolog of each chromosome at full resolution.
     ploidy : {1, 2}
@@ -240,73 +239,58 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 does not change the resolution.
-    for_zero_counts_matrix : bool, optional
-        TODO update
-        If true: if any of the individual full-res bins in a group are zero,
-        exclude the entire group of full-res bins from the output.
-        Individual full-res bins that are NaN do not result in the group's
-        exclusion. Groups where every single full-res bin is NaN are still
-        excluded from the ouptut.
 
     Returns
     -------
     data_grouped : array
         TODO
-    idx : tuple of arrays
+    idx_lowres : tuple of arrays
         TODO
     shape_lowres : tuple of int
         TODO
     mask : array
         TODO
     """
-    from .counts import _check_counts_matrix
+    from .counts import _check_counts_matrix, _get_included_counts_bins
 
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy, exclude_zeros=False)
-
-    if for_zero_counts_matrix:
-        mask_non0 = np.isnan(counts) | (counts != 0)
-        counts = counts + 1
-        counts[mask_non0] = 0
-
-    counts_coo = counts.copy()
-    counts_coo[np.isnan(counts_coo)] = 0
-    counts_coo = sparse.coo_matrix(counts_coo)
+    counts = _check_counts_matrix(counts, lengths=lengths, ploidy=ploidy)
+    # lengths_lowres = decrease_lengths_res(
+    #     lengths, multiscale_factor=multiscale_factor)
 
     if multiscale_factor > 1:
-        counts_lowres, row_fullres, col_fullres = decrease_counts_res(
-            counts_coo, multiscale_factor=multiscale_factor,
-            lengths=lengths, ploidy=ploidy, return_indices=True)
+        lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
+        shape_lowres = np.array(
+            counts.shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
 
-        data_grouped = counts[row_fullres, col_fullres].reshape(
+        idx_fullres, idx_lowres = _get_fullres_counts_index(
+            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
+            counts_fullres_shape=counts.shape)
+        row_fullres, col_fullres, _ = idx_fullres
+        row_lowres, col_lowres = idx_lowres
+
+        data_grouped = counts.toarray()[row_fullres, col_fullres].reshape(
             multiscale_factor ** 2, -1)
 
-        # If every single full-res bin in a group is either NaN or zero,
-        # exlude that group from the output.
-        data_grouped = data_grouped[:, np.nansum(data_grouped, axis=0) != 0]
-
-        if for_zero_counts_matrix:
-            # If any of the full-res bins are zero, remove the entire group.
-            # Full-res NaN bins are ok and don't warrant the group's removal.
-            min_gt0 = np.nanmin(data_grouped, axis=0) != 0
-            data_grouped = data_grouped[:, min_gt0]
-            counts_lowres = sparse.coo_matrix((
-                counts_lowres.data[min_gt0],
-                (counts_lowres.row[min_gt0], counts_lowres.col[min_gt0])),
-                shape=counts_lowres.shape)
-
-        idx = counts_lowres.row, counts_lowres.col
-        shape_lowres = counts_lowres.shape
-        mask = ~np.isnan(data_grouped)
+        # If bins aren't included, set them to zero
+        mask = _get_included_counts_bins(
+            counts, lengths=lengths, ploidy=ploidy, check_counts=False,
+            exclude_zeros=exclude_zeros)[row_fullres, col_fullres].reshape(
+            multiscale_factor ** 2, -1)
         data_grouped[~mask] = 0
+
+        # If every single full-res bin in a group is either zero or excluded,
+        # remove that group from the output.
+        not_all_zero = np.sum(data_grouped, axis=0) != 0
+        data_grouped = data_grouped[:, not_all_zero]
+        idx_lowres = row_lowres[not_all_zero], col_lowres[not_all_zero]
     else:
-        idx = counts_coo.row, counts_coo.col
-        data_grouped = counts_coo.data
-        shape_lowres = counts_coo.shape
+        idx_lowres = counts.row, counts.col
+        data_grouped = counts.data
+        shape_lowres = counts.shape
         mask = None
 
-    return data_grouped, idx, shape_lowres, mask
+    return data_grouped, idx_lowres, shape_lowres, mask
 
 
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
@@ -332,7 +316,7 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
 
     Returns
     -------
-    counts_lowres : list of array or coo_matrix
+    counts_lowres : coo_matrix
         Counts data at reduced resolution, as specified by the given
         `multiscale_factor`.
     """
@@ -346,7 +330,7 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
             return counts
 
     counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy).toarray()
+        counts, lengths=lengths, ploidy=ploidy)
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
@@ -360,7 +344,7 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
     row_fullres, col_fullres, _ = idx_fullres
     row_lowres, col_lowres = idx_lowres
 
-    data_lowres = counts[row_fullres, col_fullres].reshape(
+    data_lowres = counts.toarray()[row_fullres, col_fullres].reshape(
         multiscale_factor ** 2, -1).sum(axis=0)
     counts_lowres = sparse.coo_matrix(
         (data_lowres[data_lowres != 0],
@@ -377,17 +361,18 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
                               counts_fullres_shape, remove_diag=True):
     """Return full-res counts indices grouped by the corresponding low-res bin.
     """
-    from .counts import _check_counts_matrix
+    from .counts import _get_included_counts_bins
 
     # Get rows & cols of dummy low-res counts matrix
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
     counts_lowres_shape = np.array(
         counts_fullres_shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
-    dummy_counts_lowres = np.ones(counts_lowres_shape)
-    dummy_counts_lowres = _check_counts_matrix(
-        dummy_counts_lowres, lengths=lengths_lowres, ploidy=ploidy,
-        remove_diag=remove_diag)
+
+    dummy_counts_lowres = sparse.coo_matrix(_get_included_counts_bins(
+        np.ones(counts_lowres_shape, dtype=np.uint8), lengths=lengths,
+        ploidy=ploidy, check_counts=False,
+        remove_diag=remove_diag).astype(np.uint8))
     row_lowres = dummy_counts_lowres.row
     col_lowres = dummy_counts_lowres.col
 
@@ -421,7 +406,7 @@ def _get_struct_index(multiscale_factor, lengths, ploidy):
     """
 
     lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor=multiscale_factor)
+        lengths, multiscale_factor=multiscale_factor)
 
     remainders = np.mod(lengths, multiscale_factor)
     num_false = multiscale_factor - remainders[remainders != 0]
@@ -569,7 +554,6 @@ def _get_stretch_of_fullres_beads(multiscale_factor, lengths, ploidy,
     print('multiscale_factor =', (stretch_fullres_beads == multiscale_factor).sum())
     print(stretch_fullres_beads[~np.isin(stretch_fullres_beads, [0, 1, 2, multiscale_factor])])
     print('\n')
-
 
     return stretch_fullres_beads
 
