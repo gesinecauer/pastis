@@ -39,12 +39,20 @@ def ambiguate_counts_correct(counts, lengths, ploidy):
                 [c[:n, :n], c[:n, n:], c[:n, n:].T, c[n:, n:]], axis=0)
         counts_ambig += c_ambig
 
-    return sparse.coo_matrix(counts_ambig)
+    return sparse.coo_matrix(np.triu(counts_ambig, 1))
 
 
 def compare_counts_bins_objects(bins, bins_true):
     if bins_true is None and bins is None:
         return
+
+    if bins_true is None:  # TODO remove
+        print(bins.row)
+        print(bins.col)
+    if bins is None:
+        print(bins_true.row)
+        print(bins_true.col)
+
     assert bins_true is not None
     assert bins is not None
 
@@ -69,12 +77,16 @@ def compare_counts_bins_objects(bins, bins_true):
 
     assert bins_true.multiscale_factor == bins.multiscale_factor
     if bins_true.multiscale_factor > 1:
-        where_diff = np.where(bins_true.mask != bins.mask)
-        print('row', bins_true.row[np.unique(where_diff[1])])
-        print('col', bins_true.col[np.unique(where_diff[1])])
-        print_array_non0(bins_true.mask[:10, :10]); print()
-        print_array_non0(bins.mask[:10, :10]); print('\ndiff:')
-        print_array_non0((bins_true.mask != bins.mask)[:10, :10])
+        if bins_true.mask.shape == bins.mask.shape:
+            where_diff = np.where(bins_true.mask != bins.mask)
+            if where_diff[0].size > 0:
+                print('row', bins_true.row[np.unique(where_diff[0])])
+                print('col', bins_true.col[np.unique(where_diff[1])])
+                print_array_non0(bins_true.mask[:10, :10]); print()
+                print_array_non0(bins.mask[:10, :10]); print('\ndiff:')
+                print_array_non0((bins_true.mask != bins.mask)[:10, :10])
+        else:
+            print(f"{bins_true.mask.shape=}, {bins.mask.shape=}... {bins_true.data.shape=}")
 
         assert_array_equal(bins_true.mask, bins.mask)
 
@@ -181,15 +193,13 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
     # "True" ambiguated counts: ambiguate before converting to CountsMatrix
     true_counts_ambig_arr_fullres = ambiguate_counts_correct(
         counts, lengths=lengths, ploidy=ploidy)
-    # true_counts_ambig_arr = decrease_counts_res(
-    #     true_counts_ambig_arr_fullres, multiscale_factor=multiscale_factor,
-    #     lengths=lengths, ploidy=ploidy).toarray()
     beta_ambig = counts_py._ambiguate_beta(
         beta, counts=counts, lengths=lengths, ploidy=ploidy)
     true_counts_ambig_object = counts_py._format_counts(
         counts=true_counts_ambig_arr_fullres, lengths=lengths, ploidy=ploidy,
         beta=beta_ambig, exclude_zeros=False,
         multiscale_factor=multiscale_factor)[0]
+    print_array_non0(true_counts_ambig_object.tocoo().toarray())
 
     # Ambiguate after converting to CountsMatrix
     counts_objects = counts_py._format_counts(
@@ -197,7 +207,6 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
         exclude_zeros=False, multiscale_factor=multiscale_factor)
     counts_ambig_object = counts_py.ambiguate_counts(
         counts_objects, lengths=lengths, ploidy=ploidy)
-    # counts_ambig_arr = counts_ambig_object.tocoo().toarray()
 
     compare_counts_objects(
         counts_ambig_object, counts_true=true_counts_ambig_object)

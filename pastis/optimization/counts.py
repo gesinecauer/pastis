@@ -91,6 +91,7 @@ def ambiguate_counts(counts, lengths, ploidy):
             counts_ambig += sparse.triu(tmp + tmp.T, k=1)
         counts[i] = counts[i].tocoo()
 
+    counts.sort_indices()
     return _check_counts_matrix(
         counts_ambig.tocoo(), lengths=lengths, ploidy=ploidy)
 
@@ -170,8 +171,8 @@ def _get_included_counts_bins(counts, lengths, ploidy, check_counts=True,
 
     # Remove empty loci
     struct_nan = find_beads_to_remove(counts, lengths=lengths, ploidy=ploidy)
-    counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
-    counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
+    included[struct_nan[struct_nan < included.shape[0]], :] = 0
+    included[:, struct_nan[struct_nan < included.shape[1]]] = 0
 
     return included.astype(bool)
 
@@ -225,32 +226,59 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
         else:
             counts = sparse.triu(counts, k=0)
     else:
-        mask1 = (counts.row < n) & (counts.col < n)
-        mask2 = np.invert(mask1)
+        if counts.shape[0] == n:  # Hmlgs were horizontally concat: (n, 2n)
+            counts = counts.T
+        counts = counts.tocsr()
+        hmlg1 = counts[:n, :].tocoo()
+        hmlg2 = counts[n:, :].tocoo()
         if remove_diag:
-            not_diag = (counts.row != counts.col) & (
-                counts.row != counts.col + n) & (
-                counts.row + n != counts.col)
-            mask1 = mask1 & not_diag
-            mask2 = mask2 & not_diag
-        hmlg1 = sparse.coo_matrix(
-            (counts.data[mask1], (counts.row[mask1], counts.col[mask1])),
-            shape=(n, n))
-        hmlg2 = sparse.coo_matrix(
-            (counts.data[mask2], (counts.row[mask2], counts.col[mask2])),
-            shape=(n, n))
-        if counts.shape[0] == min(counts.shape):  # If were horizontally concat
-            hmlg1 = hmlg1.T
-            hmlg2 = hmlg2.T
-        counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat
+            hmlg1.setdiag(0)
+            hmlg2.setdiag(0)
+            hmlg1.eliminate_zeros()
+            hmlg2.eliminate_zeros()
+        counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat: (2n, n)
+        # if counts.shape[1] == n:  # Hmlgs were vertically concat: (2n, n)  # TODO remove
+        #     counts = counts.tocsr()
+        #     hmlg1 = counts[:n, :]
+        #     hmlg2 = counts[n:, :]
+        # else:  # Hmlgs were horizontally concat: (n, 2n)... must transpose
+        #     counts = counts.tocsc()
+        #     hmlg1 = counts[:, :n].T
+        #     hmlg2 = counts[:, n:].T
+        # counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat: (2n, n)
+        # mask1 = (counts.row < n) & (counts.col < n)  # TODO remove
+        # mask2 = np.invert(mask1)
+        # if remove_diag:
+        #     not_diag = (counts.row != counts.col) & (
+        #         counts.row != counts.col + n) & (
+        #         counts.row + n != counts.col)
+        #     mask1 = mask1 & not_diag
+        #     mask2 = mask2 & not_diag
+        # hmlg1 = sparse.coo_matrix(
+        #     (counts.data[mask1], (counts.row[mask1], counts.col[mask1])),
+        #     shape=(n, n))
+        # hmlg2 = sparse.coo_matrix(
+        #     (counts.data[mask2], (counts.row[mask2], counts.col[mask2])),
+        #     shape=(n, n))
+        # if counts.shape[0] == min(counts.shape):  # If were horizontally concat
+        #     hmlg1 = hmlg1.T
+        #     hmlg2 = hmlg2.T
+        # counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat
 
     if chrom_subset_idx is not None:
-        in_subset = np.isin(counts.row, chrom_subset_idx) & np.isin(
-            counts.col, chrom_subset_idx)
-        counts = sparse.coo_matrix(
-            (counts.data[in_subset], (
-                counts.row[in_subset], counts.col[in_subset])),
-            shape=counts.shape)
+        counts = counts.tocsr()[chrom_subset_idx, :]
+        counts = counts.tocsc()[:, chrom_subset_idx].tocoo()
+        # in_subset = np.isin(counts.row, chrom_subset_idx) & np.isin(  # TODO remove
+        #     counts.col, chrom_subset_idx)
+        # counts = sparse.coo_matrix(
+        #     (counts.data[in_subset], (
+        #         counts.row[in_subset], counts.col[in_subset])),
+        #     shape=counts.shape)
+
+    counts = counts.tocsr()
+    counts.sort_indices()
+    counts = counts.tocoo()
+    counts.eliminate_zeros()
 
     return counts
 
@@ -277,7 +305,7 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
         Checked and reformatted counts data.
     """
 
-    lengths = np.asarray(lengths, ndmin=1, dtype=int)
+    lengths = np.array(lengths, ndmin=1, dtype=int, copy=False)
     if not isinstance(counts, list):
         counts = [counts]
 
@@ -577,8 +605,6 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
             lengths=lengths, ploidy=ploidy, counts=counts[i],
             multiscale_factor=multiscale_factor, beta=beta[i],
             weight=input_weight[i], exclude_zeros=exclude_zeros)
-        if not exclude_zeros:
-            counts_matrix._create_bins_zero()
         counts_reformatted.append(counts_matrix)
 
     return counts_reformatted
@@ -729,6 +755,7 @@ class CountsMatrix(object):
         self._empty_idx_fullres = None  # Full-res loci without any data
         self.bins_nonzero = None
         self.bins_zero = None
+        self.exclude_zeros = None
 
         if counts is not None:
             self.ambiguity = _get_counts_ambiguity(
@@ -744,6 +771,10 @@ class CountsMatrix(object):
                 exclude_zeros=exclude_zeros)
             self.bins_nonzero = CountsBins(
                 meta=self, row=row, col=col, data=data, mask=mask)
+
+            self.exclude_zeros = exclude_zeros
+            if not exclude_zeros:
+                self._create_bins_zero()
 
     @property
     def bins(self):
@@ -870,6 +901,7 @@ class CountsMatrix(object):
         else:
             self.bins_zero = CountsBins(
                 meta=self, row=zero_row, col=zero_col, mask=zero_mask)
+        self.exclude_zeros = False
 
     def ambiguate(self, copy=True):
         """Convert diploid counts to ambiguous.
@@ -949,7 +981,7 @@ class CountsMatrix(object):
         ambig.bins_nonzero = CountsBins(
             meta=ambig, row=nonzero_row, col=nonzero_col, data=nonzero_data,
             mask=nonzero_mask)
-        if self.bins_zero is not None:
+        if not self.exclude_zeros:
             ambig._create_bins_zero()
 
         return ambig
@@ -1015,7 +1047,7 @@ class CountsMatrix(object):
         combo.bins_nonzero = CountsBins(
             meta=combo, row=nonzero_row, col=nonzero_col, data=nonzero_data,
             mask=nonzero_mask)
-        if self.bins_zero is not None or other.bins_zero is not None:
+        if not (self.exclude_zeros and other.exclude_zeros):
             combo._create_bins_zero()
 
         return combo

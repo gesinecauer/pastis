@@ -254,14 +254,12 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
     from .counts import _check_counts_matrix, _get_included_counts_bins
 
     counts = _check_counts_matrix(counts, lengths=lengths, ploidy=ploidy)
-    # lengths_lowres = decrease_lengths_res(
-    #     lengths, multiscale_factor=multiscale_factor)
 
     if multiscale_factor > 1:
         lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
-        shape_lowres = np.array(
-            counts.shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
+        shape_lowres = tuple(np.array(
+            counts.shape / lengths.sum() * lengths_lowres.sum(), dtype=int))
 
         idx_fullres, idx_lowres = _get_fullres_counts_index(
             multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
@@ -283,6 +281,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         # remove that group from the output.
         not_all_zero = np.sum(data_grouped, axis=0) != 0
         data_grouped = data_grouped[:, not_all_zero]
+        mask = mask[:, not_all_zero]
         idx_lowres = row_lowres[not_all_zero], col_lowres[not_all_zero]
     else:
         idx_lowres = counts.row, counts.col
@@ -335,8 +334,8 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)
 
-    counts_lowres_shape = np.array(
-        counts.shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
+    counts_lowres_shape = tuple(np.array(
+        counts.shape / lengths.sum() * lengths_lowres.sum(), dtype=int))
 
     idx_fullres, idx_lowres = _get_fullres_counts_index(
         multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
@@ -370,7 +369,7 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
         counts_fullres_shape / lengths.sum() * lengths_lowres.sum(), dtype=int)
 
     dummy_counts_lowres = sparse.coo_matrix(_get_included_counts_bins(
-        np.ones(counts_lowres_shape, dtype=np.uint8), lengths=lengths,
+        np.ones(counts_lowres_shape, dtype=np.uint8), lengths=lengths_lowres,
         ploidy=ploidy, check_counts=False,
         remove_diag=remove_diag).astype(np.uint8))
     row_lowres = dummy_counts_lowres.row
