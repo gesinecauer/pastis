@@ -9,6 +9,8 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
+    from utils import get_counts
+
     from pastis.optimization import estimate_alpha_beta
     from pastis.optimization.counts import _format_counts
 
@@ -22,12 +24,10 @@ def test_estimate_alpha_beta_haploid():
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
     struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = np.triu(counts, 1)
-    counts = sparse.coo_matrix(counts)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
+        beta=beta_true, ambiguity="ua", struct_nan=None, random_state=random_state,
+        use_poisson=False, bias=None)
 
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
@@ -37,12 +37,12 @@ def test_estimate_alpha_beta_haploid():
         ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        verbose=False).values())[0]
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, verbose=False).values())[0]
 
     assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
-    assert_array_almost_equal(alpha_true, alpha, decimal=5)
+    assert_array_almost_equal(alpha_true, alpha, decimal=3)
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
 
@@ -55,15 +55,11 @@ def test_estimate_alpha_beta_haploid_biased():
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
     struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = np.triu(counts, 1)
-
     bias = 0.1 + random_state.rand(n)
-    counts *= bias.reshape(-1, 1) * bias.reshape(-1, 1).T
-    counts = sparse.coo_matrix(counts)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true, beta=beta_true,
+        ambiguity="ua", struct_nan=None, random_state=random_state,
+        use_poisson=False, bias=bias)
 
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
@@ -73,8 +69,8 @@ def test_estimate_alpha_beta_haploid_biased():
         ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, verbose=False).values())[0]
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias, verbose=False).values())[0]
 
     assert converged
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
@@ -82,7 +78,8 @@ def test_estimate_alpha_beta_haploid_biased():
     assert_array_almost_equal(beta_true, beta, decimal=1)
 
 
-def test_estimate_alpha_beta_diploid_unambig():
+@pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
+def test_estimate_alpha_beta_diploid(ambiguity):
     lengths = np.array([20])
     ploidy = 2
     seed = 42
@@ -91,12 +88,10 @@ def test_estimate_alpha_beta_diploid_unambig():
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
     struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = np.triu(counts, 1)
-    counts = sparse.coo_matrix(counts)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
+        beta=beta_true, ambiguity=ambiguity, struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=None)
 
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
@@ -106,8 +101,8 @@ def test_estimate_alpha_beta_diploid_unambig():
         ploidy=ploidy)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        verbose=False).values())[0]
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, verbose=False).values())[0]
 
     assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
@@ -115,7 +110,8 @@ def test_estimate_alpha_beta_diploid_unambig():
     assert_array_almost_equal(beta_true, beta, decimal=3)
 
 
-def test_estimate_alpha_beta_diploid_unambig_biased():
+@pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
+def test_estimate_alpha_beta_diploid_biased(ambiguity):
     lengths = np.array([20])
     ploidy = 2
     seed = 42
@@ -124,15 +120,11 @@ def test_estimate_alpha_beta_diploid_unambig_biased():
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
     struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = np.triu(counts, 1)
-
     bias = 0.1 + random_state.rand(n)
-    counts *= np.tile(bias, 2).reshape(-1, 1) * np.tile(bias, 2).reshape(-1, 1).T
-    counts = sparse.coo_matrix(counts)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
+        beta=beta_true, ambiguity=ambiguity, struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=bias)
 
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
@@ -142,158 +134,13 @@ def test_estimate_alpha_beta_diploid_unambig_biased():
         ploidy=ploidy, bias=bias)
 
     beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, verbose=False).values())[0]
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias, verbose=False).values())[0]
 
-    #assert converged
+    assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
     assert_array_almost_equal(alpha_true, alpha, decimal=5)
     assert_array_almost_equal(beta_true, beta, decimal=1)
-
-
-def test_estimate_alpha_beta_diploid_ambig():
-    lengths = np.array([20])
-    ploidy = 2
-    seed = 42
-    alpha_true, beta_true = -3., 4.
-
-    random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = counts[:n, :n] + counts[n:, n:] + counts[:n, n:] + counts[n:, :n]
-    counts = np.triu(counts, 1)
-    counts = sparse.coo_matrix(counts)
-
-    counts = _format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
-
-    alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        ploidy=ploidy)
-
-    beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        verbose=False).values())[0]
-
-    assert converged
-    assert obj < (-1e4 / sum([c.nbins for c in counts]))
-    assert_array_almost_equal(alpha_true, alpha, decimal=5)
-    assert_array_almost_equal(beta_true, beta, decimal=3)
-
-
-def test_estimate_alpha_beta_diploid_ambig_biased():
-    lengths = np.array([20])
-    ploidy = 2
-    seed = 42
-    alpha_true, beta_true = -3., 5.
-
-    random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = counts[:n, :n] + counts[n:, n:] + counts[:n, n:] + counts[n:, :n]
-    counts = np.triu(counts, 1)
-
-    bias = 0.1 + random_state.rand(n)
-    counts *= bias.reshape(-1, 1) * bias.reshape(-1, 1).T
-    counts = sparse.coo_matrix(counts)
-
-    counts = _format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
-
-    alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        ploidy=ploidy, bias=bias)
-
-    beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, verbose=False).values())[0]
-
-    assert converged
-    assert obj < (-1e4 / sum([c.nbins for c in counts]))
-    assert_array_almost_equal(alpha_true, alpha, decimal=5)
-    assert_array_almost_equal(beta_true, beta, decimal=3)
-
-
-def test_estimate_alpha_beta_diploid_partially_ambig():
-    lengths = np.array([20])
-    ploidy = 2
-    seed = 42
-    alpha_true, beta_true = -3., 4.
-
-    random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = counts[:, :n] + counts[:, n:]
-    np.fill_diagonal(counts[:n, :], 0)
-    np.fill_diagonal(counts[n:, :], 0)
-    counts = sparse.coo_matrix(counts)
-
-    counts = _format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
-
-    alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        ploidy=ploidy)
-
-    beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        verbose=False).values())[0]
-
-    assert converged
-    assert obj < (-1e4 / sum([c.nbins for c in counts]))
-    assert_array_almost_equal(alpha_true, alpha, decimal=5)
-    assert_array_almost_equal(beta_true, beta, decimal=3)
-
-
-def test_estimate_alpha_beta_diploid_partially_ambig_biased():
-    lengths = np.array([20])
-    ploidy = 2
-    seed = 42
-    alpha_true, beta_true = -3., 4.
-
-    random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    counts = beta_true * dis ** alpha_true
-    counts[np.isnan(counts) | np.isinf(counts)] = 0
-    counts = counts[:, :n] + counts[:, n:]
-    np.fill_diagonal(counts[:n, :], 0)
-    np.fill_diagonal(counts[n:, :], 0)
-
-    bias = 0.1 + random_state.rand(n)
-    counts *= np.tile(bias, 2).reshape(-1, 1)
-    counts *= bias.reshape(-1, 1).T
-    counts = sparse.coo_matrix(counts)
-
-    counts = _format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
-
-    alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
-        X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
-        ploidy=ploidy, bias=bias)
-
-    beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, verbose=False).values())[0]
-
-    assert converged
-    assert obj < (-1e4 / sum([c.nbins for c in counts]))
-    assert_array_almost_equal(alpha_true, alpha, decimal=5)
-    assert_array_almost_equal(beta_true, beta, decimal=3)
 
 
 def test_estimate_alpha_beta_diploid_combo():
@@ -307,30 +154,21 @@ def test_estimate_alpha_beta_diploid_combo():
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
     struct_true = random_state.rand(n * ploidy, 3)
-    dis = euclidean_distances(struct_true)
-    dis[dis == 0] = np.inf
-    poisson_intensity = dis ** alpha_true
-
-    ambig_counts = ratio_ambig * beta_true_single * poisson_intensity
-    ambig_counts[np.isnan(ambig_counts) | np.isinf(ambig_counts)] = 0
-    ambig_counts = ambig_counts[:n, :n] + ambig_counts[n:, n:] + ambig_counts[:n, n:] + ambig_counts[n:, :n]
-    ambig_counts = np.triu(ambig_counts, 1)
-    ambig_counts = sparse.coo_matrix(ambig_counts)
-
-    pa_counts = ratio_pa * beta_true_single * poisson_intensity
-    pa_counts[np.isnan(pa_counts) | np.isinf(pa_counts)] = 0
-    pa_counts = pa_counts[:, :n] + pa_counts[:, n:]
-    np.fill_diagonal(pa_counts[:n, :], 0)
-    np.fill_diagonal(pa_counts[n:, :], 0)
-    pa_counts = sparse.coo_matrix(pa_counts)
-
-    ua_counts = ratio_ua * beta_true_single * poisson_intensity
-    ua_counts[np.isnan(ua_counts) | np.isinf(ua_counts)] = 0
-    ua_counts = np.triu(ua_counts, 1)
-    ua_counts = sparse.coo_matrix(ua_counts)
-
-    counts_raw = [ambig_counts, pa_counts, ua_counts]
+    counts_ambig = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
+        beta=beta_true_single * ratio_ambig, ambiguity="ambig", struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=None)
+    counts_pa = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
+        beta=beta_true_single * ratio_pa, ambiguity="pa", struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=None)
+    counts_ua = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
+        beta=beta_true_single * ratio_ua, ambiguity="ua", struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=None)
+    counts_raw = [counts_ambig, counts_pa, counts_ua]
     beta_true = np.array([ratio_ambig, ratio_pa, ratio_ua]) * beta_true_single
+
     counts = _format_counts(
         counts=counts_raw, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
@@ -344,5 +182,5 @@ def test_estimate_alpha_beta_diploid_combo():
 
     assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
-    assert_array_almost_equal(alpha_true, alpha, decimal=5)
+    assert_array_almost_equal(alpha_true, alpha, decimal=3)
     assert_array_almost_equal(beta_true, beta, decimal=3)

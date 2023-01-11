@@ -17,16 +17,20 @@ from scipy.special import iv, ivp
 from .polynomial import _polyval
 
 
-coefs_stirling = np.flip(np.array([
+# coefs_stirling = np.flip(np.array([
+#     8.11614167470508450300E-4, -5.95061904284301438324E-4,
+#     7.93650340457716943945E-4, -2.77777777730099687205E-3,
+#     8.33333333333331927722E-2]))  # TODO what happened here?
+coefs_stirling = np.array([
     8.11614167470508450300E-4, -5.95061904284301438324E-4,
     7.93650340457716943945E-4, -2.77777777730099687205E-3,
-    8.33333333333331927722E-2]))
+    8.33333333333331927722E-2])
 
 
 def _stirling(z):
     """Computes B_N(z)
     """
-    z_sq_inv = 1. / (z * z)
+    z_sq_inv = 1 / (z * z)
     return _polyval(z_sq_inv, c=coefs_stirling) / z
 
 
@@ -40,14 +44,10 @@ def _masksum(x, mask=None, axis=None):
         return ag_np.sum(ag_np.where(mask, x, 0), axis=axis)
 
 
-def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None, mean=True,
+def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None,
                       data_per_bin=None, mods=[]):
     """TODO"""
 
-    if mean:
-        fxn = ag_np.mean
-    else:
-        fxn = ag_np.sum
     if data_per_bin is None:
         if mask is not None:
             data_per_bin = mask.sum(axis=0).reshape(1, -1)
@@ -63,29 +63,29 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None, mean=True,
     else:
         log1p_theta = ag_np.log1p(theta * bias_per_bin)
     if bias_per_bin is None:
-        tmp1 = fxn(-k * log1p_theta)
+        tmp1 = ag_np.mean(-k * log1p_theta)
     else:
-        tmp1 = fxn(_masksum(-k * log1p_theta, mask=mask, axis=0) / data_per_bin)
+        tmp1 = ag_np.mean(_masksum(-k * log1p_theta, mask=mask, axis=0) / data_per_bin)
 
     if data is None or data.sum() == 0:
         log_likelihood = tmp1
     else:
         k_plus_1 = k + 1
-        tmp2 = -fxn(_stirling(k_plus_1))
-        tmp3 = fxn(_masksum(
+        tmp2 = -ag_np.mean(_stirling(k_plus_1))
+        tmp3 = ag_np.mean(_masksum(
             _stirling(data + k_plus_1), mask=mask, axis=0) / data_per_bin)
         if bias_per_bin is None:
-            tmp4 = fxn(_masksum(data, mask=mask, axis=0) / data_per_bin * (
+            tmp4 = ag_np.mean(_masksum(data, mask=mask, axis=0) / data_per_bin * (
                 ag_np.log(theta) + ag_np.log1p(k) - log1p_theta - 1))
         else:
-            tmp4a = fxn(_masksum(data, mask=mask, axis=0) / data_per_bin * (
+            tmp4a = ag_np.mean(_masksum(data, mask=mask, axis=0) / data_per_bin * (
                 ag_np.log(theta) + ag_np.log1p(k) - 1))
-            tmp4b = -fxn(
+            tmp4b = -ag_np.mean(
                 _masksum(data * log1p_theta, mask=mask, axis=0) / data_per_bin)
             tmp4 = tmp4a + tmp4b
-        tmp5 = fxn(_masksum((data + k + 0.5) * ag_np.log1p(
+        tmp5 = ag_np.mean(_masksum((data + k + 0.5) * ag_np.log1p(
             data / k_plus_1), mask=mask, axis=0) / data_per_bin)
-        tmp6 = -fxn(
+        tmp6 = -ag_np.mean(
             _masksum(ag_np.log1p(data / k), mask=mask, axis=0) / data_per_bin)
         log_likelihood = (tmp1 + tmp2 + tmp3 + tmp4 + tmp5 + tmp6)
 
@@ -236,31 +236,21 @@ def negbinom_nll(data, n, p, mean=True, use_scipy=False, num_stable=True):
     return -log_likelihood
 
 
-def poisson_nll(data, lambda_pois, mask=None, data_per_bin=None, mean=True):
-    if mean:
-        fxn = ag_np.mean
-    else:
-        fxn = ag_np.sum
+def poisson_nll(data, lambda_pois, mask=None, data_per_bin=None):
     if data_per_bin is None:
         if mask is not None:
             data_per_bin = mask.sum(axis=0).reshape(1, -1)
-        elif data is not None:
-            if data.ndim == 2:
-                data_per_bin = data.shape[0]
-            else:
-                data_per_bin = 1
+        elif data.ndim == 2:
+            data_per_bin = data.shape[0]
         else:
-            raise ValueError("Must input data_per_bin")
+            data_per_bin = 1
 
-    lambda_pois = ag_np.asarray(lambda_pois)
-    data = ag_np.asarray(data)
+    obj = ag_np.mean(lambda_pois * data_per_bin)
 
-    obj = fxn(lambda_pois * data_per_bin)
-
-    if data is None or data.sum() == 0:
+    if data.sum() == 0:
         return obj
 
     if data.ndim > lambda_pois.ndim:
         data = _masksum(data, mask=mask, axis=0)
-    obj = obj - fxn(data * ag_np.log(lambda_pois))
+    obj = obj - ag_np.mean(data * ag_np.log(lambda_pois))
     return obj

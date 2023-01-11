@@ -38,6 +38,8 @@ def _best_counts_dtype(counts):
             max_val = int(max_val)
         else:
             warn("Counts matrix should only contain integers.")
+            max_val = data.sum()  # Otherwise, can cause overflow to inf
+            return np.promote_types(np.min_scalar_type(max_val), np.float64)
 
     return np.min_scalar_type(max_val)
 
@@ -91,7 +93,8 @@ def ambiguate_counts(counts, lengths, ploidy):
             counts_ambig += sparse.triu(tmp + tmp.T, k=1)
         counts[i] = counts[i].tocoo()
 
-    counts.sort_indices()
+    counts_ambig.sort_indices()
+
     return _check_counts_matrix(
         counts_ambig.tocoo(), lengths=lengths, ploidy=ploidy)
 
@@ -101,7 +104,7 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
     """
 
     if beta is None:
-        return beta
+        return None
     if ploidy == 1:
         return beta[0]
 
@@ -125,13 +128,15 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
 def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
     """Derive beta for each counts matrix from ambiguated beta.
     """
-    if beta_ambig is None or ploidy == 1:
+    if beta_ambig is None:
+        return None
+    if ploidy == 1:
         return [beta_ambig]
 
     if not isinstance(counts, list):
         counts = [counts]
 
-    total_counts = [c.sum() for c in counts]
+    total_counts = sum([c.sum() for c in counts])
     beta = []
     for i in range(len(counts)):
         if counts[i].sum() == 0:
@@ -548,7 +553,7 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
         num_dis_bins /= ploidy
 
     # Normalize counts
-    if bias is not None:
+    if bias is not None and not np.all(bias == 1):
         bias_per_bin = bias[counts_ambig.row] * bias[counts_ambig.col]
         counts_ambig = sparse.coo_matrix(
             (counts_ambig.data * bias_per_bin,
@@ -579,7 +584,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
         if len(beta) != len(counts):
             raise ValueError(
                 "Beta needs to contain as many scaling factors as there are "
-                f"datasets ({len(counts)}). It is of length ({len(beta)})")
+                f"datasets ({len(counts)}). It is of length ({len(beta)}).")
     else:
         _, beta = _set_initial_beta(
             counts, lengths=lengths, ploidy=ploidy, bias=bias,
@@ -590,8 +595,8 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
             input_weight = [input_weight]
         if len(input_weight) != len(counts):
             raise ValueError("input_weights needs to contain as many weighting"
-                             " factors as there are datasets (%d). It is of"
-                             " length (%d)" % (len(counts), len(input_weight)))
+                             f" factors as there are datasets ({len(counts)})."
+                             f" It is of length ({len(input_weight)}).")
         input_weight = np.array(input_weight)
         if input_weight.sum() not in (0, 1):
             input_weight *= len(input_weight) / input_weight.sum()
@@ -686,6 +691,9 @@ def _get_nonzero_mask(multiscale_factor, lengths, ploidy, row, col,
         nonzero_mask = nonzero_mask & ~np.isin(
             row_fullres, empty_idx_fullres) & ~np.isin(
             col_fullres, empty_idx_fullres)
+
+    if np.all(nonzero_mask):
+        nonzero_mask = None
 
     return nonzero_mask
 
@@ -895,6 +903,8 @@ class CountsMatrix(object):
             zero_mask = ~bad_idx_fullres & ~np.isin(
                 row_fullres, self._empty_idx_fullres) & ~np.isin(
                 col_fullres, self._empty_idx_fullres)
+            if np.all(zero_mask):
+                zero_mask = None
 
         if zero_row.size == 0:
             self.bins_zero = None
@@ -1149,8 +1159,9 @@ class CountsBins(object):
         Distance matrix rows associated with counts matrix rows.
     col3d : array of int
         Distance matrix columns associated with counts matrix columns.
-    mask : array of bool
-        For multiscale: returns mask for full-res counts data
+    mask : array of bool or None
+        For multiscale: returns mask for full-res counts data. If None, all
+        full-res bins in data are included.
     """
 
     def __init__(self, meta, row, col, data=None, mask=None):
@@ -1170,6 +1181,8 @@ class CountsBins(object):
         self.row = row
         self.col = col
         self.mask = mask
+        if mask is not None and np.all(mask):
+            self.mask = None
         if data is None:
             self._sum = 0
             self.name = f"{self.ambiguity}0"
@@ -1211,7 +1224,8 @@ class CountsBins(object):
         else:
             if self.data is not None:
                 filtered.data = self.data[:, filter_mask]
-            filtered.mask = self.mask[:, filter_mask]
+            if self.mask is not None:
+                filtered.mask = self.mask[:, filter_mask]
 
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)
@@ -1240,9 +1254,8 @@ class CountsBins(object):
         if bias is None or np.all(bias == 1):
             return 1
         else:
-            bias = bias.flatten()
-            bias = np.tile(bias, int(min(self.shape) * self.ploidy / len(bias)))
-            return bias[self.row3d] * bias[self.col3d]
+            bias = np.tile(bias.ravel(), self.ploidy)
+            return bias[self.row] * bias[self.col]
 
     def sum(self, axis=None, dtype=None, out=None):
         """TODO"""
@@ -1270,8 +1283,10 @@ class CountsBins(object):
         """
         if self.multiscale_factor == 1:
             return 1
-        else:
+        elif self.mask is not None:
             return self.mask.sum(axis=0)
+        else:
+            return data.shape[0]
 
     def __eq__(self, other):  # TODO remove print statements
         if type(other) is type(self):

@@ -319,7 +319,7 @@ class HomologSeparating2019(Constraint):
             hmlg_sep_diff = 1 - hmlg_sep / self.hparams["est_hmlg_sep"]
         if self.hparams['perc_diff'] is None:
             hmlg_sep_diff = relu(hmlg_sep_diff)
-            raise ValueError("I thought we weren't doing RELU for HSC anymore")
+            # raise ValueError("I thought we weren't doing RELU for HSC anymore")
         else:
             hsc_cutoff = ag_np.array(self.hparams['perc_diff'] * self.hparams[
                 "est_hmlg_sep"])
@@ -492,6 +492,7 @@ class BeadChainConnectivity2022(Constraint):
             obj = poisson_nll(
                 np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_pois)
         else:
+            # TODO what if multiscale_reform=False and epsilon=None?
             gamma_mean, gamma_var = get_gamma_moments(
                 struct=struct, epsilon=epsilon, alpha=alpha,
                 beta=var['beta'], multiscale_factor=self.multiscale_factor,
@@ -653,6 +654,7 @@ class HomologSeparating2022(Constraint):
 def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
                              epsilon=None, mods=[]):
     """TODO"""
+    # TODO what if multiscale_reform=False and epsilon=None?
     if multiscale_factor > 1:
         lambda_mean, lambda_mixture_var = get_gamma_moments(
             struct=struct, epsilon=epsilon, alpha=alpha,

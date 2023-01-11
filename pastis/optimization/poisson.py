@@ -244,9 +244,8 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
             var_per_dis = multiscale_variances * 2
     else:
         var_per_dis = 0
-    data_per_bin = counts.fullres_per_lowres_dis
 
-    lambda_intensity = ag_np.zeros(counts.nbins)
+    lambda_pois = ag_np.zeros(counts.nbins)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = ag_np.sqrt((ag_np.square(
             struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
@@ -255,17 +254,10 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
         else:
             tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
         tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
-        lambda_intensity = lambda_intensity + mix_coef * counts.bias_per_bin(
+        lambda_pois = lambda_pois + mix_coef * counts.bias_per_bin(
             bias) * counts.beta * tmp
 
-    # Sum main objective function  # TODO use function in likelihoods.py
-    obj = (lambda_intensity * data_per_bin).mean()
-    if counts.sum() > 0:
-        if lambda_intensity.shape == counts.data.shape:
-            counts_data = counts.data
-        else:
-            counts_data = _masksum(counts.data, mask=counts.mask, axis=0)
-        obj = obj - (counts_data * ag_np.log(lambda_intensity)).mean()
+    obj = poisson_nll(counts.data, lambda_pois=lambda_pois, mask=counts.mask)
 
     if not ag_np.isfinite(obj):
         raise ValueError(
@@ -370,12 +362,12 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     if lengths is None:
         lengths = np.array([min([min(c.shape) for c in counts])])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
-    if bias is None:
-        if multiscale_reform:
-            bias = np.ones((lengths.sum(),))
-        else:
-            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-            bias = np.ones((lengths_lowres.sum(),))
+    # if bias is None:  # TODO remove
+    #     if multiscale_reform:
+    #         bias = np.ones((lengths.sum(),))
+    #     else:
+    #         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    #         bias = np.ones((lengths_lowres.sum(),))
 
     # Format X
     if reorienter is None or (not reorienter.reorient):
@@ -651,12 +643,12 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
     counts = (counts if isinstance(counts, list) else [counts])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    if bias is None:
-        if multiscale_reform:
-            bias = np.ones((lengths.sum(),))
-        else:
-            bias = np.ones((lengths_lowres.sum(),))
-    bias = np.array(bias)
+    # if bias is None:  # TODO remove
+    #     if multiscale_reform:
+    #         bias = np.ones((lengths.sum(),))
+    #     else:
+    #         bias = np.ones((lengths_lowres.sum(),))
+    # bias = np.array(bias)
 
     if (multiscale_factor != 1 and multiscale_reform):
         x0 = np.append(init_X.flatten(), epsilon)
@@ -666,7 +658,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
     if verbose:
         #print('=' * 30, flush=True) # TODO removed
         print("\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\nMachine"
-              " precision = %.4g\n" % np.finfo(np.float).eps, flush=True)
+              " precision = %.4g\n" % np.finfo(float).eps, flush=True)
 
     if callback is not None:
         if reorienter is not None and reorienter.reorient:

@@ -40,7 +40,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
             var_per_dis = multiscale_variances * 2
     else:
         var_per_dis = 0
-    num_highres_per_lowres_bins = counts.fullres_per_lowres_dis()
+    num_highres_per_lowres_bins = counts.fullres_per_lowres_dis
 
     lambda_intensity_sum = 0.
     for struct, gamma in zip(structures, mixture_coefs):
@@ -91,12 +91,12 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     if lengths is None:
         lengths = np.array([min([min(c.shape) for c in counts])])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
-    if bias is None:
-        if multiscale_reform:
-            bias = np.ones((lengths.sum(),))
-        else:
-            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-            bias = np.ones((lengths_lowres.sum(),))
+    # if bias is None:  # TODO remove
+    #     if multiscale_reform:
+    #         bias = np.ones((lengths.sum(),))
+    #     else:
+    #         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    #         bias = np.ones((lengths_lowres.sum(),))
     if not isinstance(structures, list):
         structures = [structures]
     if mixture_coefs is None:
@@ -197,7 +197,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
         mixture_coefs=mixture_coefs)
-    counts = [c.update_beta(beta) for c in counts]
+    counts = [c.update_beta(new_beta) for c in counts]
 
     new_obj, obj_logs, structures, alpha, epsilon = objective_alpha(
         alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy, bias=bias,
@@ -228,7 +228,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
         mixture_coefs=mixture_coefs)
-    counts = [c.update_beta(beta) for c in counts]
+    counts = [c.update_beta(new_beta) for c in counts]
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -318,12 +318,12 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
-    if bias is None:
-        if multiscale_reform:
-            bias = np.ones((lengths.sum(),))
-        else:
-            lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-            bias = np.ones((lengths_lowres.sum(),))
+    # if bias is None:  # TODO remove
+    #     if multiscale_reform:
+    #         bias = np.ones((lengths.sum(),))
+    #     else:
+    #         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    #         bias = np.ones((lengths_lowres.sum(),))
 
     # Initialize alpha if necessary
     if random_state is None:

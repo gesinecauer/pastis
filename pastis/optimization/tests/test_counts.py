@@ -2,6 +2,7 @@ import sys
 import pytest
 import numpy as np
 from scipy import sparse
+from sklearn.metrics import euclidean_distances
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
 pytestmark = pytest.mark.skipif(
@@ -77,18 +78,22 @@ def compare_counts_bins_objects(bins, bins_true):
 
     assert bins_true.multiscale_factor == bins.multiscale_factor
     if bins_true.multiscale_factor > 1:
-        if bins_true.mask.shape == bins.mask.shape:
-            where_diff = np.where(bins_true.mask != bins.mask)
-            if where_diff[0].size > 0:
-                print('row', bins_true.row[np.unique(where_diff[0])])
-                print('col', bins_true.col[np.unique(where_diff[1])])
-                print_array_non0(bins_true.mask[:10, :10]); print()
-                print_array_non0(bins.mask[:10, :10]); print('\ndiff:')
-                print_array_non0((bins_true.mask != bins.mask)[:10, :10])
-        else:
-            print(f"{bins_true.mask.shape=}, {bins.mask.shape=}... {bins_true.data.shape=}")
+        if bins_true.mask is not None and bins.mask is not None:
+            if bins_true.mask.shape == bins.mask.shape:
+                where_diff = np.where(bins_true.mask != bins.mask)
+                if where_diff[0].size > 0:
+                    print('row', bins_true.row[np.unique(where_diff[0])])
+                    print('col', bins_true.col[np.unique(where_diff[1])])
+                    print_array_non0(bins_true.mask[:10, :10]); print()
+                    print_array_non0(bins.mask[:10, :10]); print('\ndiff:')
+                    print_array_non0((bins_true.mask != bins.mask)[:10, :10])
+            else:
+                print(f"{bins_true.mask.shape=}, {bins.mask.shape=}... {bins_true.data.shape=}")
 
-        assert_array_equal(bins_true.mask, bins.mask)
+            assert_array_equal(bins_true.mask, bins.mask)
+        else:
+            assert bins_true.mask is None
+            assert bins.mask is None
 
     assert bins_true == bins
 
@@ -210,3 +215,95 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
 
     compare_counts_objects(
         counts_ambig_object, counts_true=true_counts_ambig_object)
+
+
+def test_3d_indices_haploid():
+    lengths = np.array([20])
+    ploidy = 1
+    seed = 42
+    alpha, beta = -3, 1
+
+    random_state = np.random.RandomState(seed=seed)
+    n = lengths.sum()
+    struct_true = random_state.rand(n * ploidy, 3)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity="ua", struct_nan=None, random_state=random_state,
+        use_poisson=False)
+
+    row3d, col3d = counts_py._counts_indices_to_3d_indices(
+        counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
+
+    assert np.array_equal(counts.row, row3d)
+    assert np.array_equal(counts.col, col3d)
+
+
+def test_3d_indices_diploid_unambig():
+    lengths = np.array([20])
+    ploidy = 2
+    seed = 42
+    alpha, beta = -3, 1
+
+    random_state = np.random.RandomState(seed=seed)
+    n = lengths.sum()
+    struct_true = random_state.rand(n * ploidy, 3)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity="ua", struct_nan=None, random_state=random_state,
+        use_poisson=False)
+
+    row3d, col3d = counts_py._counts_indices_to_3d_indices(
+        counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
+
+    assert np.array_equal(counts.row, row3d)
+    assert np.array_equal(counts.col, col3d)
+
+
+def test_3d_indices_diploid_ambig():
+    lengths = np.array([20])
+    ploidy = 2
+    seed = 42
+    alpha, beta = -3, 1
+
+    random_state = np.random.RandomState(seed=seed)
+    n = lengths.sum()
+    struct_true = random_state.rand(n * ploidy, 3)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity="ambig", struct_nan=None, random_state=random_state,
+        use_poisson=False)
+
+    row3d, col3d = counts_py._counts_indices_to_3d_indices(
+        counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
+
+    row3d_true = np.concatenate([np.tile(counts.row, 2), np.tile(counts.row, 2) + n])
+    col3d_true = np.tile(np.concatenate([counts.col, counts.col + n]), 2)
+    assert np.array_equal(row3d_true, row3d)
+    assert np.array_equal(col3d_true, col3d)
+
+
+def test_3d_indices_diploid_partially_ambig():
+    lengths = np.array([20])
+    ploidy = 2
+    seed = 42
+    alpha, beta = -3, 1
+
+    random_state = np.random.RandomState(seed=seed)
+    n = lengths.sum()
+    struct_true = random_state.rand(n * ploidy, 3)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity="pa", struct_nan=None, random_state=random_state,
+        use_poisson=False)
+
+    row3d, col3d = counts_py._counts_indices_to_3d_indices(
+        counts, lengths_at_res=lengths, ploidy=ploidy,
+        exclude_zeros=True)
+
+    row3d_true = np.tile(counts.row, 2)
+    col3d_true = np.concatenate([counts.col, counts.col + n])
+    assert np.array_equal(row3d_true, row3d)
+    assert np.array_equal(col3d_true, col3d)

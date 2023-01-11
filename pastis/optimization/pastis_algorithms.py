@@ -20,8 +20,8 @@ from .callbacks import Callback
 from .constraints import prep_constraints, distance_between_homologs
 from .constraints import get_counts_interchrom
 from .poisson import PastisPM, _convergence_criteria, get_eps_types
-from .multiscale_optimization import get_multiscale_variances_from_struct
-from .multiscale_optimization import _get_stretch_of_fullres_beads
+# from .multiscale_optimization import get_multiscale_variances_from_struct
+# from .multiscale_optimization import _get_stretch_of_fullres_beads
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res
 from ..io.read import load_data
@@ -193,22 +193,23 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     if verbose and outfiles is not None:
         print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
 
-    # MULTISCALE VARIANCES
-    if multiscale_factor != 1 and use_multiscale_variance and struct_draft_fullres is not None and not multiscale_reform:
-        multiscale_variances = np.median(get_multiscale_variances_from_struct(
-            struct_draft_fullres, lengths=lengths,
-            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
-            verbose=verbose))
-        if struct_true is not None and verbose:
-            multiscale_variances_true = np.median(
-                get_multiscale_variances_from_struct(
-                    struct_true, lengths=lengths,
-                    multiscale_factor=multiscale_factor,
-                    mixture_coefs=mixture_coefs, verbose=False))
-            print(f"True multiscale variance ({multiscale_factor}x):"
-                  f" {multiscale_variances_true:.3g}", flush=True)
-    else:
-        multiscale_variances = None
+    # # MULTISCALE VARIANCES
+    # if multiscale_factor != 1 and use_multiscale_variance and struct_draft_fullres is not None and not multiscale_reform:
+    #     multiscale_variances = np.median(get_multiscale_variances_from_struct(
+    #         struct_draft_fullres, lengths=lengths,
+    #         multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
+    #         verbose=verbose))
+    #     if struct_true is not None and verbose:
+    #         multiscale_variances_true = np.median(
+    #             get_multiscale_variances_from_struct(
+    #                 struct_true, lengths=lengths,
+    #                 multiscale_factor=multiscale_factor,
+    #                 mixture_coefs=mixture_coefs, verbose=False))
+    #         print(f"True multiscale variance ({multiscale_factor}x):"
+    #               f" {multiscale_variances_true:.3g}", flush=True)
+    # else:
+    #     multiscale_variances = None
+    multiscale_variances = None
 
     # PREPARE COUNTS OBJECTS
     counts, struct_nan, fullres_struct_nan = preprocess_counts(
@@ -253,51 +254,51 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # SETUP MULTI-RES
     stretch_fullres_beads = mean_fullres_nghbr_dis = None
-    if multiscale_reform and multiscale_factor != 1 and ('adjust_eps' in mods):
-        if beta is None:
-            mean_fullres_nghbr_dis = 1
-        else:
-            mean_fullres_nghbr_dis = 1
-            # FIXME get mean_fullres_nghbr_dis the same way BCC2022 constraint param is derived
-            # from .constraints import _neighboring_bead_indices
-            # from .utils_poisson import _euclidean_distance
-            # row_nghbr = _neighboring_bead_indices(
-            #     lengths=lengths, ploidy=1, multiscale_factor=1)
-            # dis_nghbr = _euclidean_distance(struct_true, row=row_nghbr, col=row_nghbr + 1)._value
-            # print(f"\n{dis_nghbr.mean()=:.4g}")
-            # print(f"{np.power(dis_nghbr, alpha).mean()=:.4g}\n")
+    # if multiscale_reform and multiscale_factor != 1 and ('adjust_eps' in mods):
+    #     if beta is None:
+    #         mean_fullres_nghbr_dis = 1
+    #     else:
+    #         mean_fullres_nghbr_dis = 1
+    #         # FIXME get mean_fullres_nghbr_dis the same way BCC2022 constraint param is derived
+    #         # from .constraints import _neighboring_bead_indices
+    #         # from .utils_poisson import _euclidean_distance
+    #         # row_nghbr = _neighboring_bead_indices(
+    #         #     lengths=lengths, ploidy=1, multiscale_factor=1)
+    #         # dis_nghbr = _euclidean_distance(struct_true, row=row_nghbr, col=row_nghbr + 1)._value
+    #         # print(f"\n{dis_nghbr.mean()=:.4g}")
+    #         # print(f"{np.power(dis_nghbr, alpha).mean()=:.4g}\n")
 
-            # beta_tmp, _ = _set_initial_beta(
-            #     counts_raw, lengths=lengths, ploidy=ploidy, bias=bias,
-            #     exclude_zeros=exclude_zeros, neighboring_beads_only=True)
-            # beta_ambig = _ambiguate_beta(
-            #     beta, counts_raw, lengths=lengths, ploidy=ploidy)
-            # mean_fullres_nghbr_dis_alpha = np.power(
-            #     beta_tmp / beta_ambig, 1 / alpha)
+    #         # beta_tmp, _ = _set_initial_beta(
+    #         #     counts_raw, lengths=lengths, ploidy=ploidy, bias=bias,
+    #         #     exclude_zeros=exclude_zeros, neighboring_beads_only=True)
+    #         # beta_ambig = _ambiguate_beta(
+    #         #     beta, counts_raw, lengths=lengths, ploidy=ploidy)
+    #         # mean_fullres_nghbr_dis_alpha = np.power(
+    #         #     beta_tmp / beta_ambig, 1 / alpha)
 
-            # print(f"\n{beta_tmp=:.3g}")
-            # print(f"{beta_ambig=:.3g}\n")
+    #         # print(f"\n{beta_tmp=:.3g}")
+    #         # print(f"{beta_ambig=:.3g}\n")
 
-            # row_nghbr2 = _neighboring_bead_indices(
-            #     lengths=lengths, ploidy=2, multiscale_factor=1)
-            # c = counts_raw[0]
-            # c_nghbr = c[row_nghbr2, row_nghbr2 + 1]
-            # print(f"{np.nanmean(c_nghbr / beta_ambig)=:.4g}")
-            # print(f"{np.nanmean(np.power(c_nghbr / beta_ambig, 1 / alpha))=:.4g}\n")
+    #         # row_nghbr2 = _neighboring_bead_indices(
+    #         #     lengths=lengths, ploidy=2, multiscale_factor=1)
+    #         # c = counts_raw[0]
+    #         # c_nghbr = c[row_nghbr2, row_nghbr2 + 1]
+    #         # print(f"{np.nanmean(c_nghbr / beta_ambig)=:.4g}")
+    #         # print(f"{np.nanmean(np.power(c_nghbr / beta_ambig, 1 / alpha))=:.4g}\n")
 
-            # mean_fullres_nghbr_dis = beta_tmp / beta_ambig
-            # print(f"{mean_fullres_nghbr_dis=:.4g}")
-            # print(f"{mean_fullres_nghbr_dis_alpha=:.4g}\n")
-            # exit(1)
+    #         # mean_fullres_nghbr_dis = beta_tmp / beta_ambig
+    #         # print(f"{mean_fullres_nghbr_dis=:.4g}")
+    #         # print(f"{mean_fullres_nghbr_dis_alpha=:.4g}\n")
+    #         # exit(1)
 
-        stretch_fullres_beads = _get_stretch_of_fullres_beads(
-            multiscale_factor=multiscale_factor, lengths=lengths,
-            ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
-        if 'adjust_eps_all' in mods:
-            eps_types = get_eps_types(stretch_fullres_beads)
-            if eps_types.size > 1:
-                epsilon = np.append(
-                    epsilon, random_state.uniform(size=eps_types.size - 1))
+    #     stretch_fullres_beads = _get_stretch_of_fullres_beads(
+    #         multiscale_factor=multiscale_factor, lengths=lengths,
+    #         ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
+    #     if 'adjust_eps_all' in mods:
+    #         eps_types = get_eps_types(stretch_fullres_beads)
+    #         if eps_types.size > 1:
+    #             epsilon = np.append(
+    #                 epsilon, random_state.uniform(size=eps_types.size - 1))
 
     # HOMOLOG-SEPARATING CONSTRAINT
     if ploidy == 1 and hsc_lambda > 0:

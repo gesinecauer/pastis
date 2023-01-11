@@ -12,15 +12,15 @@ if sys.version_info[0] >= 3:
     from pastis.optimization.polynomial import _polyval
 
 
-sterling_coefs = [
+coefs_stirling = np.array([
     8.11614167470508450300E-4, -5.95061904284301438324E-4,
     7.93650340457716943945E-4, -2.77777777730099687205E-3,
-    8.33333333333331927722E-2]
+    8.33333333333331927722E-2])
 
 
 def stirling_with_np_polyval(z):
-    z_sq_inv = 1. / (z * z)
-    return np.polyval(sterling_coefs, x=z_sq_inv) / z
+    z_sq_inv = 1 / (z * z)
+    return np.polyval(coefs_stirling, x=z_sq_inv) / z
 
 
 def gammaln_via_stirling_approx(x, stirling_fxn):
@@ -30,24 +30,29 @@ def gammaln_via_stirling_approx(x, stirling_fxn):
 
 @pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
 def test_polyval(x):
-    correct_polyval = np.polyval(sterling_coefs, x=x)
-    test_polyval = _polyval(x, coefs=sterling_coefs)
-    assert_array_almost_equal(correct_polyval, test_polyval)
+    correct_polyval = np.polyval(coefs_stirling, x=x)
+    jax_polyval = _polyval(x, c=coefs_stirling)
+    assert_array_almost_equal(correct_polyval, jax_polyval)
 
 
 @pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
-def test_stirling(x):
+def test_stirling_approx(x):
     correct_stirling = stirling_with_np_polyval(x)
-    test_stirling = _stirling(x)
-    assert_array_almost_equal(correct_stirling, test_stirling)
+    jax_stirling = _stirling(x)
+    assert_array_almost_equal(correct_stirling, jax_stirling)
 
 
 @pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
-def test_gammaln(x):
+def test_gammaln_numpy(x):
     correct_gammaln = gammaln(x)
-    my_gammaln = gammaln_via_stirling_approx(
-        x, stirling_fxn=_stirling)
     np_gammaln = gammaln_via_stirling_approx(
         x, stirling_fxn=stirling_with_np_polyval)
-    assert_array_almost_equal(correct_gammaln, my_gammaln)
     assert_array_almost_equal(correct_gammaln, np_gammaln)
+
+
+@pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
+def test_gammaln_jax(x):
+    correct_gammaln = gammaln(x)
+    jax_gammaln = gammaln_via_stirling_approx(
+        x, stirling_fxn=_stirling)
+    assert_array_almost_equal(correct_gammaln, jax_gammaln)
