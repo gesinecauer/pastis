@@ -62,10 +62,12 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None,
         log1p_theta = ag_np.log1p(theta)
     else:
         log1p_theta = ag_np.log1p(theta * bias_per_bin)
+
     if bias_per_bin is None:
         tmp1 = ag_np.mean(-k * log1p_theta)
     else:
-        tmp1 = ag_np.mean(_masksum(-k * log1p_theta, mask=mask, axis=0) / data_per_bin)
+        tmp1 = ag_np.mean(
+            _masksum(-k * log1p_theta, mask=mask, axis=0) / data_per_bin)
 
     if data is None or data.sum() == 0:
         log_likelihood = tmp1
@@ -237,9 +239,12 @@ def negbinom_nll(data, n, p, mean=True, use_scipy=False, num_stable=True):
 
 
 def poisson_nll(data, lambda_pois, mask=None, data_per_bin=None):
+    """TODO"""
     if data_per_bin is None:
         if mask is not None:
             data_per_bin = mask.sum(axis=0).reshape(1, -1)
+        elif data is None:
+            raise ValueError("Must input data_per_bin")
         elif data.ndim == 2:
             data_per_bin = data.shape[0]
         else:
@@ -247,7 +252,7 @@ def poisson_nll(data, lambda_pois, mask=None, data_per_bin=None):
 
     obj = ag_np.mean(lambda_pois * data_per_bin)
 
-    if data.sum() == 0:
+    if data is None or data.sum() == 0:
         return obj
 
     if data.ndim > lambda_pois.ndim:

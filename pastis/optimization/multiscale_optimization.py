@@ -269,6 +269,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
         data_grouped = counts.toarray()[row_fullres, col_fullres].reshape(
             multiscale_factor ** 2, -1)
 
+        # Get mask of included counts bins
         # If bins aren't included, set them to zero
         mask = _get_included_counts_bins(
             counts, lengths=lengths, ploidy=ploidy, check_counts=False,
@@ -357,11 +358,13 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
         return counts_lowres
 
 
-def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
-                              counts_fullres_shape, remove_diag=True):
-    """Return full-res counts indices grouped by the corresponding low-res bin.
-    """
+def _get_lowres_counts_index(multiscale_factor, lengths, ploidy,
+                             counts_fullres_shape, remove_diag=True):
+    """Get indices of generic low-res counts matrix for the given ambiguity"""
     from .counts import _get_included_counts_bins
+
+    if counts_fullres_shape is None:
+        raise ValueError("Must input counts_fullres_shape")
 
     # Get rows & cols of dummy low-res counts matrix
     lengths_lowres = decrease_lengths_res(
@@ -376,13 +379,32 @@ def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
     row_lowres = dummy_counts_lowres.row
     col_lowres = dummy_counts_lowres.col
 
-    # Get high-res bead indices, grouped by low-res bead
+    return row_lowres, col_lowres
+
+
+def _get_fullres_counts_index(multiscale_factor, lengths, ploidy,
+                              lowres_idx=None, counts_fullres_shape=None,
+                              remove_diag=True):
+    """Convert low-res indices to full-res indices.
+
+    Return full-res counts indices grouped by the corresponding low-res bin.
+    If low-res indices are not provided, indices of a generic low-res counts
+    matrix will be created.
+    """
+    if lowres_idx is None:
+        row_lowres, col_lowres = _get_lowres_counts_index(
+            multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
+            counts_fullres_shape=counts_fullres_shape, remove_diag=remove_diag)
+    else:
+        row_lowres, col_lowres = lowres_idx
+
+    # Get full-res bead indices, grouped by low-res bead
     idx, bad_idx = _get_struct_index(
         multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
     idx = idx.T
     bad_idx = bad_idx.T
 
-    # Create high-res counts indices, grouped by low-res counts bin
+    # Create full-res counts indices, grouped by low-res counts bin
     row = idx[row_lowres]
     row = np.repeat(row, multiscale_factor, axis=1)
     col = idx[col_lowres]
@@ -749,9 +771,8 @@ def _var3d(struct_grouped, replace_nan=True):
 #     return stddev
 
 
-def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
-                                       mixture_coefs=None, replace_nan=True,
-                                       verbose=True):
+def get_epsilon_from_struct(structures, lengths, multiscale_factor,
+                            mixture_coefs=None, replace_nan=True, verbose=True):
     """Compute multiscale epsilon from full-res structure.
 
     Generates multiscale epsilons at the specified resolution from the
@@ -814,7 +835,7 @@ def get_multiscale_epsilon_from_struct(structures, lengths, multiscale_factor,
 
 
 
-# def get_multiscale_epsilon_from_struct_old(structures, lengths, multiscale_factor,
+# def get_epsilon_from_struct_old(structures, lengths, multiscale_factor,
 #                                            mixture_coefs=None, replace_nan=True,
 #                                            verbose=True):
 #     """Compute multiscale epsilon from full-res structure.

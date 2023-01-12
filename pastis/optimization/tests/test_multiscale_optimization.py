@@ -176,7 +176,7 @@ def test_decrease_struct_res(multiscale_factor):
 
 
 @pytest.mark.parametrize("multiscale_factor", [2, 4, 8])
-def test_get_multiscale_epsilon_from_struct(multiscale_factor):
+def test_get_epsilon_from_struct(multiscale_factor):
     lengths = np.array([10, 21])
     seed = 42
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
@@ -207,7 +207,7 @@ def test_get_multiscale_epsilon_from_struct(multiscale_factor):
     # multiscale_var_true[np.isnan(multiscale_var_true)] = np.nanmedian(
     #     multiscale_var_true)
 
-    epsilon_infer = multiscale_optimization.get_multiscale_epsilon_from_struct(
+    epsilon_infer = multiscale_optimization.get_epsilon_from_struct(
         struct, lengths=lengths, multiscale_factor=multiscale_factor,
         replace_nan=False, verbose=False)
 

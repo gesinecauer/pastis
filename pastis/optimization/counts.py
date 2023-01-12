@@ -1254,9 +1254,16 @@ class CountsBins(object):
         """
         if bias is None or np.all(bias == 1):
             return 1
-        else:
-            bias = np.tile(bias.ravel(), self.ploidy)
+        bias = np.tile(bias.ravel(), self.ploidy)
+        if self.multiscale_factor == 1:
             return bias[self.row] * bias[self.col]
+        else:
+            (row, col, bad_idx), _ = _get_fullres_counts_index(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, lowres_idx=(self.row, self.col))
+            bias_per_bin = bias[row] * bias[col]
+            bias_per_bin[bad_idx] = 0
+            return bias_per_bin.reshape(self.multiscale_factor ** 2, -1)
 
     def sum(self, axis=None, dtype=None, out=None):
         """TODO"""
@@ -1287,7 +1294,7 @@ class CountsBins(object):
         elif self.mask is not None:
             return self.mask.sum(axis=0)
         else:
-            return data.shape[0]
+            return self.data.shape[0]
 
     def __eq__(self, other):  # TODO remove print statements
         if type(other) is type(self):

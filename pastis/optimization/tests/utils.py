@@ -120,6 +120,8 @@ def get_struct_randwalk(lengths, ploidy, random_state=None,
 
     if random_state is None:
         random_state = np.random.RandomState(seed=0)
+    elif isinstance(random_state, int):
+        random_state = np.random.RandomState(seed=random_state)
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     n = lengths.sum()
 
@@ -130,16 +132,6 @@ def get_struct_randwalk(lengths, ploidy, random_state=None,
     while attempt < max_iter and dis[
             np.triu_indices(dis.shape[0], 1)].min() <= dis_min_cutoff:
         attempt += 1
-
-        # # Make structure
-        # struct = np.zeros((n * ploidy, 3), dtype=float)
-        # for i in range(struct.shape[0]):
-        #     coord1 = random_state.choice([0, 1, 2])
-        #     coord2 = random_state.choice([x for x in (0, 1, 2) if x != coord1])
-        #     struct[i:, coord1] += random_state.choice(
-        #         [1, -1]) * random_state.normal(scale=0.1 * scale) * scale
-        #     struct[i:, coord2] += random_state.choice(
-        #         [0.5, -0.5]) * random_state.normal(scale=0.1 * scale) * scale
 
         struct = make_3d_struct(
             nbeads=n * ploidy, rng=random_state, nghbr_bead_dis=nghbr_bead_dis,
@@ -183,8 +175,11 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
         ambiguity = 'ua'
     if ambiguity.lower() not in ('ua', 'ambig', 'pa'):
         raise ValueError(f"Ambiguity not understood: {ambiguity}")
-    if use_poisson and random_state is None:
-        random_state = np.random.RandomState(seed=0)
+    if use_poisson:
+        if random_state is None:
+            random_state = np.random.RandomState(seed=0)
+        elif isinstance(random_state, int):
+            random_state = np.random.RandomState(seed=random_state)
 
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     n = lengths.sum()
@@ -193,8 +188,12 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
     dis[dis == 0] = np.inf
 
     counts = beta * dis ** alpha
+    if bias is not None:
+        counts *= np.tile(bias, ploidy).reshape(-1, 1)
+        counts *= np.tile(bias, ploidy).reshape(-1, 1).T
     if use_poisson:
         counts = random_state.poisson(counts)
+
     if ploidy == 1 or ambiguity.lower() == 'ua':
         counts = np.triu(counts, 1)
     elif ambiguity.lower() == 'ambig':
@@ -208,10 +207,6 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
     if struct_nan is not None:
         counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
         counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
-
-    if bias is not None:
-        counts *= np.tile(bias, int(counts.shape[0] / n)).reshape(-1, 1)
-        counts *= np.tile(bias, int(counts.shape[1] / n)).reshape(-1, 1).T
 
     return sparse.coo_matrix(counts)
 

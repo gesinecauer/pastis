@@ -9,7 +9,6 @@ from jax import grad
 
 
 from .poisson import _format_X, objective, get_gamma_moments
-from .multiscale_optimization import decrease_lengths_res
 
 
 def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,

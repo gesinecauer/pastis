@@ -5,7 +5,7 @@ import os
 from .utils_poisson import find_beads_to_remove
 from .poisson import get_eps_types
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
-from .multiscale_optimization import get_multiscale_epsilon_from_struct
+from .multiscale_optimization import get_epsilon_from_struct
 
 
 class Callback(object):
@@ -184,7 +184,7 @@ class Callback(object):
         if struct_true is not None:
             struct_true = struct_true.reshape(-1, 3)
             if multiscale_factor != 1 and multiscale_reform:
-                epsilon_per_bead_true = get_multiscale_epsilon_from_struct(
+                epsilon_per_bead_true = get_epsilon_from_struct(
                     struct_true, lengths=lengths,
                     multiscale_factor=multiscale_factor, verbose=False)
                 # if stretch_fullres_beads is not None:

@@ -1,6 +1,7 @@
 import sys
 import pytest
 import numpy as np
+from numpy.testing import assert_array_almost_equal
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -15,7 +16,7 @@ if sys.version_info[0] >= 3:
     from pastis.optimization import poisson
     from pastis.optimization.counts import _format_counts
     from pastis.optimization.counts import preprocess_counts
-    from pastis.optimization.multiscale_optimization import get_multiscale_epsilon_from_struct
+    from pastis.optimization.multiscale_optimization import get_epsilon_from_struct
 
 
 def test_poisson_objective_haploid():
@@ -37,7 +38,7 @@ def test_poisson_objective_haploid():
 
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy)
+        ploidy=ploidy)._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -62,7 +63,7 @@ def test_poisson_objective_haploid_biased():
 
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)
+        ploidy=ploidy, bias=bias)._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
 
@@ -87,7 +88,7 @@ def test_poisson_objective_diploid(ambiguity):
 
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy)
+        ploidy=ploidy)._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -113,7 +114,7 @@ def test_poisson_objective_diploid_biased(ambiguity):
 
     obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)
+        ploidy=ploidy, bias=bias)._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -121,12 +122,12 @@ def test_poisson_objective_diploid_biased(ambiguity):
 @pytest.mark.parametrize("ambiguity,multiscale_factor", [
     ('ua', 2), ('ambig', 2), ('pa', 2), ('ua', 4), ('ambig', 4), ('pa', 4),
     ('ua', 8), ('ambig', 8), ('pa', 8)])
-def test_objective_multiscale(ambiguity, multiscale_factor):  # TODO also test with bias
+def test_objective_multiscale(ambiguity, multiscale_factor):
     lengths = np.array([20])
     ploidy = 2
     seed = 42
     alpha, beta = -3, 1e3
-    true_interhmlg_dis = np.array([15.])
+    true_interhmlg_dis = 15
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -143,13 +144,153 @@ def test_objective_multiscale(ambiguity, multiscale_factor):  # TODO also test w
     counts, struct_nan, _ = preprocess_counts(
         counts_raw=counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, beta=beta, verbose=False)
-    epsilon_true = np.mean(get_multiscale_epsilon_from_struct(
+    epsilon_true = np.mean(get_epsilon_from_struct(
         struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
         verbose=False))
 
     obj = poisson.objective(
         X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=None, multiscale_factor=multiscale_factor,
-        multiscale_reform=True, epsilon=epsilon_true)
+        multiscale_reform=True, epsilon=epsilon_true)._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
+
+
+@pytest.mark.parametrize("ambiguity,multiscale_factor", [
+    ('ua', 2), ('ambig', 2), ('pa', 2), ('ua', 4), ('ambig', 4), ('pa', 4),
+    ('ua', 8), ('ambig', 8), ('pa', 8)])
+def test_objective_multiscale_biased(ambiguity, multiscale_factor):
+    lengths = np.array([20])
+    ploidy = 2
+    seed = 42
+    alpha, beta = -3, 1e3
+    true_interhmlg_dis = 15
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis)
+    struct_true_lowres = decrease_struct_res_correct(
+        struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    bias = 0.1 + random_state.rand(lengths.sum())
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=ambiguity, struct_nan=None, random_state=random_state,
+        use_poisson=False, bias=bias)
+
+    counts, struct_nan, _ = preprocess_counts(
+        counts_raw=counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+    epsilon_true = np.mean(get_epsilon_from_struct(
+        struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
+        verbose=False))
+
+    obj = poisson.objective(
+        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
+        multiscale_reform=True, epsilon=epsilon_true)._value
+
+    assert obj < (-1e3 / sum([c.nbins for c in counts]))
+
+
+@pytest.mark.parametrize("ambiguity,multiscale_factor", [
+    ('ua', 2), ('ambig', 2), ('pa', 2), ('ua', 4), ('ambig', 4), ('pa', 4),
+    ('ua', 8), ('ambig', 8), ('pa', 8)])
+def test_objective_multiscale_bias_approx1(ambiguity, multiscale_factor):
+    lengths = np.array([30])
+    ploidy = 2
+    seed = 42
+    alpha, beta = -3, 1e3
+    true_interhmlg_dis = 15
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis)
+    struct_true_lowres = decrease_struct_res_correct(
+        struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=ambiguity, struct_nan=None, random_state=random_state,
+        use_poisson=True, bias=None)  # Counts can be unbiased, doesn't matter
+
+    counts, struct_nan, _ = preprocess_counts(
+        counts_raw=counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+    epsilon_true = np.mean(get_epsilon_from_struct(
+        struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
+        verbose=False))
+
+    # Bias should be as close as possible to 1 without being exactly 1
+    # (If bias is exactly 1, it gets set to None in the objective)
+    bias = np.ones(lengths.sum()) + random_state.choice(
+        [-1, 1], size=lengths.sum()) * np.finfo(np.float64).resolution / 9
+    assert not np.all(bias == 1)  # Make sure we aren't exactly at 1
+
+    obj_unbiased = poisson.objective(
+        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=None, multiscale_factor=multiscale_factor,
+        multiscale_reform=True, epsilon=epsilon_true)._value
+    obj_biased = poisson.objective(
+        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
+        multiscale_reform=True, epsilon=epsilon_true)._value
+
+    print(f"{obj_unbiased=:g}   {obj_biased=:g}")
+    assert_array_almost_equal(obj_unbiased, obj_biased)
+
+
+# @pytest.mark.parametrize("ambiguity,multiscale_factor", [
+#     ('ua', 2), ('ambig', 2), ('pa', 2), ('ua', 4), ('ambig', 4), ('pa', 4),
+#     ('ua', 8), ('ambig', 8), ('pa', 8)])
+# def test_objective_multiscale_bias_unbias(ambiguity, multiscale_factor):  # TODO remove, not a fair test
+#     lengths = np.array([30])
+#     ploidy = 2
+#     seed = 42
+#     alpha, beta = -3, 1e3
+#     true_interhmlg_dis = 15
+
+#     random_state = np.random.RandomState(seed=seed)
+#     struct_true = get_struct_randwalk(
+#         lengths=lengths, ploidy=ploidy, random_state=random_state,
+#         true_interhmlg_dis=true_interhmlg_dis)
+#     struct_true_lowres = decrease_struct_res_correct(
+#         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
+#         ploidy=ploidy)
+#     epsilon_true = np.mean(get_epsilon_from_struct(
+#         struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
+#         verbose=False))
+
+#     # Unbiased counts & objective
+#     counts_unbiased = get_counts(
+#         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+#         ambiguity=ambiguity, struct_nan=None, random_state=seed,
+#         use_poisson=False, bias=None)  # use exact values, not Poisson
+#     counts_unbiased, struct_nan, _ = preprocess_counts(
+#         counts_raw=counts_unbiased, lengths=lengths, ploidy=ploidy,
+#         multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+#     obj_unbiased = poisson.objective(
+#         X=struct_true_lowres, counts=counts_unbiased, alpha=alpha,
+#         lengths=lengths, ploidy=ploidy, bias=None,
+#         multiscale_factor=multiscale_factor, multiscale_reform=True,
+#         epsilon=epsilon_true)._value
+
+#     # Biased counts & objective
+#     bias = 0.1 + random_state.rand(lengths.sum())
+#     counts_biased = get_counts(
+#         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+#         ambiguity=ambiguity, struct_nan=None, random_state=seed,
+#         use_poisson=False, bias=bias)  # use exact values, not Poisson
+#     counts_biased, struct_nan, _ = preprocess_counts(
+#         counts_raw=counts_biased, lengths=lengths, ploidy=ploidy,
+#         multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+#     obj_biased = poisson.objective(
+#         X=struct_true_lowres, counts=counts_biased, alpha=alpha,
+#         lengths=lengths, ploidy=ploidy, bias=bias,
+#         multiscale_factor=multiscale_factor, multiscale_reform=True,
+#         epsilon=epsilon_true)._value
+
+#     print(f"{obj_unbiased=:g}   {obj_biased=:g}")
+#     assert_array_almost_equal(obj_unbiased, obj_biased)
