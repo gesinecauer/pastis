@@ -220,7 +220,7 @@ class HomologSeparating2019(Constraint):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.hparams = hparams
-        self._fullres_struct_nan = fullres_struct_nan  # For self._setup() only
+        self._fullres_struct_nan = None  # Not necessary for this constraint
         self._lowmem = lowmem
         self._var = None
         self.mods = mods  # TODO remove
@@ -267,16 +267,11 @@ class HomologSeparating2019(Constraint):
         if self.multiscale_factor > 1:
             fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-                ploidy=self.ploidy, fullres_struct_nan=self._fullres_struct_nan)
+                ploidy=self.ploidy)
             bead_weights = fullres_per_lowres_bead / self.multiscale_factor  # FIXME is this correct????
         else:
             bead_weights = np.ones((self.lengths_lowres.sum() * self.ploidy,))
-        struct_nan = find_beads_to_remove(
-            counts, lengths=self.lengths, ploidy=self.ploidy,
-            multiscale_factor=self.multiscale_factor)
-        # if struct_nan.size != 0:
-        #     raise ValueError("Check that we actually want to remove torm beads here...") # FIXME
-        bead_weights[struct_nan] = 0
+
         n = self.lengths_lowres.sum()
         begin = end = 0
         for i in range(len(self.lengths_lowres)):
@@ -290,7 +285,6 @@ class HomologSeparating2019(Constraint):
         var = {'bead_weights': bead_weights}
         if not self._lowmem:
             self._var = var
-            self._fullres_struct_nan = None  # No longer needed unless lowmem
         return var
 
     def apply(self, struct, alpha=None, epsilon=None, counts=None, bias=None,
@@ -351,7 +345,7 @@ class BeadChainConnectivity2022(Constraint):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.hparams = hparams
-        self._fullres_struct_nan = fullres_struct_nan  # For self._setup() only
+        self._fullres_struct_nan = None  # Not necessary for this constraint
         self._lowmem = lowmem
         self._var = None
         self.mods = mods  # TODO remove

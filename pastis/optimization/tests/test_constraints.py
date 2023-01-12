@@ -9,7 +9,7 @@ pytestmark = pytest.mark.skipif(
 
 if sys.version_info[0] >= 3:
     from utils import get_counts, get_struct_randwalk
-    from utils import decrease_struct_res_correct
+    from utils import decrease_struct_res_correct, get_true_data_interchrom
 
     from pastis.optimization.utils_poisson import _setup_jax
     _setup_jax(debug_nan_inf=True)
@@ -44,7 +44,7 @@ def test_constraint_bcc2019(multiscale_factor):
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        bcc_lambda=1, hsc_lambda=0, bcc_version='2019', data_interchrom=None,
+        bcc_lambda=1, hsc_lambda=0, bcc_version='2019',
         fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
@@ -82,7 +82,7 @@ def test_constraint_hsc2019(multiscale_factor):
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        bcc_lambda=0, hsc_lambda=1, hsc_version='2019', data_interchrom=None,
+        bcc_lambda=0, hsc_lambda=1, hsc_version='2019',
         est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=None,
         fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
@@ -161,6 +161,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     true_interhmlg_dis = 15
     alpha, beta = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+    use_poisson = True  # Must be true for hsc2022
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -169,16 +170,20 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     counts_raw = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
-        use_poisson=True, bias=None)
+        use_poisson=use_poisson, bias=None)
 
-    # For convenience, we are using unambig inter-hmlg counts as data_interchrom
-    counts_unambig = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=True, bias=None)
-    data_interchrom = constraints.get_counts_interchrom(
-        counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
-        filter_threshold=0, normalize=False, bias=None, verbose=False)
+    # # For convenience, we are using unambig inter-hmlg counts as data_interchrom
+    # counts_unambig = get_counts(
+    #     struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    #     ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
+    #     use_poisson=use_poisson, bias=None)
+    # data_interchrom = constraints.get_counts_interchrom(
+    #     counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
+    #     filter_threshold=0, normalize=False, bias=None, verbose=False)
+
+    data_interchrom = get_true_data_interchrom(
+        struct_true=struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
+        beta=beta, random_state=random_state, use_poisson=use_poisson)
 
     counts, _, fullres_struct_nan = preprocess_counts(
         counts_raw, lengths=lengths, ploidy=ploidy,
@@ -203,4 +208,5 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     obj = constraint.apply(
         struct_true_lowres, alpha=alpha, epsilon=epsilon_true, counts=counts,
         bias=None)._value
-    assert obj < 1e-2
+    print(f"{obj=:g}")
+    assert obj < 1e-3

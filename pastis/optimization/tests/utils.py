@@ -1,6 +1,10 @@
 import numpy as np
 from sklearn.metrics import euclidean_distances
 from scipy import sparse
+import sys
+
+if sys.version_info[0] >= 3:
+    from pastis.optimization.constraints import get_counts_interchrom
 
 
 def get_coord_diff_from_euc_dis(rng, nghbr_bead_dis=1, ndim=3):
@@ -209,6 +213,23 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
         counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
 
     return sparse.coo_matrix(counts)
+
+
+def get_true_data_interchrom(struct_true, ploidy, lengths, alpha=-3, beta=1,
+                             random_state=None, use_poisson=False):
+
+    """For convenience, create data_interchrom from unambig inter-hmlg counts
+
+    Enables generation of data_interchrom for one simulated chromosome"""
+
+    counts_unambig = sparse.coo_matrix(sum([get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity="ua", struct_nan=None, random_state=random_state,
+        use_poisson=use_poisson, bias=None).toarray() for i in range(4)]))
+    data_interchrom = get_counts_interchrom(
+        counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
+        filter_threshold=0, normalize=False, bias=None, verbose=False)
+    return data_interchrom
 
 
 def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):

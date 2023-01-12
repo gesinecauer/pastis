@@ -1,7 +1,6 @@
 import sys
 import pytest
 import numpy as np
-from scipy import sparse
 from sklearn.metrics import euclidean_distances
 from numpy.testing import assert_array_almost_equal
 
@@ -9,14 +8,13 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
-    from utils import get_counts, get_struct_randwalk
+    from utils import get_counts, get_struct_randwalk, get_true_data_interchrom
 
     from pastis.optimization.utils_poisson import _setup_jax
     _setup_jax(debug_nan_inf=True)
 
     from pastis.optimization import pastis_algorithms
     from pastis.optimization.constraints import _inter_homolog_dis
-    from pastis.optimization.constraints import get_counts_interchrom
 
 
 def test_haploid():
@@ -241,6 +239,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     bcc_lambda = 10  # Update this as needed
     hsc_lambda = 1e3  # Included to improve stability, update as needed
+    use_poisson = True
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -248,19 +247,12 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
         true_interhmlg_dis=true_interhmlg_dis)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity=ambiguity, struct_nan=None, random_state=None,
-        use_poisson=True, bias=None)
+        ambiguity=ambiguity, struct_nan=struct_nan, random_state=None,
+        use_poisson=use_poisson, bias=None)
 
-    # # For convenience, we are using unambig inter-hmlg counts as data_interchrom
-    # counts_unambig = get_counts(
-    #     struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-    #     ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-    #     use_poisson=True, bias=None)
-    # data_interchrom = get_counts_interchrom(
-    #     counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
-    #     filter_threshold=0, normalize=False, bias=None, verbose=False)
-    # # Need to sum to get inter-hmlg counts to mimic inter-chrom counts
-    # data_interchrom = data_interchrom.reshape(-1, 4).sum()
+    data_interchrom = get_true_data_interchrom(
+        struct_true=struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
+        beta=beta, random_state=random_state, use_poisson=use_poisson)
 
     struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
@@ -291,8 +283,9 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     true_interhmlg_dis = 10
     alpha, beta = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
-    bcc_lambda = 0
-    hsc_lambda = 1e3  # Update this as needed
+    bcc_lambda = 1
+    hsc_lambda = 1e6  # Update this as needed
+    use_poisson = True  # Must be true for hsc2022
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -301,16 +294,11 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
-        use_poisson=True, bias=None)
+        use_poisson=use_poisson, bias=None)
 
-    # For convenience, create data_interchrom from unambig inter-hmlg counts
-    counts_unambig = sparse.coo_matrix(sum([get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=True, bias=None).toarray() for i in range(4)]))
-    data_interchrom = get_counts_interchrom(
-        counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
-        filter_threshold=0, normalize=False, bias=None, verbose=False)
+    data_interchrom = get_true_data_interchrom(
+        struct_true=struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
+        beta=beta, random_state=random_state, use_poisson=use_poisson)
 
     struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
