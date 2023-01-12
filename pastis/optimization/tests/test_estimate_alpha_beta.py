@@ -1,15 +1,16 @@
 import sys
 import pytest
 import numpy as np
-from sklearn.metrics import euclidean_distances
-from numpy.testing import assert_array_almost_equal, assert_allclose
-from scipy import sparse
+from numpy.testing import assert_array_almost_equal
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
     from utils import get_counts
+
+    from pastis.optimization.utils_poisson import _setup_jax
+    _setup_jax(debug_nan_inf=True)
 
     from pastis.optimization import estimate_alpha_beta
     from pastis.optimization.counts import _format_counts

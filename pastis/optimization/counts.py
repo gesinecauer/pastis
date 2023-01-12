@@ -1219,7 +1219,8 @@ class CountsBins(object):
         filtered.row = self.row[filter_mask]
         filtered.col = self.col[filter_mask]
         if self.multiscale_factor == 1:
-            filtered.data = self.data[filter_mask]
+            if self.data is not None:
+                filtered.data = self.data[filter_mask]
             filtered.mask = None
         else:
             if self.data is not None:

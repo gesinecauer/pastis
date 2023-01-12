@@ -2,7 +2,6 @@ import sys
 import pytest
 import numpy as np
 from scipy import sparse
-from sklearn.metrics import euclidean_distances
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
 pytestmark = pytest.mark.skipif(
@@ -165,20 +164,19 @@ def test_add_counts_haploid(multiscale_factor, beta):
         counts_sum_object, counts_true=true_counts_sum_object)
 
 
-@pytest.mark.parametrize(
-    "ambiguity,multiscale_factor,beta", [
-        ('ambig', 1, 1), ('pa', 1, 1), ('ua', 1, 1),
-        ('ambig', 2, 1), ('pa', 2, 1), ('ua', 2, 1),
-        ('ambig', 4, 1), ('pa', 4, 1), ('ua', 4, 1),
-        ('ambig', 8, 1), ('pa', 8, 1), ('ua', 8, 1),
-        ('ambig', 1, 0.1), ('pa', 1, 0.1), ('ua', 1, 0.1),
-        ('ambig', 2, 0.1), ('pa', 2, 0.1), ('ua', 2, 0.1),
-        ('ambig', 4, 0.1), ('pa', 4, 0.1), ('ua', 4, 0.1),
-        ('ambig', 8, 0.1), ('pa', 8, 0.1), ('ua', 8, 0.1),
-        ('ambig', 1, 0.01), ('pa', 1, 0.01), ('ua', 1, 0.01),
-        ('ambig', 2, 0.01), ('pa', 2, 0.01), ('ua', 2, 0.01),
-        ('ambig', 4, 0.01), ('pa', 4, 0.01), ('ua', 4, 0.01),
-        ('ambig', 8, 0.01), ('pa', 8, 0.01), ('ua', 8, 0.01)])
+@pytest.mark.parametrize("ambiguity,multiscale_factor,beta", [
+    ('ambig', 1, 1), ('pa', 1, 1), ('ua', 1, 1),
+    ('ambig', 2, 1), ('pa', 2, 1), ('ua', 2, 1),
+    ('ambig', 4, 1), ('pa', 4, 1), ('ua', 4, 1),
+    ('ambig', 8, 1), ('pa', 8, 1), ('ua', 8, 1),
+    ('ambig', 1, 0.1), ('pa', 1, 0.1), ('ua', 1, 0.1),
+    ('ambig', 2, 0.1), ('pa', 2, 0.1), ('ua', 2, 0.1),
+    ('ambig', 4, 0.1), ('pa', 4, 0.1), ('ua', 4, 0.1),
+    ('ambig', 8, 0.1), ('pa', 8, 0.1), ('ua', 8, 0.1),
+    ('ambig', 1, 0.01), ('pa', 1, 0.01), ('ua', 1, 0.01),
+    ('ambig', 2, 0.01), ('pa', 2, 0.01), ('ua', 2, 0.01),
+    ('ambig', 4, 0.01), ('pa', 4, 0.01), ('ua', 4, 0.01),
+    ('ambig', 8, 0.01), ('pa', 8, 0.01), ('ua', 8, 0.01)])
 def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
     lengths = np.array([10, 21])
     ploidy = 2

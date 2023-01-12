@@ -1,8 +1,6 @@
 import sys
 import pytest
 import numpy as np
-from sklearn.metrics import euclidean_distances
-from scipy import sparse
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -10,6 +8,9 @@ pytestmark = pytest.mark.skipif(
 if sys.version_info[0] >= 3:
     from utils import get_counts, get_struct_randwalk
     from utils import decrease_struct_res_correct
+
+    from pastis.optimization.utils_poisson import _setup_jax
+    _setup_jax(debug_nan_inf=True)
 
     from pastis.optimization import poisson
     from pastis.optimization.counts import _format_counts
@@ -117,24 +118,20 @@ def test_poisson_objective_diploid_biased(ambiguity):
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
 
-@pytest.mark.parametrize(
-    "ambiguity,multiscale_factor",
-    [('ua', 2), ('ambig', 2), ('pa', 2), ('ua', 4), ('ambig', 4), ('pa', 4),
+@pytest.mark.parametrize("ambiguity,multiscale_factor", [
+    ('ua', 2), ('ambig', 2), ('pa', 2), ('ua', 4), ('ambig', 4), ('pa', 4),
     ('ua', 8), ('ambig', 8), ('pa', 8)])
-def test_objective_multiscale_ambig(ambiguity, multiscale_factor):  # TODO also test with bias
+def test_objective_multiscale(ambiguity, multiscale_factor):  # TODO also test with bias
     lengths = np.array([20])
     ploidy = 2
     seed = 42
-    alpha, beta = -3, 1
+    alpha, beta = -3, 1e3
     true_interhmlg_dis = np.array([15.])
-    max_attempt = 1e3
-    scale=0.75
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
-        true_interhmlg_dis=true_interhmlg_dis, max_attempt=max_attempt,
-        scale=scale)
+        true_interhmlg_dis=true_interhmlg_dis)
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)

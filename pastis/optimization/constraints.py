@@ -364,10 +364,11 @@ class BeadChainConnectivity2022(Constraint):
                              " haploid genomes.")
         if self.lambda_val < 0:
             raise ValueError("Constraint lambda may not be < 0.")
-        if self.hparams is None or 'data_interchrom' not in self.hparams or (
-                self.hparams['data_interchrom'] is None):
-            raise ValueError(f"{self.name} constraint is missing"
-                             f" neccessary hyperparams: 'data_interchrom'")
+        if 'bcc22_c_inter' in self.mods:
+            if self.hparams is None or 'data_interchrom' not in self.hparams or (
+                    self.hparams['data_interchrom'] is None):
+                raise ValueError(f"{self.name} constraint is missing"
+                                 f" neccessary hyperparams: 'data_interchrom'")
 
     def _setup(self, counts=None, bias=None):
         if self.lambda_val <= 0:
@@ -404,22 +405,25 @@ class BeadChainConnectivity2022(Constraint):
 
         mask_bin_nonzero = np.isin(
             row_nghbr_ambig_lowres, counts_nghbr_object.bins_nonzero.row)
-        mask_bin_zero = np.isin(
-            row_nghbr_ambig_lowres, counts_nghbr_object.bins_zero.row)
-        mask_no_data = (~mask_bin_nonzero) & (~mask_bin_zero)
+        if counts_nghbr_object.bins_zero is None:
+            mask_no_data = ~mask_bin_nonzero
+        else:
+            mask_bin_zero = np.isin(
+                row_nghbr_ambig_lowres, counts_nghbr_object.bins_zero.row)
+            mask_no_data = (~mask_bin_nonzero) & (~mask_bin_zero)
+            assert np.array_equal(
+                row_nghbr_ambig_lowres[mask_bin_zero],
+                counts_nghbr_object.bins_zero.row)  # TODO remove
         assert np.array_equal(
             row_nghbr_ambig_lowres[mask_bin_nonzero],
-            counts_nghbr_object.bins_nonzero.row)
-        assert np.array_equal(
-            row_nghbr_ambig_lowres[mask_bin_zero],
-            counts_nghbr_object.bins_zero.row)  # TODO remove
+            counts_nghbr_object.bins_nonzero.row)  # TODO remove
 
         if self.multiscale_factor == 1:
             counts_nghbr_mask = None
 
             # Get counts associated with neighbor beads
             counts_nghbr = np.zeros(
-                row_nghbr_ambig_lowres.shape,
+                row_nghbr_ambig_lowres.size,
                 dtype=counts_nghbr_object.bins_nonzero.data.dtype)
             counts_nghbr[
                 mask_bin_nonzero] = counts_nghbr_object.bins_nonzero.data
@@ -435,15 +439,21 @@ class BeadChainConnectivity2022(Constraint):
                 ploidy=self.ploidy, row=row_nghbr_ambig_lowres,
                 col=row_nghbr_ambig_lowres + 1,
                 empty_idx_fullres=counts_nghbr_object._empty_idx_fullres)
+            if counts_nghbr_mask is None:
+                counts_nghbr_mask = np.full(
+                    (self.multiscale_factor ** 2, row_nghbr_ambig_lowres.size),
+                    True)
             counts_nghbr_mask[:, mask_no_data] = _get_nonzero_mask(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
                 ploidy=self.ploidy, row=row_nghbr_ambig_lowres[mask_no_data],
                 col=row_nghbr_ambig_lowres[mask_no_data] + 1,
                 empty_idx_fullres=None)
+            if np.all(counts_nghbr_mask):
+                counts_nghbr_mask = None
 
             # Get counts associated with neighbor beads
             counts_nghbr = np.zeros(
-                counts_nghbr_mask.shape,
+                (self.multiscale_factor ** 2, row_nghbr_ambig_lowres.size),
                 dtype=counts_nghbr_object.bins_nonzero.data.dtype)
             counts_nghbr[
                 :, mask_bin_nonzero] = counts_nghbr_object.bins_nonzero.data
@@ -452,7 +462,8 @@ class BeadChainConnectivity2022(Constraint):
             # set those counts to the mean of all high-res counts
             counts_nghbr[
                 :, mask_no_data] = counts_nghbr_object.bins_nonzero.data.mean()
-            counts_nghbr[~counts_nghbr_mask] = 0
+            if counts_nghbr_mask is not None:
+                counts_nghbr[~counts_nghbr_mask] = 0
 
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
@@ -476,10 +487,9 @@ class BeadChainConnectivity2022(Constraint):
         else:
             bias_per_bin = np.tile(var['bias_nghbr'], 2)
         if var['counts_nghbr_mask'] is None:
-            mask = None
+            counts_nghbr_mask = None
         else:
-            mask = np.tile(var['counts_nghbr_mask'], 2)
-        counts_inter_mean = self.hparams['data_interchrom']['mean'] / 2
+            counts_nghbr_mask = np.tile(var['counts_nghbr_mask'], 2)
 
         if self.multiscale_factor == 1:
             nghbr_dis = _euclidean_distance(
@@ -488,6 +498,7 @@ class BeadChainConnectivity2022(Constraint):
                 nghbr_dis, alpha)
 
             if 'bcc22_c_inter' in self.mods:
+                counts_inter_mean = self.hparams['data_interchrom']['mean'] / 2
                 lambda_pois = lambda_pois + counts_inter_mean
             obj = poisson_nll(
                 np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_pois)
@@ -505,13 +516,14 @@ class BeadChainConnectivity2022(Constraint):
 
             # Adjust using inter-chromosomal counts
             if 'bcc22_c_inter' in self.mods:
+                counts_inter_mean = self.hparams['data_interchrom']['mean'] / 2
                 gamma_mean = gamma_mean + counts_inter_mean
 
             theta = gamma_var / gamma_mean
             k = ag_np.square(gamma_mean) / gamma_var
             obj = gamma_poisson_nll(
                 theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
-                bias_per_bin=bias_per_bin, mask=mask, mods=self.mods)
+                bias_per_bin=bias_per_bin, mask=counts_nghbr_mask, mods=self.mods)
             lambda_pois = gamma_mean  # TODO temp
 
         if 'debug2' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
@@ -570,8 +582,11 @@ class HomologSeparating2022(Constraint):
             [c.beta for c in counts], counts=counts, lengths=self.lengths,
             ploidy=self.ploidy)
         n = self.lengths_lowres.sum()
-        mask_interchrom = np.invert(_intra_mask(
-            (n, n), lengths_at_res=self.lengths_lowres))
+        if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
+            mask_interchrom = None
+        else:
+            mask_interchrom = np.invert(_intra_mask(
+                (n, n), lengths_at_res=self.lengths_lowres))
         var = {'beta': beta, 'mask_interchrom': mask_interchrom}
 
         if not self._lowmem:
@@ -594,22 +609,32 @@ class HomologSeparating2022(Constraint):
         n = self.lengths_lowres.sum()
         row, col = (x.ravel() for x in np.indices((n, n)))
         mask = col > row
-        row_interchrom = row[mask & var['mask_interchrom']]
-        col_interchrom = col[mask & var['mask_interchrom']]
+        if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
+            row_interchrom = col_interchrom = None
+        else:
+            row_interchrom = row[mask & var['mask_interchrom']]
+            col_interchrom = col[mask & var['mask_interchrom']]
         if 'hsc22_combo' in self.mods:
-            row_all = ag_np.concatenate(
-                [row, row_interchrom, row_interchrom + n])
-            col_all = ag_np.concatenate(
-                [col + n, col_interchrom, col_interchrom + n])
+            if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
+                row_all = row
+                col_all = col + n
+            else:
+                row_all = ag_np.concatenate(
+                    [row, row_interchrom, row_interchrom + n])
+                col_all = ag_np.concatenate(
+                    [col + n, col_interchrom, col_interchrom + n])
             idx = [[row_all, col_all]]
         else:
             row = row[mask]
             col = col[mask]
             idx_h1h2 = [row, col + n]
             idx_h2h1 = [row + n, col]
-            idx_h1h1 = [row_interchrom, col_interchrom]
-            idx_h2h2 = [row_interchrom + n, col_interchrom + n]
-            idx = [idx_h1h2, idx_h2h1, idx_h1h1, idx_h2h2]
+            if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
+                idx = [idx_h1h2, idx_h2h1]
+            else:
+                idx_h1h1 = [row_interchrom, col_interchrom]
+                idx_h2h2 = [row_interchrom + n, col_interchrom + n]
+                idx = [idx_h1h2, idx_h2h1, idx_h1h1, idx_h2h2]
 
         # Get KL divergence
         obj = 0
@@ -655,6 +680,7 @@ def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
                              epsilon=None, mods=[]):
     """TODO"""
     # TODO what if multiscale_reform=False and epsilon=None?
+
     if multiscale_factor > 1:
         lambda_mean, lambda_mixture_var = get_gamma_moments(
             struct=struct, epsilon=epsilon, alpha=alpha,

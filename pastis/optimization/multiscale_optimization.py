@@ -431,7 +431,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
     """Group beads of full-res struct by the low-res bead they correspond to.
 
     Axes of final array:
-        0: all highres beads corresponding to each lowres bead, size = multiscale factor
+        0: all highres beads corresponding to each lowres bead, size = multiscale_factor
         1: beads, size = struct[0]
         2: coordinates, size = struct[1] = 3
     """

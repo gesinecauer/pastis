@@ -8,6 +8,9 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
+    from pastis.optimization.utils_poisson import _setup_jax
+    _setup_jax(debug_nan_inf=True)
+
     from pastis.optimization.likelihoods import _stirling
     from pastis.optimization.polynomial import _polyval
 

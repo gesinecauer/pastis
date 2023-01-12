@@ -11,7 +11,7 @@ from scipy.interpolate import interp1d
 import warnings
 
 
-def _setup_jax():
+def _setup_jax(debug_nan_inf=False):
     from absl import logging as absl_logging
     absl_logging.set_verbosity('error')
     from jax.config import config as jax_config
@@ -25,8 +25,9 @@ def _setup_jax():
     #     ),
     #     XLA_PYTHON_CLIENT_PREALLOCATE='false',
     # )
-    # jax_config.update("jax_debug_nans", True)
-    # jax_config.update("jax_debug_infs", True)
+    if debug_nan_inf:
+        jax_config.update("jax_debug_nans", True)
+        jax_config.update("jax_debug_infs", True)
     # jax_config.update("jax_check_tracer_leaks", True)
 
 
@@ -70,7 +71,7 @@ def _get_output_files(outdir, seed=None):
 
 
 def _euclidean_distance(struct, row, col):
-    """TODO"""
+    """Get euclidian distances between beads in given row and col of struct."""
     dis_sq = (ag_np.square(struct[row] - struct[col])).sum(axis=1)
     return ag_np.sqrt(dis_sq)
 
@@ -501,6 +502,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
 def _intra_mask(data, lengths_at_res):
     """Return mask of intra-chromosomal rows/cols for given counts/dis data.  # TODO move to counts.py??
     """
+
     if (isinstance(data, (tuple, list)) and len(data) == 2) or (
             isinstance(data, np.ndarray) and data.size == 2):
         shape = data
@@ -509,6 +511,9 @@ def _intra_mask(data, lengths_at_res):
         row = data.row
         col = data.col
         shape = data.shape
+
+    if lengths_at_res.size == 1:  # Only one chromosome, all bins are intra
+        return np.full(row.size, True)
 
     bins_for_row = np.tile(
         lengths_at_res, int(shape[0] / lengths_at_res.sum())).cumsum()

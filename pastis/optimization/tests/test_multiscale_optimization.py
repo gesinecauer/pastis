@@ -1,7 +1,6 @@
 import sys
 import pytest
 import numpy as np
-from sklearn.metrics import euclidean_distances
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 from scipy import sparse
 
@@ -13,11 +12,7 @@ if sys.version_info[0] >= 3:
     from utils import decrease_counts_res_correct
 
     from pastis.optimization import multiscale_optimization
-    from pastis.optimization import pastis_algorithms
-    from pastis.optimization import poisson
     from pastis.optimization.counts import preprocess_counts
-
-    from topsy.utils.debug import print_array_non0  # TODO remove
 
 
 def get_struct_index_correct(multiscale_factor, lengths, ploidy):
@@ -115,10 +110,9 @@ def test_increase_struct_res():
 #         struct_current[mask], struct_lowres_new[mask], decimal=5)
 
 
-@pytest.mark.parametrize(
-    "ambiguity,multiscale_factor",
-    [('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
-     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
+@pytest.mark.parametrize("ambiguity,multiscale_factor", [
+    ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
+    ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_decrease_counts_res(ambiguity, multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 2
@@ -233,11 +227,6 @@ def test__choose_max_multiscale_factor(min_beads):
 
     assert (min_beads <= lengths_lowres.min()) or (min_beads > lengths.min())
     assert min_beads > lengths_lowres_toosmall.min()
-
-
-@pytest.mark.parametrize("multiscale_factor", [2, 4, 8])
-def test_multiscale_bias(multiscale_factor):
-    pass  # FIXME TODO
 
 
 @pytest.mark.parametrize(

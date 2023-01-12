@@ -15,9 +15,9 @@ from timeit import default_timer as timer
 from datetime import timedelta
 
 from .multiscale_optimization import decrease_lengths_res
-from .utils_poisson import _print_code_header
+from .utils_poisson import _print_code_header, _euclidean_distance
 from .polynomial import _approx_ln_f
-from .likelihoods import _masksum, gamma_poisson_nll, poisson_nll
+from .likelihoods import gamma_poisson_nll, poisson_nll
 
 
 def get_eps_types(stretch_fullres_beads):
@@ -100,8 +100,7 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
                       return_mean=True, return_var=True,
                       inferring_alpha=False, mods=[]):
 
-    dis = ag_np.sqrt((ag_np.square(
-        struct[row3d] - struct[col3d])).sum(axis=1))
+    dis = _euclidean_distance(struct, row=row3d, col=col3d)
     dis_alpha = ag_np.power(dis, alpha)
 
     if 'adjust_eps' in mods or ag_np.asarray(epsilon).size > 1:
@@ -143,8 +142,7 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
                      stretch_fullres_beads=None, mean_fullres_nghbr_dis=None,
                      inferring_alpha=False, mods=[]):
 
-    dis = ag_np.sqrt((ag_np.square(
-        struct[row3d] - struct[col3d])).sum(axis=1))
+    dis = _euclidean_distance(struct, row=row3d, col=col3d)
     dis_alpha = ag_np.power(dis, alpha)
 
     eps_gt0 = None
@@ -247,8 +245,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
 
     lambda_pois = ag_np.zeros(counts.nbins)
     for struct, mix_coef in zip(structures, mixture_coefs):
-        dis = ag_np.sqrt((ag_np.square(
-            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+        dis = _euclidean_distance(struct, row=counts.row3d, col=counts.col3d)
         if multiscale_variances is None:
             tmp1 = ag_np.power(dis, alpha)
         else:
