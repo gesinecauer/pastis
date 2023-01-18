@@ -208,27 +208,45 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
         counts = counts[:, :n] + counts[:, n:]
         np.fill_diagonal(counts[:n, :], 0)
         np.fill_diagonal(counts[n:, :], 0)
-    if struct_nan is not None:
-        counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
-        counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
 
+    return remove_struct_nan_from_counts(
+        counts, lengths=lengths, struct_nan=struct_nan)
+
+
+def remove_struct_nan_from_counts(counts, lengths, struct_nan):
+    if struct_nan is None or struct_nan.size == 0:
+        return sparse.coo_matrix(counts)
+
+    if sparse.issparse(counts):
+        counts = counts.toarray()
+    struct_nan = struct_nan[struct_nan < lengths.sum()]
+    struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
+    counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
+    counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
     return sparse.coo_matrix(counts)
 
 
-def get_true_data_interchrom(struct_true, ploidy, lengths, alpha=-3, beta=1,
-                             random_state=None, use_poisson=False):
+def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity, alpha=-3,
+                             beta=1, random_state=None, use_poisson=False,
+                             multiscale_rounds=1, multiscale_reform=True):
 
     """For convenience, create data_interchrom from unambig inter-hmlg counts
 
     Enables generation of data_interchrom for one simulated chromosome"""
 
+    if ambiguity.lower() == "pa":
+        beta_ua = beta * 2
+    else:
+        beta_ua = beta
     counts_unambig = sparse.coo_matrix(sum([get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta_ua,
         ambiguity="ua", struct_nan=None, random_state=random_state,
         use_poisson=use_poisson, bias=None).toarray() for i in range(4)]))
     data_interchrom = get_counts_interchrom(
         counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
-        filter_threshold=0, normalize=False, bias=None, verbose=False)
+        filter_threshold=0, normalize=False, bias=None,
+        multiscale_rounds=multiscale_rounds,
+        multiscale_reform=multiscale_reform, verbose=False)
     return data_interchrom
 
 
@@ -314,3 +332,31 @@ def decrease_counts_res_correct(counts, multiscale_factor, lengths):
                         counts_lowres[row_lowres, col_lowres] += bin_fullres
 
     return sparse.coo_matrix(counts_lowres)
+
+
+def ambiguate_counts_correct(counts, lengths, ploidy):
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    n = lengths.sum()
+    if not isinstance(counts, list):
+        counts = [counts]
+
+    if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
+        return counts[0]
+
+    counts_ambig = np.zeros((n, n))
+    for c in counts:
+        c = c.toarray()
+        if c.shape[0] > c.shape[1]:
+            c_ambig = np.sum(
+                [c[:n, :], c[n:, :], c[:n, :].T, c[n:, :].T], axis=0)
+        elif c.shape[0] < c.shape[1]:
+            c_ambig = np.sum(
+                [c[:, :n].T, c[:, n:].T, c[:, :n], c[:, n:]], axis=0)
+        elif c.shape[0] == n:
+            c_ambig = c
+        else:
+            c_ambig = np.sum(
+                [c[:n, :n], c[:n, n:], c[:n, n:].T, c[n:, n:]], axis=0)
+        counts_ambig += c_ambig
+
+    return sparse.coo_matrix(np.triu(counts_ambig, 1))

@@ -318,7 +318,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
               multiscale_reform=False, mixture_coefs=None, return_extras=False,
               inferring_alpha=False, stretch_fullres_beads=None,
               mean_fullres_nghbr_dis=None,
-              epsilon=None, mods=[]):  # FIXME epsilon shouldn't be defined here unless inferring struct/eps separately
+              epsilon=None, mods=[]):  # TODO epsilon shouldn't be defined here unless inferring struct/eps separately
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -868,7 +868,7 @@ class PastisPM(object):
             print('GENERATING NULL STRUCTURE', flush=True)
             # Exclude the counts data from the primary objective function.
             # Counts are still used in the calculation of the constraints.
-            self.counts = sum(self.counts).as_null()
+            self.counts = [sum(self.counts).as_null()]
 
         self._clear()
 
@@ -1142,7 +1142,7 @@ class PastisPM(object):
     #                                 infer_structure_first=True):
     #     """Jointly fit structure & epsilon to counts data.
     #     """
-    #     # FIXME this is obviously temporary...
+    #     # TODO this is obviously temporary...
     #     self.max_epsilon_loop = max_alpha_loop
     #     self.epsilon_factr = alpha_factr
 

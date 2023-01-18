@@ -73,12 +73,12 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                     f'Low resolution ({multiscale_factor_for_lowres}x)'],
                 max_length=60, blank_lines=2)
 
-    counts_preprocess, _, _ = preprocess_counts(
-        counts_raw=counts, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=1, exclude_zeros=exclude_zeros, beta=beta,
-        input_weight=input_weight, verbose=False, mixture_coefs=mixture_coefs,
-        mods=mods)
-    beta = [c.beta for c in counts_preprocess]
+    if beta is None:
+        _, beta = _set_initial_beta(
+            counts, lengths=lengths, ploidy=ploidy, bias=bias,
+            exclude_zeros=exclude_zeros)
+    elif isinstance(beta, (float, int)):
+        beta = [beta]
 
     if infer_draft_fullres:
         if verbose and infer_draft_lowres:
@@ -128,7 +128,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                              " Please pool unambiguous counts before"
                              " inputting.")
         else:
-            if lengths.shape[0] == 1:
+            if lengths.size == 1:
                 raise ValueError("Please input more than one chromosome to"
                                  " estimate est_hmlg_sep from ambiguous data.")
             counts_for_lowres = counts
@@ -172,7 +172,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
     return struct_draft_fullres, est_hmlg_sep, True
 
 
-def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
+def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     filter_threshold=0.04, normalize=True, bias=None, alpha_init=None,
                     max_alpha_loop=20, beta=None, multiscale_factor=1,
                     use_multiscale_variance=True, beta_init=None,
@@ -213,10 +213,10 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # PREPARE COUNTS OBJECTS
     counts, struct_nan, fullres_struct_nan = preprocess_counts(
-        counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
+        counts=counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, exclude_zeros=exclude_zeros,
-        beta=beta, input_weight=input_weight, verbose=verbose,
-        excluded_counts=excluded_counts, mixture_coefs=mixture_coefs,
+        beta=beta, bias=bias, input_weight=input_weight, verbose=verbose,
+        excluded_counts=excluded_counts, multiscale_reform=multiscale_reform,
         simple_diploid=simple_diploid, mods=mods)
     if simple_diploid:
         ploidy = 1
@@ -269,10 +269,10 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
     #         # print(f"{np.power(dis_nghbr, alpha).mean()=:.4g}\n")
 
     #         # beta_tmp, _ = _set_initial_beta(
-    #         #     counts_raw, lengths=lengths, ploidy=ploidy, bias=bias,
+    #         #     counts, lengths=lengths, ploidy=ploidy, bias=bias,
     #         #     exclude_zeros=exclude_zeros, neighboring_beads_only=True)
     #         # beta_ambig = _ambiguate_beta(
-    #         #     beta, counts_raw, lengths=lengths, ploidy=ploidy)
+    #         #     beta, counts, lengths=lengths, ploidy=ploidy)
     #         # mean_fullres_nghbr_dis_alpha = np.power(
     #         #     beta_tmp / beta_ambig, 1 / alpha)
 
@@ -281,7 +281,7 @@ def _prep_inference(counts_raw, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     #         # row_nghbr2 = _neighboring_bead_indices(
     #         #     lengths=lengths, ploidy=2, multiscale_factor=1)
-    #         # c = counts_raw[0]
+    #         # c = counts[0]
     #         # c_nghbr = c[row_nghbr2, row_nghbr2 + 1]
     #         # print(f"{np.nanmean(c_nghbr / beta_ambig)=:.4g}")
     #         # print(f"{np.nanmean(np.power(c_nghbr / beta_ambig, 1 / alpha))=:.4g}\n")
@@ -639,13 +639,12 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
                     exclude_zeros=exclude_zeros)
     # Get inter-chromosomal counts (if needed)
-    if data_interchrom is None and ((
-            bcc_lambda > 0 and bcc_version == '2022') or (
-            hsc_lambda > 0 and hsc_version == '2022')):
-        data_interchrom = get_counts_interchrom(
+    if data_interchrom is None and (hsc_lambda > 0 and hsc_version == '2022'):
+        data_interchrom[multiscale_factor] = get_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
-            filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-            verbose=verbose, mods=mods)
+            filter_threshold=filter_threshold, normalize=normalize,
+            bias=bias, multiscale_reform=multiscale_reform,
+            multiscale_rounds=multiscale_rounds, verbose=verbose, mods=mods)
     # No need to repeatedly re-load if inferring with single-res
     if multiscale_rounds == 1:
         counts = _counts
@@ -717,11 +716,10 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         return None, {'seed': seed, 'converged': draft_converged}
 
     # INFER FULL-RES STRUCTURE (with or without multires optimization)
-    if first_alpha_loop and False:  # FIXME
+    if first_alpha_loop and False:  # FIXME FIXME FIXME ??????????????????????????????????
         all_multiscale_factors = [1]
     else:
-        all_multiscale_factors = 2 ** np.flip(
-            np.arange(multiscale_rounds), axis=0)
+        all_multiscale_factors = 2 ** np.flip(np.arange(multiscale_rounds))
     X_ = init
     epsilon_max_ = epsilon_max
     init_std_dev = None  # TODO

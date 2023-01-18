@@ -9,6 +9,7 @@ from jax import grad
 
 
 from .poisson import _format_X, objective, get_gamma_moments
+from .utils_poisson import _euclidean_distance
 
 
 def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
@@ -42,16 +43,15 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
     num_highres_per_lowres_bins = counts.fullres_per_lowres_dis
 
     lambda_intensity_sum = 0.
-    for struct, gamma in zip(structures, mixture_coefs):
-        dis = ag_np.sqrt((ag_np.square(
-            struct[counts.row3d] - struct[counts.col3d])).sum(axis=1))
+    for struct, mix_coef in zip(structures, mixture_coefs):
+        dis = _euclidean_distance(struct, row=counts.row3d, col=counts.col3d)
         if epsilon is None:
             if multiscale_variances is None:
                 tmp1 = ag_np.power(dis, alpha)
             else:
                 tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
             tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
-            lambda_intensity_sum += ag_np.sum(gamma * counts.bias_per_bin(
+            lambda_intensity_sum += ag_np.sum(mix_coef * counts.bias_per_bin(
                 bias) * num_highres_per_lowres_bins * tmp)
         else:
             tmp = get_gamma_moments(
@@ -60,7 +60,7 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 return_var=False)
             if bias is not None and not np.all(bias == 1):
                 raise NotImplementedError
-            lambda_intensity_sum += ag_np.sum(gamma * counts.bias_per_bin(
+            lambda_intensity_sum += ag_np.sum(mix_coef * counts.bias_per_bin(
                 bias) * num_highres_per_lowres_bins * tmp)
 
     return lambda_intensity_sum
@@ -119,9 +119,8 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
             raise ValueError(f"Beta for {ambiguity} counts is {beta_maps}.")
 
     if verbose:
-        print('INFERRED BETA: %s' % ', '.join(['%s=%.3g' %
-              (k, v) for k, v in beta.items()]),
-              flush=True)
+        print('INFERRED BETA: ' + ', '.join(
+              [f'{k}={v:.3g}' for k, v in beta.items()]), flush=True)
 
     return beta
 

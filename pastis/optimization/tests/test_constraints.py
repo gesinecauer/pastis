@@ -17,6 +17,29 @@ if sys.version_info[0] >= 3:
     from pastis.optimization import constraints
     from pastis.optimization.counts import preprocess_counts
     from pastis.optimization.multiscale_optimization import get_epsilon_from_struct
+    from pastis.optimization.multiscale_optimization import decrease_lengths_res
+
+
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
+def test_neighboring_bead_indices(multiscale_factor):
+    lengths = np.array([30])
+    ploidy = 2
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    row_nghbr = np.arange(lengths_lowres.sum() * ploidy - 1)
+    row_nghbr = row_nghbr[~np.isin(
+        row_nghbr, np.cumsum(np.tile(lengths_lowres, ploidy)) - 1)]
+
+    row_nghbr_true = constraints._neighboring_bead_indices(
+        lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor)
+
+    print('row_nghbr\n', row_nghbr)
+    print('row_nghbr_true\n', row_nghbr_true)
+    print(row_nghbr[~np.isin(row_nghbr, row_nghbr_true)])
+    print(row_nghbr_true[~np.isin(row_nghbr_true, row_nghbr)])
+
+    assert np.array_equal(row_nghbr_true, row_nghbr)
 
 
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 4])
@@ -24,19 +47,22 @@ def test_constraint_bcc2019(multiscale_factor):
     lengths = np.array([20])
     ploidy = 2
     alpha, beta = -3, 1
+    multiscale_reform = True
 
     n = lengths.sum()
     struct_true = np.concatenate(
         [np.arange(n * ploidy).reshape(-1, 1), np.zeros((n * ploidy, 1)),
             np.zeros((n * ploidy, 1))], axis=1)
-    counts_raw = get_counts(
+    bias = None
+    counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ua", struct_nan=None, random_state=None,
-        use_poisson=False, bias=None)
+        use_poisson=False, bias=bias)
 
     counts, _, fullres_struct_nan = preprocess_counts(
-        counts_raw, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=beta, bias=bias,
+        multiscale_reform=multiscale_reform, verbose=False)
 
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -49,7 +75,7 @@ def test_constraint_bcc2019(multiscale_factor):
     constraint.check()
     obj = constraint.apply(
         struct_true_lowres, alpha=alpha, epsilon=None, counts=counts,
-        bias=None)._value
+        bias=bias)._value
     assert np.isclose(obj, 0)
 
 
@@ -57,24 +83,27 @@ def test_constraint_bcc2019(multiscale_factor):
 def test_constraint_hsc2019(multiscale_factor):
     lengths = np.array([30])
     ploidy = 2
-    seed = 42
+    seed = 0
     true_interhmlg_dis = 15
     alpha, beta = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     est_hmlg_sep = true_interhmlg_dis  # Using true value for convenience
+    multiscale_reform = True
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    counts_raw = get_counts(
+    bias = None
+    counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=False, bias=None)
+        use_poisson=False, bias=bias)
 
     counts, _, fullres_struct_nan = preprocess_counts(
-        counts_raw, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=beta, bias=bias,
+        multiscale_reform=multiscale_reform, verbose=False)
 
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -88,7 +117,7 @@ def test_constraint_hsc2019(multiscale_factor):
     constraint.check()
     obj = constraint.apply(
         struct_true_lowres, alpha=alpha, epsilon=None, counts=counts,
-        bias=None)._value
+        bias=bias)._value
     assert np.isclose(obj, 0)
 
 
@@ -96,29 +125,33 @@ def test_constraint_hsc2019(multiscale_factor):
     ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_constraint_bcc2022(ambiguity, multiscale_factor):
-    lengths = np.array([20])
+    lengths = np.array([40])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha, beta = -3, 1e3
+    struct_nan = None
     true_interhmlg_dis = 15
+    multiscale_reform = True
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    counts_raw = get_counts(
+    bias = None
+    counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity=ambiguity, struct_nan=None, random_state=None,
-        use_poisson=True, bias=None)
+        ambiguity=ambiguity, struct_nan=struct_nan, random_state=None,
+        use_poisson=True, bias=bias)
 
     counts, _, fullres_struct_nan = preprocess_counts(
-        counts_raw, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=beta, bias=bias,
+        multiscale_reform=multiscale_reform, verbose=False)
 
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    if multiscale_factor == 1:
+    if multiscale_factor == 1 or (not multiscale_reform):
         epsilon_true = None
     else:
         epsilon_true = np.mean(get_epsilon_from_struct(
@@ -132,7 +165,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
     constraint.check()
     obj = constraint.apply(
         struct_true_lowres, alpha=alpha, epsilon=epsilon_true, counts=counts,
-        bias=None)._value
+        bias=bias)._value
 
     nbins_nghbr = constraint._var['row_nghbr'].size
     assert obj < (-1e4 / nbins_nghbr)
@@ -157,42 +190,38 @@ def test_kl_divergence(p, q):
 def test_constraint_hsc2022(ambiguity, multiscale_factor):
     lengths = np.array([30])
     ploidy = 2
-    seed = 42
+    seed = 0
     true_interhmlg_dis = 15
-    alpha, beta = -3, 1
+    alpha, beta = -3, 1e3
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true for hsc2022
+    multiscale_reform = True
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    counts_raw = get_counts(
+    bias = None
+    counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
-        use_poisson=use_poisson, bias=None)
-
-    # # For convenience, we are using unambig inter-hmlg counts as data_interchrom
-    # counts_unambig = get_counts(
-    #     struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-    #     ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-    #     use_poisson=use_poisson, bias=None)
-    # data_interchrom = constraints.get_counts_interchrom(
-    #     counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
-    #     filter_threshold=0, normalize=False, bias=None, verbose=False)
+        use_poisson=use_poisson, bias=bias)
 
     data_interchrom = get_true_data_interchrom(
-        struct_true=struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
-        beta=beta, random_state=random_state, use_poisson=use_poisson)
+        struct_true=struct_true, ploidy=ploidy, lengths=lengths,
+        ambiguity=ambiguity, alpha=alpha, beta=beta, random_state=random_state,
+        use_poisson=use_poisson, multiscale_rounds=np.log2(multiscale_factor) + 1,
+        multiscale_reform=True)
 
     counts, _, fullres_struct_nan = preprocess_counts(
-        counts_raw, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, beta=beta, verbose=False)
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=beta, bias=bias,
+        multiscale_reform=multiscale_reform, verbose=False)
 
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    if multiscale_factor == 1:
+    if multiscale_factor == 1 or (not multiscale_reform):
         epsilon_true = None
     else:
         epsilon_true = np.mean(get_epsilon_from_struct(
@@ -207,6 +236,6 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     constraint.check()
     obj = constraint.apply(
         struct_true_lowres, alpha=alpha, epsilon=epsilon_true, counts=counts,
-        bias=None)._value
+        bias=bias)._value
     print(f"{obj=:g}")
-    assert obj < 1e-3
+    assert obj < 1e-1

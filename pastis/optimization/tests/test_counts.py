@@ -8,38 +8,11 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
-    from utils import get_counts
+    from utils import get_counts, ambiguate_counts_correct
     import pastis.optimization.counts as counts_py
+    from pastis.optimization.estimate_alpha_beta import _estimate_beta
 
     from topsy.utils.debug import print_array_non0  # TODO remove
-
-
-def ambiguate_counts_correct(counts, lengths, ploidy):
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
-    n = lengths.sum()
-    if not isinstance(counts, list):
-        counts = [counts]
-
-    if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
-        return counts[0]
-
-    counts_ambig = np.zeros((n, n))
-    for c in counts:
-        c = c.toarray()
-        if c.shape[0] > c.shape[1]:
-            c_ambig = np.sum(
-                [c[:n, :], c[n:, :], c[:n, :].T, c[n:, :].T], axis=0)
-        elif c.shape[0] < c.shape[1]:
-            c_ambig = np.sum(
-                [c[:, :n].T, c[:, n:].T, c[:, :n], c[:, n:]], axis=0)
-        elif c.shape[0] == n:
-            c_ambig = c
-        else:
-            c_ambig = np.sum(
-                [c[:n, :n], c[:n, n:], c[:n, n:].T, c[n:, n:]], axis=0)
-        counts_ambig += c_ambig
-
-    return sparse.coo_matrix(np.triu(counts_ambig, 1))
 
 
 def compare_counts_bins_objects(bins, bins_true):
@@ -128,7 +101,7 @@ def compare_counts_objects(counts, counts_true):
 def test_add_counts_haploid(multiscale_factor, beta):
     lengths = np.array([10, 21])
     ploidy = 1
-    seed = 42
+    seed = 0
     alpha = -3
     struct_nan1 = np.array([0, 1, 2, 3, 12, 15, 25])
     struct_nan2 = np.array([0, 1, 3, 12, 25])
@@ -148,15 +121,15 @@ def test_add_counts_haploid(multiscale_factor, beta):
     # "True" summed counts: sum before converting to CountsMatrix
     true_counts_sum_object = counts_py._format_counts(
         counts=counts1 + counts2, lengths=lengths, ploidy=ploidy,
-        beta=beta * 2, exclude_zeros=False,
+        beta=beta * 2, bias=None, exclude_zeros=False,
         multiscale_factor=multiscale_factor)[0]
 
     # Sum after converting to CountsMatrix
     counts_object1 = counts_py._format_counts(
-        counts=counts1, lengths=lengths, ploidy=ploidy, beta=beta,
+        counts=counts1, lengths=lengths, ploidy=ploidy, beta=beta, bias=None,
         exclude_zeros=False, multiscale_factor=multiscale_factor)[0]
     counts_object2 = counts_py._format_counts(
-        counts=counts2, lengths=lengths, ploidy=ploidy, beta=beta,
+        counts=counts2, lengths=lengths, ploidy=ploidy, beta=beta, bias=None,
         exclude_zeros=False, multiscale_factor=multiscale_factor)[0]
     counts_sum_object = sum([counts_object1, counts_object2])
 
@@ -180,11 +153,9 @@ def test_add_counts_haploid(multiscale_factor, beta):
 def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
     lengths = np.array([10, 21])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha = -3
-    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])  # NaN in both hmlgs
-    struct_nan = np.append(struct_nan, struct_nan + lengths.sum())  # Both hmlgs
-    struct_nan = np.append(struct_nan, [4, 5, 6, 7])  # NaN in one hmlg only
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.rand(lengths.sum() * ploidy, 3)
@@ -200,13 +171,13 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
         beta, counts=counts, lengths=lengths, ploidy=ploidy)
     true_counts_ambig_object = counts_py._format_counts(
         counts=true_counts_ambig_arr_fullres, lengths=lengths, ploidy=ploidy,
-        beta=beta_ambig, exclude_zeros=False,
+        beta=beta_ambig, bias=None, exclude_zeros=False,
         multiscale_factor=multiscale_factor)[0]
     print_array_non0(true_counts_ambig_object.tocoo().toarray())
 
     # Ambiguate after converting to CountsMatrix
     counts_objects = counts_py._format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta,
+        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=None,
         exclude_zeros=False, multiscale_factor=multiscale_factor)
     counts_ambig_object = counts_py.ambiguate_counts(
         counts_objects, lengths=lengths, ploidy=ploidy)
@@ -218,90 +189,137 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
 def test_3d_indices_haploid():
     lengths = np.array([20])
     ploidy = 1
-    seed = 42
+    seed = 0
     alpha, beta = -3, 1
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ua", struct_nan=None, random_state=random_state,
+        ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
         use_poisson=False)
 
     row3d, col3d = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=True)
 
-    assert np.array_equal(counts.row, row3d)
-    assert np.array_equal(counts.col, col3d)
+    assert_array_equal(counts.row, row3d)
+    assert_array_equal(counts.col, col3d)
 
 
 def test_3d_indices_diploid_unambig():
     lengths = np.array([20])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha, beta = -3, 1
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ua", struct_nan=None, random_state=random_state,
+        ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
         use_poisson=False)
 
     row3d, col3d = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=True)
 
-    assert np.array_equal(counts.row, row3d)
-    assert np.array_equal(counts.col, col3d)
+    assert_array_equal(counts.row, row3d)
+    assert_array_equal(counts.col, col3d)
 
 
 def test_3d_indices_diploid_ambig():
     lengths = np.array([20])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha, beta = -3, 1
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ambig", struct_nan=None, random_state=random_state,
+        ambiguity="ambig", struct_nan=struct_nan, random_state=random_state,
         use_poisson=False)
 
     row3d, col3d = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=True)
 
+    n = lengths.sum()
     row3d_true = np.concatenate([np.tile(counts.row, 2), np.tile(counts.row, 2) + n])
     col3d_true = np.tile(np.concatenate([counts.col, counts.col + n]), 2)
-    assert np.array_equal(row3d_true, row3d)
-    assert np.array_equal(col3d_true, col3d)
+    assert_array_equal(row3d_true, row3d)
+    assert_array_equal(col3d_true, col3d)
 
 
 def test_3d_indices_diploid_partially_ambig():
     lengths = np.array([20])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha, beta = -3, 1
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="pa", struct_nan=None, random_state=random_state,
+        ambiguity="pa", struct_nan=struct_nan, random_state=random_state,
         use_poisson=False)
 
     row3d, col3d = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=True)
 
+    n = lengths.sum()
     row3d_true = np.tile(counts.row, 2)
     col3d_true = np.concatenate([counts.col, counts.col + n])
-    assert np.array_equal(row3d_true, row3d)
-    assert np.array_equal(col3d_true, col3d)
+    assert_array_equal(row3d_true, row3d)
+    assert_array_equal(col3d_true, col3d)
+
+
+@pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
+def test_ambiguate_beta(ambiguity):
+    lengths = np.array([20])
+    ploidy = 2
+    seed = 0
+    alpha, beta = -3, 1
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    bias = None
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
+        use_poisson=False)
+
+    # Confirm that beta MLE is working
+    counts_objects, _, _ = counts_py.preprocess_counts(
+        counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias,
+        verbose=False)
+    beta_mle = _estimate_beta(
+        struct_true, counts=counts_objects, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias)[ambiguity]
+    assert_array_almost_equal(beta, beta_mle)
+
+    # Test _ambiguate_beta
+    counts_ambig = ambiguate_counts_correct(
+        counts, lengths=lengths, ploidy=ploidy)
+    counts_ambig_objects, _, _ = counts_py.preprocess_counts(
+        counts_ambig, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias,
+        verbose=False)
+    beta_ambig_correct = _estimate_beta(
+        struct_true, counts=counts_ambig_objects, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias)["ambig"]
+    beta_ambig_test = counts_py._ambiguate_beta(
+        beta, counts=counts, lengths=lengths, ploidy=ploidy)
+    assert_array_almost_equal(beta_ambig_correct, beta_ambig_test)
+
+    # Test _disambiguate_beta
+    beta_disambig = counts_py._disambiguate_beta(
+        beta_ambig_correct, counts=counts, lengths=lengths, ploidy=ploidy,
+        bias=bias)[0]
+    assert_array_almost_equal(beta, beta_disambig)

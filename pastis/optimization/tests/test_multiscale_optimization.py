@@ -10,6 +10,7 @@ pytestmark = pytest.mark.skipif(
 if sys.version_info[0] >= 3:
     from utils import get_counts, decrease_struct_res_correct
     from utils import decrease_counts_res_correct
+    from utils import remove_struct_nan_from_counts
 
     from pastis.optimization import multiscale_optimization
     from pastis.optimization.counts import preprocess_counts
@@ -116,10 +117,9 @@ def test_increase_struct_res():
 def test_decrease_counts_res(ambiguity, multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha, beta = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
-    struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.rand(lengths.sum() * ploidy, 3)
@@ -156,7 +156,7 @@ def test_get_struct_index(multiscale_factor):
 def test_decrease_struct_res(multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 1
-    seed = 42
+    seed = 0
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     nbeads = lengths.sum() * ploidy
@@ -178,7 +178,7 @@ def test_decrease_struct_res(multiscale_factor):
 @pytest.mark.parametrize("multiscale_factor", [2, 4, 8])
 def test_get_epsilon_from_struct(multiscale_factor):
     lengths = np.array([10, 21])
-    seed = 42
+    seed = 0
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     nbeads = lengths.sum()
@@ -235,27 +235,25 @@ def test__choose_max_multiscale_factor(min_beads):
 def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
     lengths = np.array([100])
     ploidy = 2
-    seed = 42
+    seed = 0
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths.sum()
 
     # Make counts
-    counts_raw = random_state.randint(0, 10, size=(n, n))
-    counts_raw = np.triu(counts_raw, 1)
-    if struct_nan is not None:
-        counts_raw[struct_nan, :] = 0
-        counts_raw[:, struct_nan] = 0
-    counts_raw = sparse.coo_matrix(counts_raw)
+    counts = random_state.randint(0, 10, size=(n, n))
+    counts = np.triu(counts, 1)
+    counts = remove_struct_nan_from_counts(
+        counts, lengths=lengths, struct_nan=struct_nan)
 
     fullres_struct_nan_true = struct_nan
     if ploidy == 2:
         fullres_struct_nan_true = np.append(struct_nan, struct_nan + n)
 
     counts, _, fullres_struct_nan = preprocess_counts(
-        counts_raw=counts_raw, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, beta=1., verbose=False,
+        counts=counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=1, bias=None, verbose=False,
         exclude_zeros=False)
 
     assert_array_equal(fullres_struct_nan_true, fullres_struct_nan)
@@ -289,7 +287,7 @@ def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
 # def test_infer_multiscale_variances_ambig():  # TODO remove
 #     lengths = np.array([160])
 #     ploidy = 2
-#     seed = 42
+#     seed = 0
 #     alpha, beta = -3, 1
 #     multiscale_rounds = 4
 

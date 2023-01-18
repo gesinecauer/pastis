@@ -220,7 +220,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
 
 
 def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
-                             exclude_zeros=False):
+                             exclude_zeros=False, multiscale_reform=True):
     """Group together full-res counts corresponding to a given low-res distance.
 
     Prepare counts for multi-resolution optimization by aggregating sets of
@@ -254,7 +254,7 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
 
     counts = _check_counts_matrix(counts, lengths=lengths, ploidy=ploidy)
 
-    if multiscale_factor > 1:
+    if multiscale_factor > 1 and multiscale_reform:
         lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
         shape_lowres = tuple(np.array(
@@ -286,6 +286,10 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
             mask = None
         idx_lowres = row_lowres[not_all_zero], col_lowres[not_all_zero]
     else:
+        if multiscale_factor > 1:
+            counts = decrease_counts_res(
+                counts, multiscale_factor=multiscale_factor, lengths=lengths,
+                ploidy=ploidy)
         idx_lowres = counts.row, counts.col
         data_grouped = counts.data
         shape_lowres = counts.shape
@@ -464,7 +468,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
     idx, bad_idx = _get_struct_index(
         multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
 
-    if fullres_struct_nan is not None and fullres_struct_nan.shape != 0:
+    if fullres_struct_nan is not None and fullres_struct_nan.size != 0:
         nan_mask_lowres = np.isin(idx, fullres_struct_nan)
         bad_idx[nan_mask_lowres] = True
         idx[nan_mask_lowres] = 0
@@ -656,7 +660,7 @@ def _var3d(struct_grouped, replace_nan=True):
     for i in range(struct_grouped.shape[1]):
         struct_group = struct_grouped[:, i, :]
         beads_in_group = np.invert(np.isnan(struct_group[:, 0])).sum()
-        if beads_in_group < 1:  # FIXME bugfix 8/28/20... previously was <= 1
+        if beads_in_group < 1:
             var = np.nan
         else:
             mean_coords = np.nanmean(struct_group, axis=0)

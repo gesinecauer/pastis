@@ -11,13 +11,13 @@ _setup_jax()
 import jax.numpy as ag_np
 from jax.nn import relu
 from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
-from .multiscale_optimization import decrease_lengths_res
+from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .utils_poisson import find_beads_to_remove, _euclidean_distance
 from .utils_poisson import relu_min
 from .utils_poisson import _inter_counts, _intra_mask
 from .counts import ambiguate_counts, _ambiguate_beta, _get_nonzero_mask
-from .counts import _get_included_counts_bins, _idx_isin
+from .counts import _get_included_counts_bins, _idx_isin, _get_bias_per_bin
 from .likelihoods import poisson_nll, gamma_poisson_nll
 from .poisson import get_gamma_moments
 from ..io.read import load_data
@@ -268,7 +268,7 @@ class HomologSeparating2019(Constraint):
             fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
                 ploidy=self.ploidy)
-            bead_weights = fullres_per_lowres_bead / self.multiscale_factor  # FIXME is this correct????
+            bead_weights = fullres_per_lowres_bead / self.multiscale_factor
         else:
             bead_weights = np.ones((self.lengths_lowres.sum() * self.ploidy,))
 
@@ -380,14 +380,12 @@ class BeadChainConnectivity2022(Constraint):
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
 
-        # Get bias corresponding to neighboring beads
-        row_nghbr_ambig_fullres = _neighboring_bead_indices(
-            lengths=self.lengths, ploidy=1, multiscale_factor=1)
+        # Used for computing bias corresponding to neighboring beads
         if bias is None or np.all(bias == 1):
-            bias_nghbr = 1
+            row_nghbr_bias = None
         else:
-            bias_nghbr = bias.ravel()[row_nghbr_ambig_fullres] * bias.ravel()[
-                row_nghbr_ambig_fullres + 1]
+            row_nghbr_bias = _neighboring_bead_indices(
+                lengths=self.lengths, ploidy=1, multiscale_factor=1)
 
         # Get counts corresponding to neighboring beads
         row_nghbr_ambig_lowres = _neighboring_bead_indices(
@@ -424,8 +422,13 @@ class BeadChainConnectivity2022(Constraint):
 
             # If a distance bin has no counts associated with it,
             # set those counts to the mean of all counts
-            counts_nghbr[
-                mask_no_data] = counts_nghbr_object.bins_nonzero.data.mean()
+            if counts_nghbr_object.bins_zero is None:
+                counts_nghbr[mask_no_data] = np.mean(
+                    counts_nghbr_object.bins_nonzero.data)
+            else:
+                counts_nghbr[mask_no_data] = np.mean(np.append(
+                    counts_nghbr_object.bins_nonzero.data,
+                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
         else:
             # Get mask associated with neighbor beads
             counts_nghbr_mask = _get_nonzero_mask(
@@ -437,11 +440,14 @@ class BeadChainConnectivity2022(Constraint):
                 counts_nghbr_mask = np.full(
                     (self.multiscale_factor ** 2, row_nghbr_ambig_lowres.size),
                     True)
-            counts_nghbr_mask[:, mask_no_data] = _get_nonzero_mask(
+            mask_no_data = _get_nonzero_mask(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
                 ploidy=self.ploidy, row=row_nghbr_ambig_lowres[mask_no_data],
-                col=row_nghbr_ambig_lowres[mask_no_data] + 1,
-                empty_idx_fullres=None)
+                col=row_nghbr_ambig_lowres[mask_no_data] + 1)
+            if mask_no_data is None:
+                counts_nghbr_mask[:, mask_no_data] = True
+            else:
+                counts_nghbr_mask[:, mask_no_data] = mask_no_data
             if np.all(counts_nghbr_mask):
                 counts_nghbr_mask = None
 
@@ -454,14 +460,20 @@ class BeadChainConnectivity2022(Constraint):
 
             # If an entire lowres distance bin has no counts associated with it,
             # set those counts to the mean of all high-res counts
-            counts_nghbr[
-                :, mask_no_data] = counts_nghbr_object.bins_nonzero.data.mean()
-            if counts_nghbr_mask is not None:
+            if counts_nghbr_object.bins_zero is None:
+                counts_nghbr[:, mask_no_data] = np.mean(
+                    counts_nghbr_object.bins_nonzero.data)
+            else:
+                counts_nghbr[:, mask_no_data] = np.mean(np.append(
+                    counts_nghbr_object.bins_nonzero.data,
+                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
+
+            if counts_nghbr_mask is not None:  # TODO not necessary, right?
                 counts_nghbr[~counts_nghbr_mask] = 0
 
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
-            'bias_nghbr': bias_nghbr, 'beta': beta,
+            'row_nghbr_bias': row_nghbr_bias, 'beta': beta,
             'counts_nghbr_mask': counts_nghbr_mask}
         if not self._lowmem:
             self._var = var
@@ -476,28 +488,33 @@ class BeadChainConnectivity2022(Constraint):
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self._setup(counts=counts, bias=bias)
 
-        if var['bias_nghbr'] is None or np.all(var['bias_nghbr'] == 1):
-            bias_per_bin = 1
+        if bias is None or np.all(bias == 1):
+            bias_per_bin = None
         else:
-            bias_per_bin = np.tile(var['bias_nghbr'], 2)
+            row_nghbr_bias = np.tile(var['row_nghbr_bias'], 2)
+            bias_per_bin = _get_bias_per_bin(
+                lengths=self.lengths, ploidy=self.ploidy,
+                multiscale_factor=self.multiscale_factor, bias=bias,
+                row=row_nghbr_bias, col=row_nghbr_bias + 1)
         if var['counts_nghbr_mask'] is None:
             counts_nghbr_mask = None
         else:
             counts_nghbr_mask = np.tile(var['counts_nghbr_mask'], 2)
 
-        if self.multiscale_factor == 1:
+        if self.multiscale_factor == 1 or epsilon is None:
             nghbr_dis = _euclidean_distance(
                 struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
-            lambda_pois = (2 * var['beta']) * bias_per_bin * ag_np.power(
-                nghbr_dis, alpha)
+            lambda_pois = (2 * var['beta']) * ag_np.power(nghbr_dis, alpha)
+            if bias_per_bin is not None:
+                lambda_pois = lambda_pois * bias_per_bin
 
             if 'bcc22_c_inter' in self.mods:
-                counts_inter_mean = self.hparams['data_interchrom']['mean'] / 2
+                counts_inter_mean = self.hparams['data_interchrom'][
+                    self.multiscale_factor]['mean'] / 2
                 lambda_pois = lambda_pois + counts_inter_mean
             obj = poisson_nll(
                 np.tile(var['counts_nghbr'], 2), lambda_pois=lambda_pois)
         else:
-            # TODO what if multiscale_reform=False and epsilon=None?
             gamma_mean, gamma_var = get_gamma_moments(
                 struct=struct, epsilon=epsilon, alpha=alpha,
                 beta=var['beta'], multiscale_factor=self.multiscale_factor,
@@ -510,7 +527,8 @@ class BeadChainConnectivity2022(Constraint):
 
             # Adjust using inter-chromosomal counts
             if 'bcc22_c_inter' in self.mods:
-                counts_inter_mean = self.hparams['data_interchrom']['mean'] / 2
+                counts_inter_mean = self.hparams['data_interchrom'][
+                    self.multiscale_factor]['mean'] / 2
                 gamma_mean = gamma_mean + counts_inter_mean
 
             theta = gamma_var / gamma_mean
@@ -637,9 +655,11 @@ class HomologSeparating2022(Constraint):
                 struct, row=row, col=col, alpha=alpha, beta=var["beta"],
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon, mods=self.mods)
             log_lambda_pmf = logpmf_negbinom(
-                self.hparams['data_interchrom']['x'], n=n, p=p)
+                self.hparams['data_interchrom'][self.multiscale_factor]['x'],
+                n=n, p=p)
             obj = obj + _kl_divergence(
-                p=self.hparams['data_interchrom']['y'], log_q=log_lambda_pmf)
+                p=self.hparams['data_interchrom'][self.multiscale_factor]['y'],
+                log_q=log_lambda_pmf)
 
         if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
             row_all = ag_np.concatenate([row for row, col in idx])
@@ -650,7 +670,7 @@ class HomologSeparating2022(Constraint):
             nb_mean = (1 - p) * n / p
             nb_var = nb_mean / p
 
-            to_print = f"KL_NB: 𝔼[c]={self.hparams['data_interchrom']['mean']:.2g}\t   NBμ={nb_mean:.2g}\t   V[c]={self.hparams['data_interchrom']['var']:.2g}\t   NBσ²={nb_var:.2g}"
+            to_print = f"KL_NB: 𝔼[c]={self.hparams['data_interchrom'][self.multiscale_factor]['mean']:.2g}\t   NBμ={nb_mean:.2g}\t   V[c]={self.hparams['data_interchrom'][self.multiscale_factor]['var']:.2g}\t   NBσ²={nb_var:.2g}"
             to_print += f"\t   OBJ={obj:.2g}"
             if epsilon is not None:
                 to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
@@ -777,8 +797,9 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1,
     return constraints
 
 
-def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
-                          normalize=True, bias=None, verbose=True, mods=[]):
+def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
+                       normalize=True, bias=None, multiscale_reform=True,
+                       multiscale_factor=1, verbose=True, mods=[]):
     """TODO"""
 
     counts, bias, lengths, _, _, _, _ = load_data(
@@ -791,13 +812,24 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     if bias is not None and bias.size != lengths.sum() * ploidy:
         raise ValueError("Length of bias vector does not match the counts")
 
+    # Reduce resolution (should only be done when using naive multires approach)
+    if not multiscale_reform:
+        lengths = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
+        counts = decrease_counts_res(
+            counts, multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=ploidy)
+    elif multiscale_factor > 1:
+        warnings.warn("Inter-chrom counts will not be low-res unless"
+                      f" multiscale_reform=False, ignoring {multiscale_factor=}.")
+
     # Get inter-chromosomal ambiguated counts bins... for counts > 0
     counts_ambig = ambiguate_counts(
         counts=counts, lengths=lengths, ploidy=ploidy)
     counts_interchrom = _inter_counts(
         counts_ambig, lengths_at_res=lengths, ploidy=ploidy)
     if bias is not None and not np.all(bias == 1):
-        raise ValueError("What do do with this? Do I need this?")
+        raise NotImplementedError("What do do with this? Do I need this?")
         counts_interchrom = counts_interchrom / bias.reshape(1, -1)
         counts_interchrom = counts_interchrom / bias.reshape(-1, 1)
     counts_interchrom = counts_interchrom.data
@@ -828,11 +860,39 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     counts_pmf_y = counts_pmf_y[mask]
 
     if verbose:
-        print(f"INTER-CHROM COUNTS: mean={counts_interchrom.mean():.3g}\t"
+        tmp = f" ({multiscale_factor}x)" if not multiscale_reform else ""
+        print(f"INTER-CHROM COUNTS{tmp}: mean={counts_interchrom.mean():.3g}\t"
               f"var={counts_interchrom.var():.3g}", flush=True)
     return {
         'x': counts_pmf_x, 'y': counts_pmf_y,
         'mean': counts_interchrom.mean(), 'var': counts_interchrom.var()}
+
+
+def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
+                          normalize=True, bias=None, multiscale_reform=True,
+                          multiscale_rounds=1, verbose=True, mods=[]):
+    """TODO"""
+
+    all_multiscale_factors = 2 ** np.flip(np.arange(multiscale_rounds))
+
+    if multiscale_reform:
+        fullres_interchrom = _counts_interchrom(
+            counts, lengths=lengths, ploidy=ploidy,
+            filter_threshold=filter_threshold, normalize=normalize,
+            bias=bias, multiscale_reform=multiscale_reform,
+            multiscale_factor=1, verbose=verbose, mods=mods)
+        data_interchrom = {
+            x: fullres_interchrom for x in all_multiscale_factors}
+    else:
+        data_interchrom = {}
+        for multiscale_factor in all_multiscale_factors:
+            data_interchrom[multiscale_factor] = _counts_interchrom(
+                counts, lengths=lengths, ploidy=ploidy,
+                filter_threshold=filter_threshold, normalize=normalize,
+                bias=bias, multiscale_reform=multiscale_reform,
+                multiscale_factor=multiscale_factor, verbose=verbose, mods=mods)
+
+    return data_interchrom
 
 
 def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):

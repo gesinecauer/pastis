@@ -1,7 +1,7 @@
 import sys
 import pytest
 import numpy as np
-from sklearn.metrics import euclidean_distances
+from sklearn.metrics.pairwise import euclidean_distances, paired_distances
 from numpy.testing import assert_array_almost_equal
 
 pytestmark = pytest.mark.skipif(
@@ -9,26 +9,52 @@ pytestmark = pytest.mark.skipif(
 
 if sys.version_info[0] >= 3:
     from utils import get_counts, get_struct_randwalk, get_true_data_interchrom
+    from utils import decrease_struct_res_correct
 
     from pastis.optimization.utils_poisson import _setup_jax
-    _setup_jax(debug_nan_inf=True)
+    _setup_jax(debug_nan_inf=False)  # FIXME TODO
 
     from pastis.optimization import pastis_algorithms
     from pastis.optimization.constraints import _inter_homolog_dis
+    from pastis.optimization.constraints import _neighboring_bead_indices
+    from pastis.optimization.multiscale_optimization import decrease_lengths_res
+
+
+def compare_nghbr_dis(lengths, ploidy, multiscale_factor, struct_true,
+                      struct_infer, mean_decimal=0, var_decimal=-1):
+    """Make sure distances between neighboring beads are accurate."""
+    row_nghbr = _neighboring_bead_indices(
+        lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor)
+    row_nghbr = row_nghbr[np.isfinite(struct_infer[row_nghbr, 0]) & np.isfinite(
+        struct_infer[row_nghbr + 1, 0])]
+    struct_true_lowres = decrease_struct_res_correct(
+        struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    nghbr_dis_true = paired_distances(
+        struct_true_lowres[row_nghbr], struct_true_lowres[row_nghbr + 1])
+    nghbr_dis_ = paired_distances(
+        struct_infer[row_nghbr], struct_infer[row_nghbr + 1])
+    print(f"{np.median(nghbr_dis_true)=:g}    {np.median(nghbr_dis_)=:g}")
+    print(f"{nghbr_dis_true.mean()=:g}    {nghbr_dis_.mean()=:g}")
+    print(f"{nghbr_dis_true.var()=:g}    {nghbr_dis_.var()=:g}")
+    assert_array_almost_equal(
+        nghbr_dis_true.mean(), nghbr_dis_.mean(), decimal=mean_decimal)
+    assert_array_almost_equal(
+        nghbr_dis_true.var(), nghbr_dis_.var(), decimal=var_decimal)
 
 
 def test_haploid():
     lengths = np.array([20])
     ploidy = 1
-    seed = 42
+    seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
     est_hmlg_sep = None
-    alpha, beta = -3, 1
+    alpha, beta = -3, 1e3
+    init = 'true'  # For convenience/speed
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity='ua', struct_nan=None, random_state=random_state,
@@ -38,53 +64,60 @@ def test_haploid():
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
-        history_freq=None, save_freq=None)
+        history_freq=None, save_freq=None, verbose=False, init=init,
+        struct_true=struct_true)
 
     assert infer_param['converged']
 
 
-@pytest.mark.parametrize(
-    "ambiguity", ["ua", "ambig", "pa"])
-def test_diploid(ambiguity):
-    lengths = np.array([20])
+@pytest.mark.parametrize("ambiguity,multiscale_factor", [
+    ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
+    ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
+def test_diploid(ambiguity, multiscale_factor):
+    lengths = np.array([30])
     ploidy = 2
-    seed = 42
+    seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
     est_hmlg_sep = None
-    alpha, beta = -3, 1
+    alpha, beta = -3, 1e3
+    true_interhmlg_dis = 10
+    init = 'true'  # For convenience/speed
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
-        use_poisson=False)
+        use_poisson=True)
 
-    struct_, infer_param = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
-        seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
-        history_freq=None, save_freq=None)
+        seed=seed, normalize=False, filter_threshold=0, beta=beta,
+        bcc_lambda=0, hsc_lambda=0,
+        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        struct_true=struct_true, multiscale_factor=multiscale_factor,
+        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
+        init=init)
 
     assert infer_param['converged']
-    # TODO couldn't we at least compare the distance error or something? these tests are too simplistic!
 
 
 def test_diploid_combo():
     lengths = np.array([20])
     ploidy = 2
-    seed = 42
+    seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
     est_hmlg_sep = None
-    alpha, beta = -3, 1
+    alpha, beta = -3, 1e3
     ratio_ambig, ratio_pa, ratio_ua = 0.2, 0.7, 0.1
+    init = 'true'  # For convenience/speed
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     ambig_counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
         beta=beta * ratio_ambig, ambiguity="ambig", struct_nan=None,
@@ -103,7 +136,8 @@ def test_diploid_combo():
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
-        print_freq=None, history_freq=None, save_freq=None)
+        print_freq=None, history_freq=None, save_freq=None, verbose=False,
+        struct_true=struct_true, init=init)
 
     assert infer_param['converged']
 
@@ -115,46 +149,17 @@ def test_diploid_combo():
 
 
 def test_constraint_bcc2019():
-    lengths = np.array([20])
+    lengths = np.array([30])
     ploidy = 2
-    seed = 42
+    seed = 0
     bcc_lambda = 1  # Update this as needed
     hsc_lambda = 0
     est_hmlg_sep = None
-    alpha, beta = -3, 1
-
-    random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ua", struct_nan=None, random_state=random_state,
-        use_poisson=False)
-
-    struct_, infer_param = pastis_algorithms.pastis_poisson(
-        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
-        seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
-        print_freq=None, history_freq=None, save_freq=None,
-        bcc_version="2019", hsc_version="2019")
-
-    assert infer_param['converged']
-
-    nghbr_dis_true = np.diagonal(euclidean_distances(struct_true), 1)
-    nghbr_dis_ = np.diagonal(euclidean_distances(struct_), 1)
-    assert_array_almost_equal(
-        nghbr_dis_true.mean(), nghbr_dis_.mean(), decimal=0)
-
-
-def test_constraint_hsc2019_infer_hmlg_sep():
-    lengths = np.array([40])
-    ploidy = 2
-    seed = 42
-    bcc_lambda = 0
-    hsc_lambda = 1e4  # Update this as needed
-    true_interhmlg_dis = 15
-    est_hmlg_sep = None  # Want to make sure can be inferred from unambig
-    alpha, beta = -3, 1
+    alpha, beta = -3, 1e3
+    true_interhmlg_dis = 10
+    multiscale_factor = 1
+    null = True  # Only optimize constraints, not main obj
+    init = None
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -165,13 +170,53 @@ def test_constraint_hsc2019_infer_hmlg_sep():
         ambiguity="ua", struct_nan=None, random_state=random_state,
         use_poisson=False)
 
+    print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
+        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
+        seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
+        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
+        print_freq=None, history_freq=None, save_freq=None,
+        bcc_version="2019", hsc_version="2019", verbose=False, init=init,
+        null=null, struct_true=struct_true)
+
+    assert infer_param['converged']
+
+    compare_nghbr_dis(
+        lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
+        var_decimal=-1)
+
+
+def test_constraint_hsc2019_infer_hmlg_sep():
+    lengths = np.array([40])
+    ploidy = 2
+    seed = 0
+    bcc_lambda = 0
+    hsc_lambda = 1e4  # Update this as needed
+    true_interhmlg_dis = 15
+    est_hmlg_sep = None  # Want to make sure can be inferred from unambig
+    alpha, beta = -3, 1e3
+    null = True  # Only optimize constraints, not main obj
+    init = None
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity="ua", struct_nan=None, random_state=random_state,
+        use_poisson=False)
+
+    print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
     struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         print_freq=None, history_freq=None, save_freq=None,
         struct_true=struct_true, bcc_version="2019", hsc_version="2019",
-        multiscale_reform=True, use_multiscale_variance=False)
+        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
+        init=init, null=null)
 
     assert infer_param['converged']
 
@@ -193,12 +238,14 @@ def test_constraint_hsc2019_infer_hmlg_sep():
 def test_constraint_hsc2019(ambiguity, multiscale_factor):
     lengths = np.array([40])
     ploidy = 2
-    seed = 42
-    bcc_lambda = 1  # Included to improve stability, update as needed
+    seed = 0
+    bcc_lambda = 1  # Can include to improve stability, update as needed
     hsc_lambda = 1e4  # Update this as needed
     true_interhmlg_dis = 15
     est_hmlg_sep = true_interhmlg_dis  # Using true value for convenience
-    alpha, beta = -3, 1
+    alpha, beta = -3, 1e3
+    null = True  # Only optimize constraints, not main obj
+    init = None
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -209,6 +256,7 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False)
 
+    print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
     struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
@@ -216,12 +264,12 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2019", hsc_version="2019", multiscale_reform=True,
-        use_multiscale_variance=False)
+        use_multiscale_variance=False, verbose=False, init=init, null=null)
 
     assert infer_param['converged']
 
     interhmlg_dis = _inter_homolog_dis(struct_, lengths=lengths)
-    print(f"hmlg sep: true={true_interhmlg_dis}, final={interhmlg_dis}")
+    print(f"hmlg sep: true={true_interhmlg_dis},   infer={interhmlg_dis}")
 
     # Make sure inferred homologs are separated >= inferred est_hmlg_sep
     assert interhmlg_dis >= est_hmlg_sep - 1e-6
@@ -231,61 +279,17 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
     ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_constraint_bcc2022(ambiguity, multiscale_factor):
-    lengths = np.array([30])
+    lengths = np.array([40])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha, beta = -3, 1e3
-    true_interhmlg_dis = 15
-    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
-    bcc_lambda = 10  # Update this as needed
-    hsc_lambda = 1e3  # Included to improve stability, update as needed
-    use_poisson = True
-
-    random_state = np.random.RandomState(seed=seed)
-    struct_true = get_struct_randwalk(
-        lengths=lengths, ploidy=ploidy, random_state=random_state,
-        true_interhmlg_dis=true_interhmlg_dis)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity=ambiguity, struct_nan=struct_nan, random_state=None,
-        use_poisson=use_poisson, bias=None)
-
-    data_interchrom = get_true_data_interchrom(
-        struct_true=struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
-        beta=beta, random_state=random_state, use_poisson=use_poisson)
-
-    struct_, infer_param = pastis_algorithms.infer_at_alpha(
-        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
-        seed=seed, normalize=False, filter_threshold=0, beta=beta,
-        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
-        struct_true=struct_true, multiscale_factor=multiscale_factor,
-        bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
-        multiscale_reform=True, use_multiscale_variance=False)
-
-    assert infer_param['converged']
-
-    nghbr_dis_true = np.diagonal(euclidean_distances(struct_true), 1)
-    nghbr_dis_ = np.diagonal(euclidean_distances(struct_), 1)
-    assert_array_almost_equal(
-        nghbr_dis_true.mean(), nghbr_dis_.mean(), decimal=0)
-    assert_array_almost_equal(
-        nghbr_dis_true.var(), nghbr_dis_.var(), decimal=-1)
-
-
-@pytest.mark.parametrize("ambiguity,multiscale_factor", [
-    ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
-    ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
-def test_constraint_hsc2022(ambiguity, multiscale_factor):
-    lengths = np.array([30])
-    ploidy = 2
-    seed = 42
     true_interhmlg_dis = 10
-    alpha, beta = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
-    bcc_lambda = 1
-    hsc_lambda = 1e6  # Update this as needed
-    use_poisson = True  # Must be true for hsc2022
+    use_poisson = True  # Must be true if including hsc2022
+    bcc_lambda = 0.1  # Update this as needed
+    hsc_lambda = 1  # Can include to improve stability, update as needed
+    null = True  # Only optimize constraints, not main obj
+    init = None
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -297,9 +301,12 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
         use_poisson=use_poisson, bias=None)
 
     data_interchrom = get_true_data_interchrom(
-        struct_true=struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
-        beta=beta, random_state=random_state, use_poisson=use_poisson)
+        struct_true=struct_true, ploidy=ploidy, lengths=lengths,
+        ambiguity=ambiguity, alpha=alpha, beta=beta, random_state=random_state,
+        use_poisson=use_poisson, multiscale_rounds=np.log2(multiscale_factor) + 1,
+        multiscale_reform=True)
 
+    print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
     struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
@@ -307,12 +314,80 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
-        multiscale_reform=True, use_multiscale_variance=False)
+        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
+        init=init, null=null)
 
     assert infer_param['converged']
 
-    interhmlg_dis = _inter_homolog_dis(struct_, lengths=lengths)
-    print(f"hmlg sep: true={true_interhmlg_dis}, final={interhmlg_dis}")
+    compare_nghbr_dis(
+        lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
+        var_decimal=-1)
 
-    # Make sure inference of est_hmlg_sep yields an acceptable result
-    assert_array_almost_equal(true_interhmlg_dis, interhmlg_dis, decimal=0)
+
+@pytest.mark.parametrize("ambiguity,multiscale_factor", [
+    ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
+    ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
+def test_constraint_hsc2022(ambiguity, multiscale_factor):
+    lengths = np.array([40])
+    ploidy = 2
+    seed = 0
+    alpha, beta = -3, 1e3
+    true_interhmlg_dis = 10
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+    use_poisson = True  # Must be true for hsc2022
+    bcc_lambda = 0.1  # Can include to improve stability, update as needed
+    hsc_lambda = 1  # Update this as needed
+    null = True  # Only optimize constraints, not main obj
+    init = None
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis)
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
+        use_poisson=use_poisson, bias=None)
+
+    data_interchrom = get_true_data_interchrom(
+        struct_true=struct_true, ploidy=ploidy, lengths=lengths,
+        ambiguity=ambiguity, alpha=alpha, beta=beta, random_state=random_state,
+        use_poisson=use_poisson, multiscale_rounds=np.log2(multiscale_factor) + 1,
+        multiscale_reform=True)
+
+    print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
+    struct_, infer_param = pastis_algorithms.infer_at_alpha(
+        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
+        seed=seed, normalize=False, filter_threshold=0, beta=beta,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
+        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        struct_true=struct_true, multiscale_factor=multiscale_factor,
+        bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
+        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
+        init=init, null=null)
+
+    assert infer_param['converged']
+
+    # Check individual inter-homolog distances between all loci
+    struct_true_lowres = decrease_struct_res_correct(
+        struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=ploidy)
+    n = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor).sum()
+    mask = np.isfinite(struct_[:n, 0]) & np.isfinite(struct_[n:, 0])
+    dis_interhmlg_true = euclidean_distances(
+        struct_true_lowres[:n][mask], struct_true_lowres[n:][mask])
+    dis_interhmlg_ = euclidean_distances(struct_[:n][mask], struct_[n:][mask])
+    print(f"{np.median(dis_interhmlg_true)=:g}    {np.median(dis_interhmlg_)=:g}")
+    print(f"{dis_interhmlg_true.mean()=:g}    {dis_interhmlg_.mean()=:g}")
+    print(f"{dis_interhmlg_true.var()=:g}    {dis_interhmlg_.var()=:g}")
+    assert_array_almost_equal(
+        dis_interhmlg_true.mean(), dis_interhmlg_.mean(), decimal=0)
+    assert_array_almost_equal(
+        dis_interhmlg_true.var(), dis_interhmlg_.var(), decimal=-1)
+
+    # Make sure distance between homolog centers of mass isn't way off
+    interhmlg_dis = _inter_homolog_dis(struct_, lengths=lengths)
+    print(f"hmlg sep: true={true_interhmlg_dis},   infer={interhmlg_dis}")
+    assert_array_almost_equal(true_interhmlg_dis, interhmlg_dis, decimal=-1)

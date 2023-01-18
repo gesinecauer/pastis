@@ -144,7 +144,7 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
         if counts[i].shape[0] == counts[i].shape[1]:
             beta.append(beta_ambig * counts[i].sum() / total_counts)
         else:
-            beta.append(beta_ambig * counts[i].sum() / total_counts / 2)  # FIXME double check, make unit tests
+            beta.append(beta_ambig * counts[i].sum() / total_counts / 2)
     return beta
 
 
@@ -326,10 +326,10 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
         chrom_subset_idx=chrom_subset_idx) for c in counts]
 
 
-def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
-                      beta=None, excluded_counts=None, mixture_coefs=None,
-                      exclude_zeros=False, input_weight=None, verbose=True,
-                      simple_diploid=False, mods=[]):
+def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
+                      beta=None, bias=None, excluded_counts=None,
+                      exclude_zeros=False, multiscale_reform=True,
+                      input_weight=None, verbose=True, simple_diploid=False, mods=[]):
     """Check counts, reformat, reduce resolution, filter, and compute bias.
 
     Optionally reduce resolution. Counts are also checked and reformatted
@@ -337,7 +337,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
 
     Parameters
     ----------
-    counts_raw : list of coo_matrix
+    counts : list of coo_matrix
         Counts data without normalization or filtering.
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
@@ -369,11 +369,11 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
     if simple_diploid:
         if ploidy != 2:
             raise ValueError("Ploidy is not 2, but simple_diploid specified.")
-        counts_raw = check_counts(counts_raw, lengths=lengths, ploidy=2)
+        counts = check_counts(counts, lengths=lengths, ploidy=2)
         beta = 2 * _ambiguate_beta(
-            beta, counts=counts_raw, lengths=lengths, ploidy=2)
-        counts_raw = [ambiguate_counts(
-            counts=counts_raw, lengths=lengths, ploidy=2)]
+            beta, counts=counts, lengths=lengths, ploidy=2)
+        counts = [ambiguate_counts(
+            counts=counts, lengths=lengths, ploidy=2)]
         ploidy = 1
 
     # Beads to remove from full-res structure
@@ -381,7 +381,7 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
         fullres_struct_nan = None
     else:
         fullres_struct_nan = find_beads_to_remove(
-            counts_raw, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
+            counts, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
 
     # Optionally exclude certain counts
     if excluded_counts is not None:
@@ -393,34 +393,30 @@ def preprocess_counts(counts_raw, lengths, ploidy, multiscale_factor=1,
                 r'[0-9]+(\.0){0,1}', excluded_counts):
             excluded_counts = int(excluded_counts)
         if isinstance(excluded_counts, int):
-            counts_raw = [_counts_near_diag(
+            counts = [_counts_near_diag(
                 c, lengths_at_res=lengths, ploidy=ploidy,
-                nbins=excluded_counts) for c in counts_raw]
+                nbins=excluded_counts) for c in counts]
         elif excluded_counts.lower() == 'intra':
-            counts_raw = [_inter_counts(
-                c, lengths_at_res=lengths, ploidy=ploidy) for c in counts_raw]
+            counts = [_inter_counts(
+                c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
         elif excluded_counts.lower() == 'inter':
-            counts_raw = [_intra_counts(
-                c, lengths_at_res=lengths, ploidy=ploidy) for c in counts_raw]
+            counts = [_intra_counts(
+                c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
         else:
             raise ValueError(
                 "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
 
     # Format counts as CountsMatrix objects
     counts = _format_counts(
-        counts_raw, beta=beta, input_weight=input_weight,
+        counts, beta=beta, bias=bias, input_weight=input_weight,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
-        multiscale_factor=multiscale_factor)
+        multiscale_factor=multiscale_factor,
+        multiscale_reform=multiscale_reform)
 
     # Identify beads to be removed from the final structure
     struct_nan = find_beads_to_remove(
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
-    if mixture_coefs is not None and len(mixture_coefs) > 1:
-        lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-        struct_nan_mask = np.full(lengths_lowres.sum() * ploidy, False)
-        struct_nan_mask[struct_nan] = True
-        struct_nan = np.where(np.tile(struct_nan_mask, len(mixture_coefs)))[0]
 
     return counts, struct_nan, fullres_struct_nan
 
@@ -490,6 +486,8 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
 
     # In each counts matrix, zero out counts for which bias is NaN
     if bias is not None:
+        if verbose:
+            print('USING USER-PROVIDED BIAS', flush=True)
         for i in range(len(counts)):
             # How many beads are initially zero?
             counts_ambig_i = ambiguate_counts(
@@ -571,26 +569,29 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
 
 
 def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
-                   input_weight=None, exclude_zeros=False, multiscale_factor=1):
+                   input_weight=None, exclude_zeros=False, multiscale_factor=1,
+                   multiscale_reform=True):
     """Format each counts matrix as a CountsMatrix subclass instance.
     """
 
     # Check input
     counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
 
-    if beta is not None:
+    if beta is None:
+        _, beta = _set_initial_beta(
+            counts, lengths=lengths, ploidy=ploidy, bias=bias,
+            exclude_zeros=exclude_zeros)
+    else:
         if not isinstance(beta, (list, np.ndarray)):
             beta = [beta]
         if len(beta) != len(counts):
             raise ValueError(
                 "Beta needs to contain as many scaling factors as there are "
                 f"datasets ({len(counts)}). It is of length ({len(beta)}).")
-    else:
-        _, beta = _set_initial_beta(
-            counts, lengths=lengths, ploidy=ploidy, bias=bias,
-            exclude_zeros=exclude_zeros)
 
-    if input_weight is not None:
+    if input_weight is None:
+        input_weight = [1.] * len(counts)
+    else:
         if not isinstance(input_weight, (list, np.ndarray)):
             input_weight = [input_weight]
         if len(input_weight) != len(counts):
@@ -600,8 +601,6 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
         input_weight = np.array(input_weight)
         if input_weight.sum() not in (0, 1):
             input_weight *= len(input_weight) / input_weight.sum()
-    else:
-        input_weight = [1.] * len(counts)
 
     # Reformat counts as CountsMatrix instance
     counts_reformatted = []
@@ -609,7 +608,8 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
         counts_matrix = CountsMatrix(
             lengths=lengths, ploidy=ploidy, counts=counts[i],
             multiscale_factor=multiscale_factor, beta=beta[i],
-            weight=input_weight[i], exclude_zeros=exclude_zeros)
+            weight=input_weight[i], exclude_zeros=exclude_zeros,
+            multiscale_reform=multiscale_reform)
         counts_reformatted.append(counts_matrix)
 
     return counts_reformatted
@@ -654,6 +654,22 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
             col3d, map_factor)
 
     return row3d, col3d
+
+
+def _get_bias_per_bin(lengths, ploidy, multiscale_factor, bias, row, col):
+    """Determines bias corresponding to each bin of the distance matrix."""
+    if bias is None or np.all(bias == 1):
+        return 1
+    bias = np.tile(bias.ravel(), ploidy)
+    if multiscale_factor == 1:
+        return bias[row] * bias[col]
+    else:
+        (row, col, bad_idx), _ = _get_fullres_counts_index(
+            multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=ploidy, lowres_idx=(row, col))
+        bias_per_bin = bias[row] * bias[col]
+        bias_per_bin[bad_idx] = 0
+        return bias_per_bin.reshape(multiscale_factor ** 2, -1)
 
 
 def _idx_isin(idx1, idx2):
@@ -748,7 +764,7 @@ class CountsMatrix(object):
     """
 
     def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
-                 beta=1, weight=1, exclude_zeros=False):
+                 beta=1, weight=1, exclude_zeros=False, multiscale_reform=True):
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -776,7 +792,8 @@ class CountsMatrix(object):
             data, (row, col), self.shape, mask = _group_counts_multiscale(
                 counts, lengths=self.lengths, ploidy=self.ploidy,
                 multiscale_factor=self.multiscale_factor,
-                exclude_zeros=exclude_zeros)
+                exclude_zeros=exclude_zeros,
+                multiscale_reform=multiscale_reform)
             self.bins_nonzero = CountsBins(
                 meta=self, row=row, col=col, data=data, mask=mask)
 
@@ -956,7 +973,7 @@ class CountsMatrix(object):
         swap = row != row_ambig
 
         data = self.bins_nonzero.data.T
-        if self.multiscale_factor > 1:
+        if self.multiscale_factor > 1 and swap.sum() > 0:
             data[swap] = data[swap].reshape(
                 swap.sum(), self.multiscale_factor,
                 self.multiscale_factor).reshape(swap.sum(), -1, order='f')
@@ -1252,18 +1269,10 @@ class CountsBins(object):
         array of float
             Bias for each bin of the distance matrix.
         """
-        if bias is None or np.all(bias == 1):
-            return 1
-        bias = np.tile(bias.ravel(), self.ploidy)
-        if self.multiscale_factor == 1:
-            return bias[self.row] * bias[self.col]
-        else:
-            (row, col, bad_idx), _ = _get_fullres_counts_index(
-                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-                ploidy=self.ploidy, lowres_idx=(self.row, self.col))
-            bias_per_bin = bias[row] * bias[col]
-            bias_per_bin[bad_idx] = 0
-            return bias_per_bin.reshape(self.multiscale_factor ** 2, -1)
+        return _get_bias_per_bin(
+            lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor, bias=bias, row=self.row,
+            col=self.col)
 
     def sum(self, axis=None, dtype=None, out=None):
         """TODO"""

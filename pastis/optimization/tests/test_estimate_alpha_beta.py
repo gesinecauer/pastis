@@ -19,16 +19,15 @@ if sys.version_info[0] >= 3:
 def test_estimate_alpha_beta_haploid():
     lengths = np.array([20])
     ploidy = 1
-    seed = 42
+    seed = 0
     alpha_true, beta_true = -3., 2.
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
-        beta=beta_true, ambiguity="ua", struct_nan=None, random_state=random_state,
-        use_poisson=False, bias=None)
+        beta=beta_true, ambiguity="ua", struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=None)
 
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
@@ -50,20 +49,20 @@ def test_estimate_alpha_beta_haploid():
 def test_estimate_alpha_beta_haploid_biased():
     lengths = np.array([20])
     ploidy = 1
-    seed = 42
+    seed = 0
     alpha_true, beta_true = -3., 3.
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    bias = 0.1 + random_state.rand(n)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    bias = 0.1 + random_state.rand(lengths.sum())
     counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true, beta=beta_true,
-        ambiguity="ua", struct_nan=None, random_state=random_state,
-        use_poisson=False, bias=bias)
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
+        beta=beta_true, ambiguity="ua", struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=bias)
 
     counts = _format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
+        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true,
+        bias=bias)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
         X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
@@ -83,12 +82,11 @@ def test_estimate_alpha_beta_haploid_biased():
 def test_estimate_alpha_beta_diploid(ambiguity):
     lengths = np.array([20])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha_true, beta_true = -3., 2.
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
         beta=beta_true, ambiguity=ambiguity, struct_nan=None,
@@ -115,20 +113,20 @@ def test_estimate_alpha_beta_diploid(ambiguity):
 def test_estimate_alpha_beta_diploid_biased(ambiguity):
     lengths = np.array([20])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha_true, beta_true = -3., 2.
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
-    bias = 0.1 + random_state.rand(n)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    bias = 0.1 + random_state.rand(lengths.sum())
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
         beta=beta_true, ambiguity=ambiguity, struct_nan=None,
         random_state=random_state, use_poisson=False, bias=bias)
 
     counts = _format_counts(
-        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
+        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true,
+        bias=bias)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
         X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,
@@ -147,14 +145,13 @@ def test_estimate_alpha_beta_diploid_biased(ambiguity):
 def test_estimate_alpha_beta_diploid_combo():
     lengths = np.array([20])
     ploidy = 2
-    seed = 42
+    seed = 0
     alpha_true, beta_true_single = -3., 4.
     ratio_ambig, ratio_pa, ratio_ua = [1 / 3] * 3
     bias = None
 
     random_state = np.random.RandomState(seed=seed)
-    n = lengths.sum()
-    struct_true = random_state.rand(n * ploidy, 3)
+    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
     counts_ambig = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
         beta=beta_true_single * ratio_ambig, ambiguity="ambig", struct_nan=None,
@@ -167,11 +164,11 @@ def test_estimate_alpha_beta_diploid_combo():
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha_true,
         beta=beta_true_single * ratio_ua, ambiguity="ua", struct_nan=None,
         random_state=random_state, use_poisson=False, bias=None)
-    counts_raw = [counts_ambig, counts_pa, counts_ua]
+    counts = [counts_ambig, counts_pa, counts_ua]
     beta_true = np.array([ratio_ambig, ratio_pa, ratio_ua]) * beta_true_single
 
     counts = _format_counts(
-        counts=counts_raw, lengths=lengths, ploidy=ploidy, beta=beta_true)
+        counts=counts, lengths=lengths, ploidy=ploidy, beta=beta_true)
 
     alpha, obj, converged, _, conv_desc = estimate_alpha_beta.estimate_alpha(
         X=struct_true, counts=counts, alpha_init=alpha_true, lengths=lengths,

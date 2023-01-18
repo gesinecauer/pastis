@@ -3,6 +3,8 @@ import pytest
 import numpy as np
 from numpy.testing import assert_array_almost_equal
 from scipy.special import gammaln as gammaln
+from scipy.stats import nbinom, poisson
+
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -11,7 +13,7 @@ if sys.version_info[0] >= 3:
     from pastis.optimization.utils_poisson import _setup_jax
     _setup_jax(debug_nan_inf=True)
 
-    from pastis.optimization.likelihoods import _stirling
+    from pastis.optimization import likelihoods
     from pastis.optimization.polynomial import _polyval
 
 
@@ -41,7 +43,7 @@ def test_polyval(x):
 @pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
 def test_stirling_approx(x):
     correct_stirling = stirling_with_np_polyval(x)
-    jax_stirling = _stirling(x)
+    jax_stirling = likelihoods._stirling(x)
     assert_array_almost_equal(correct_stirling, jax_stirling)
 
 
@@ -57,5 +59,48 @@ def test_gammaln_numpy(x):
 def test_gammaln_jax(x):
     correct_gammaln = gammaln(x)
     jax_gammaln = gammaln_via_stirling_approx(
-        x, stirling_fxn=_stirling)
+        x, stirling_fxn=likelihoods._stirling)
     assert_array_almost_equal(correct_gammaln, jax_gammaln)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5])
+def test_gamma_poisson_nll(seed):
+    nbins = 100
+    data_per_bin = 50
+
+    random_state = np.random.RandomState(seed=seed)
+    n = random_state.uniform(low=0.01, high=100, size=nbins)
+    p = random_state.uniform(low=0.01, high=1, size=nbins)
+    data = random_state.negative_binomial(n=n, p=p, size=(data_per_bin, nbins))
+
+    k = n
+    theta = (1 - p) / p
+    nll = likelihoods.gamma_poisson_nll(theta=theta, k=k, data=data)._value
+
+    log_factorial_data = gammaln(data + 1).mean()
+    nll_scipy = -nbinom.logpmf(data, n=n, p=p).mean() - log_factorial_data
+
+    tmp1 = np.mean(gammaln(data + n))
+    tmp2 = - np.mean(gammaln(n))
+    tmp3 = np.mean(data * np.log(1 - p))
+    tmp4 = np.mean(n * np.log(p))
+    nll_true = - (tmp1 + tmp2 + tmp3 + tmp4)
+
+    assert_array_almost_equal(nll, nll_scipy)
+    assert_array_almost_equal(nll, nll_true)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5])
+def test_poisson_nll(seed):
+    nbins = 100
+
+    random_state = np.random.RandomState(seed=seed)
+    mu = random_state.uniform(low=0, high=100, size=nbins)
+    data = random_state.poisson(mu, size=nbins)
+
+    nll = likelihoods.poisson_nll(data=data, lambda_pois=mu)
+
+    log_factorial_data = gammaln(data + 1).mean()
+    nll_scipy = -poisson.logpmf(data, mu=mu).mean() - log_factorial_data
+
+    assert_array_almost_equal(nll, nll_scipy)

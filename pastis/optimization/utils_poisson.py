@@ -126,6 +126,9 @@ def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,
     """
     from ..io.read import _get_chrom
 
+    if outdir is None:
+        return None
+
     if null:
         outdir = os.path.join(outdir, 'null')
 
