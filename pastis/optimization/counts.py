@@ -14,6 +14,7 @@ from .utils_poisson import _intra_counts, _inter_counts, _counts_near_diag
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _group_counts_multiscale
 from .multiscale_optimization import _get_fullres_counts_index
+from .multiscale_optimization import _count_fullres_per_lowres_bead
 
 
 def _best_counts_dtype(counts):
@@ -363,7 +364,7 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         Beads that should be removed (set to NaN) in the structure.
     """
 
-    # TODO swap the function names: preprocess_counts & _prep_counts...
+    # TODO switch the function names: preprocess_counts & _prep_counts...
     # FIXME what about if betas are different?
 
     if simple_diploid:
@@ -609,7 +610,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
             lengths=lengths, ploidy=ploidy, counts=counts[i],
             multiscale_factor=multiscale_factor, beta=beta[i],
             weight=input_weight[i], exclude_zeros=exclude_zeros,
-            multiscale_reform=multiscale_reform)
+            multires_naive=not multiscale_reform)
         counts_reformatted.append(counts_matrix)
 
     return counts_reformatted
@@ -656,12 +657,13 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
     return row3d, col3d
 
 
-def _get_bias_per_bin(lengths, ploidy, multiscale_factor, bias, row, col):
+def _get_bias_per_bin(ploidy, multiscale_factor, bias, row, col, lengths=None,
+                      multires_naive=False):
     """Determines bias corresponding to each bin of the distance matrix."""
     if bias is None or np.all(bias == 1):
         return 1
     bias = np.tile(bias.ravel(), ploidy)
-    if multiscale_factor == 1:
+    if multiscale_factor == 1 or multires_naive:
         return bias[row] * bias[col]
     else:
         (row, col, bad_idx), _ = _get_fullres_counts_index(
@@ -721,18 +723,20 @@ class CountsMatrix(object):
 
     Parameters
     ----------
-    counts : coo_matrix
-        Preprocessed counts data.
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
+    beta : float
+        Scaling parameter that determines the size of the structure, relative to
+        each counts matrix.
+    counts : coo_matrix
+        Preprocessed counts data.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    beta : float, optional
-        Scaling parameter that determines the size of the structure, relative to
-        each counts matrix.
+    multires_naive : bool, optional
+        Whether to apply the naive multi-resolution model.
 
     Attributes
     ----------
@@ -740,13 +744,15 @@ class CountsMatrix(object):
         Number of beads per homolog of each chromosome.
     ploidy : {1, 2}
         Ploidy, 1 indicates haploid, 2 indicates diploid.
-    multiscale_factor : int, optional
+    multiscale_factor : int
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
+    multires_naive : bool
+        Whether to apply the naive multi-resolution model.
     null : bool
         Whether the counts data should be excluded from the primary objective
         function. Counts are still used in the calculation of the constraints.
-    beta : float, optional
+    beta : float
         Scaling parameter that determines the size of the structure, relative to
         each counts matrix.
     ambiguity : {"ambig", "pa", "ua"}
@@ -763,11 +769,12 @@ class CountsMatrix(object):
         Contains bins_nonzero and bins_zero
     """
 
-    def __init__(self, lengths, ploidy, counts=None, multiscale_factor=1,
-                 beta=1, weight=1, exclude_zeros=False, multiscale_reform=True):
+    def __init__(self, lengths, ploidy, beta, counts=None, multiscale_factor=1,
+                 weight=1, exclude_zeros=False, multires_naive=False):
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
+        self.multires_naive = multires_naive
         self.null = False  # If True, exclude counts data from primary obj
         self.beta = float(beta)
         self.weight = (1. if weight is None else float(weight))
@@ -793,7 +800,7 @@ class CountsMatrix(object):
                 counts, lengths=self.lengths, ploidy=self.ploidy,
                 multiscale_factor=self.multiscale_factor,
                 exclude_zeros=exclude_zeros,
-                multiscale_reform=multiscale_reform)
+                multiscale_reform=not multires_naive)
             self.bins_nonzero = CountsBins(
                 meta=self, row=row, col=col, data=data, mask=mask)
 
@@ -880,11 +887,13 @@ class CountsMatrix(object):
         _empty_idx_lowres = find_beads_to_remove(
             self, lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
+        lengths_lowres = decrease_lengths_res(
+            self.lengths, multiscale_factor=self.multiscale_factor)
 
-        if self.multiscale_factor == 1:
+        if self.multiscale_factor == 1 or self.multires_naive:
             zero_mask = None
             dummy = sparse.coo_matrix(_get_included_counts_bins(
-                np.ones(self.shape, dtype=np.uint8), lengths=self.lengths,
+                np.ones(self.shape, dtype=np.uint8), lengths=lengths_lowres,
                 ploidy=self.ploidy, check_counts=False).astype(np.uint8))
 
             # Exclude bins that have nonzero counts
@@ -956,7 +965,7 @@ class CountsMatrix(object):
             ambig = CountsMatrix(
                 lengths=self.lengths, ploidy=self.ploidy,
                 multiscale_factor=self.multiscale_factor, beta=self.beta,
-                weight=self.weight)
+                weight=self.weight, multires_naive=self.multires_naive)
         else:
             ambig = self
         if self.ambiguity == 'pa':
@@ -973,7 +982,8 @@ class CountsMatrix(object):
         swap = row != row_ambig
 
         data = self.bins_nonzero.data.T
-        if self.multiscale_factor > 1 and swap.sum() > 0:
+        if self.multiscale_factor > 1 and (
+                not self.multires_naive) and swap.sum() > 0:
             data[swap] = data[swap].reshape(
                 swap.sum(), self.multiscale_factor,
                 self.multiscale_factor).reshape(swap.sum(), -1, order='f')
@@ -984,12 +994,12 @@ class CountsMatrix(object):
         data = data[data.row != data.col]
         nonzero_data = data[[c for c in data.columns if c not in (
             'row', 'col')]].values.T
-        if self.multiscale_factor == 1:
+        if self.multiscale_factor == 1 or self.multires_naive:
             nonzero_data = nonzero_data.ravel()
         nonzero_row = data.row.values
         nonzero_col = data.col.values
 
-        if self.multiscale_factor == 1:
+        if self.multiscale_factor == 1 or self.multires_naive:
             nonzero_mask = None
         else:
             tmp_unique, tmp_counts = np.unique(
@@ -1036,7 +1046,7 @@ class CountsMatrix(object):
         combo = CountsMatrix(
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor,
-            beta=first.beta + second.beta,
+            beta=first.beta + second.beta, multires_naive=self.multires_naive,
             weight=(
                 first.weight * first.nbins + second.weight * second.nbins) / (
                 first.nbins + second.nbins))
@@ -1053,10 +1063,10 @@ class CountsMatrix(object):
         nonzero_col = data.col.values
         nonzero_data = data[[c for c in data.columns if c not in (
             'row', 'col')]].values.T
-        if self.multiscale_factor == 1:
+        if self.multiscale_factor == 1 or self.multires_naive:
             nonzero_data = nonzero_data.ravel()
 
-        if self.multiscale_factor == 1:
+        if self.multiscale_factor == 1 or self.multires_naive:
             nonzero_mask = None
         else:
             # Update _empty_idx_fullres
@@ -1130,18 +1140,9 @@ class CountsBins(object):
 
     Counts data and information associated with this counts matrix.
 
-    Parameters TODO update
+    Parameters
     ----------
-    lengths : array_like of int
-        Number of beads per homolog of each chromosome.
-    ploidy : {1, 2}
-        Ploidy, 1 indicates haploid, 2 indicates diploid.
-    multiscale_factor : int, optional
-        Factor by which to reduce the resolution. A value of 2 halves the
-        resolution. A value of 1 indicates full resolution.
-    beta : float, optional
-        Scaling parameter that determines the size of the structure, relative to
-        each counts matrix.
+    TODO update
 
     Attributes
     ----------
@@ -1152,6 +1153,8 @@ class CountsBins(object):
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
+    multires_naive : bool
+        Whether to apply the naive multi-resolution model.
     null : bool
         Whether the counts data should be excluded from the poisson component
         of the objective function. The indices of the counts are still used to
@@ -1185,6 +1188,7 @@ class CountsBins(object):
         self.lengths = meta.lengths
         self.ploidy = meta.ploidy
         self.multiscale_factor = meta.multiscale_factor
+        self.multires_naive = meta.multires_naive
         self.null = meta.null  # If True, exclude counts data from primary obj
         self.beta = meta.beta
         self.weight = meta.weight
@@ -1194,6 +1198,7 @@ class CountsBins(object):
                 self.shape, nbeads=self.lengths.sum() * self.ploidy)
         else:
             self.ambiguity = meta.ambiguity
+        self._empty_idx_fullres = meta._empty_idx_fullres
 
         self.row = row
         self.col = col
@@ -1235,15 +1240,13 @@ class CountsBins(object):
         filter_mask = _idx_isin((self.row, self.col), (row, col))
         filtered.row = self.row[filter_mask]
         filtered.col = self.col[filter_mask]
-        if self.multiscale_factor == 1:
-            if self.data is not None:
+        if self.data is not None:
+            if self.multiscale_factor == 1 or self.multires_naive:
                 filtered.data = self.data[filter_mask]
-            filtered.mask = None
-        else:
-            if self.data is not None:
+            else:
                 filtered.data = self.data[:, filter_mask]
-            if self.mask is not None:
-                filtered.mask = self.mask[:, filter_mask]
+        if self.mask is not None:
+            filtered.mask = self.mask[:, filter_mask]
 
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)
@@ -1270,9 +1273,9 @@ class CountsBins(object):
             Bias for each bin of the distance matrix.
         """
         return _get_bias_per_bin(
-            lengths=self.lengths, ploidy=self.ploidy,
-            multiscale_factor=self.multiscale_factor, bias=bias, row=self.row,
-            col=self.col)
+            ploidy=self.ploidy, multiscale_factor=self.multiscale_factor,
+            bias=bias, row=self.row, col=self.col, lengths=self.lengths,
+            multires_naive=self.multires_naive)
 
     def sum(self, axis=None, dtype=None, out=None):
         """TODO"""
@@ -1298,10 +1301,16 @@ class CountsBins(object):
         Returns the number of full-resolution counts bins corresponding to each
         low-resolution distance bin.
         """
-        if self.multiscale_factor == 1:
+        if self.multiscale_factor == 1 or self.multires_naive:
             return 1
         elif self.mask is not None:
             return self.mask.sum(axis=0)
+        elif self.multires_naive:
+            fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+                ploidy=self.ploidy, fullres_struct_nan=self._empty_idx_fullres)
+            return fullres_per_lowres_bead[self.row] * fullres_per_lowres_bead[
+                self.col]
         else:
             return self.data.shape[0]
 

@@ -155,14 +155,19 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         est_hmlg_sep = distance_between_homologs(
             structures=struct_draft_lowres,
             lengths=decrease_lengths_res(
-                lengths=lengths,
-                multiscale_factor=multiscale_factor_for_lowres),
+                lengths=lengths, multiscale_factor=multiscale_factor_for_lowres),
             mixture_coefs=mixture_coefs,
             simple_diploid=simple_diploid_for_lowres)
         if verbose:
-            print("Estimated distance between homolog barycenters for each"
-                  f" chromosome: {' '.join(map(str, est_hmlg_sep.round(2)))}",
+            print("Estimated distances between homolog centers of mass:"
+                  " " + " ".join([f'{x:.2g}' for x in est_hmlg_sep]),
                   flush=True)
+            if struct_true is not None:
+                true_hmlg_sep = distance_between_homologs(
+                    structures=struct_true, lengths=lengths)
+                print("TRUE distances between homolog centers of mass:"
+                      " " + " ".join([f'{x:.2g}' for x in true_hmlg_sep]),
+                      flush=True)
 
     if verbose:
         _print_code_header(
@@ -317,8 +322,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # SETUP CONSTRAINTS
     constraints = prep_constraints(
         lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, bcc_version=bcc_version,
+        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
         hsc_version=hsc_version, data_interchrom=data_interchrom,
         est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=hsc_perc_diff,
         fullres_struct_nan=fullres_struct_nan, verbose=verbose, mods=mods)
@@ -640,7 +645,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     exclude_zeros=exclude_zeros)
     # Get inter-chromosomal counts (if needed)
     if data_interchrom is None and (hsc_lambda > 0 and hsc_version == '2022'):
-        data_interchrom[multiscale_factor] = get_counts_interchrom(
+        data_interchrom = get_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
             filter_threshold=filter_threshold, normalize=normalize,
             bias=bias, multiscale_reform=multiscale_reform,
@@ -719,7 +724,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if first_alpha_loop and False:  # FIXME FIXME FIXME ??????????????????????????????????
         all_multiscale_factors = [1]
     else:
-        all_multiscale_factors = 2 ** np.flip(np.arange(multiscale_rounds))
+        all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))
     X_ = init
     epsilon_max_ = epsilon_max
     init_std_dev = None  # TODO

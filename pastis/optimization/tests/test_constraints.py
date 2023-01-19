@@ -70,8 +70,9 @@ def test_constraint_bcc2019(multiscale_factor):
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        bcc_lambda=1, hsc_lambda=0, bcc_version='2019',
-        fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
+        multiscale_reform=multiscale_reform, bcc_lambda=1, hsc_lambda=0,
+        bcc_version='2019', fullres_struct_nan=fullres_struct_nan,
+        verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
         struct_true_lowres, alpha=alpha, epsilon=None, counts=counts,
@@ -111,8 +112,8 @@ def test_constraint_hsc2019(multiscale_factor):
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        bcc_lambda=0, hsc_lambda=1, hsc_version='2019',
-        est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=None,
+        multiscale_reform=multiscale_reform, bcc_lambda=0, hsc_lambda=1,
+        hsc_version='2019', est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=None,
         fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
@@ -121,17 +122,21 @@ def test_constraint_hsc2019(multiscale_factor):
     assert np.isclose(obj, 0)
 
 
-@pytest.mark.parametrize("ambiguity,multiscale_factor", [
-    ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
-    ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
-def test_constraint_bcc2022(ambiguity, multiscale_factor):
+@pytest.mark.parametrize("ambiguity,multiscale_factor,multiscale_reform", [
+    ('ua', 1, True), ('ambig', 1, True), ('pa', 1, True),
+    ('ua', 2, True), ('ambig', 2, True), ('pa', 2, True),
+    ('ua', 4, True), ('ambig', 4, True), ('pa', 4, True),
+    ('ua', 8, True), ('ambig', 8, True), ('pa', 8, True),
+    ('ua', 2, False), ('ambig', 2, False), ('pa', 2, False),
+    ('ua', 4, False), ('ambig', 4, False), ('pa', 4, False),
+    ('ua', 8, False), ('ambig', 8, False), ('pa', 8, False)])
+def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
     lengths = np.array([40])
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
     struct_nan = None
     true_interhmlg_dis = 15
-    multiscale_reform = True
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -160,7 +165,8 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        bcc_lambda=1, hsc_lambda=0, bcc_version='2022', data_interchrom=None,
+        multiscale_reform=multiscale_reform, bcc_lambda=1, hsc_lambda=0,
+        bcc_version='2022', data_interchrom=None,
         fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
@@ -184,18 +190,22 @@ def test_kl_divergence(p, q):
     assert_array_almost_equal(kl_correct, kl_test)
 
 
-@pytest.mark.parametrize("ambiguity,multiscale_factor", [
-    ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
-    ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
-def test_constraint_hsc2022(ambiguity, multiscale_factor):
-    lengths = np.array([30])
+@pytest.mark.parametrize("ambiguity,multiscale_factor,multiscale_reform", [
+    ('ua', 1, True), ('ambig', 1, True), ('pa', 1, True),
+    ('ua', 2, True), ('ambig', 2, True), ('pa', 2, True),
+    ('ua', 4, True), ('ambig', 4, True), ('pa', 4, True),
+    ('ua', 8, True), ('ambig', 8, True), ('pa', 8, True),
+    ('ua', 2, False), ('ambig', 2, False), ('pa', 2, False),
+    ('ua', 4, False), ('ambig', 4, False), ('pa', 4, False),
+    ('ua', 8, False), ('ambig', 8, False), ('pa', 8, False)])
+def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
+    lengths = np.array([40])
     ploidy = 2
     seed = 0
     true_interhmlg_dis = 15
     alpha, beta = -3, 1e3
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true for hsc2022
-    multiscale_reform = True
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
@@ -209,9 +219,10 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
 
     data_interchrom = get_true_data_interchrom(
         struct_true=struct_true, ploidy=ploidy, lengths=lengths,
-        ambiguity=ambiguity, alpha=alpha, beta=beta, random_state=random_state,
-        use_poisson=use_poisson, multiscale_rounds=np.log2(multiscale_factor) + 1,
-        multiscale_reform=True)
+        ambiguity=ambiguity, struct_nan=struct_nan, alpha=alpha, beta=beta,
+        random_state=random_state, use_poisson=use_poisson,
+        multiscale_rounds=np.log2(multiscale_factor) + 1,
+        multiscale_reform=multiscale_reform)
 
     counts, _, fullres_struct_nan = preprocess_counts(
         counts, lengths=lengths, ploidy=ploidy,
@@ -230,12 +241,18 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        bcc_lambda=0, hsc_lambda=1, hsc_version='2022',
-        data_interchrom=data_interchrom, fullres_struct_nan=fullres_struct_nan,
-        verbose=False)[0]
+        multiscale_reform=multiscale_reform, bcc_lambda=0, hsc_lambda=1,
+        hsc_version='2022', data_interchrom=data_interchrom,
+        fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
         struct_true_lowres, alpha=alpha, epsilon=epsilon_true, counts=counts,
         bias=bias)._value
     print(f"{obj=:g}")
-    assert obj < 1e-1
+
+    if multiscale_factor > 1 and (not multiscale_reform):  # Multires naive
+        # The variance of the estimated distribution is too low in the naive
+        # setting, so the KL divergence will be higher, depending on resolution
+        assert obj < np.square(multiscale_factor) / 10
+    else:  # Singleres or negbinom multires model
+        assert obj < 0.1

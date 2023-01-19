@@ -226,8 +226,9 @@ def remove_struct_nan_from_counts(counts, lengths, struct_nan):
     return sparse.coo_matrix(counts)
 
 
-def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity, alpha=-3,
-                             beta=1, random_state=None, use_poisson=False,
+def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity,
+                             struct_nan=None, alpha=-3, beta=1,
+                             random_state=None, use_poisson=False,
                              multiscale_rounds=1, multiscale_reform=True):
 
     """For convenience, create data_interchrom from unambig inter-hmlg counts
@@ -240,7 +241,7 @@ def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity, alpha=-3,
         beta_ua = beta
     counts_unambig = sparse.coo_matrix(sum([get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta_ua,
-        ambiguity="ua", struct_nan=None, random_state=random_state,
+        ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
         use_poisson=use_poisson, bias=None).toarray() for i in range(4)]))
     data_interchrom = get_counts_interchrom(
         counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,

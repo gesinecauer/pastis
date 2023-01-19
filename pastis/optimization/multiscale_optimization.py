@@ -546,6 +546,30 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
     return (~bad_idx).sum(axis=0)
 
 
+def decrease_bias_res(bias, multiscale_factor, lengths, ploidy):
+    """Decrease resoluion of Hi-C biases."""
+
+    if bias is None or multiscale_factor == 1:
+        return bias
+
+    idx, bad_idx = _get_struct_index(
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
+
+    fullres_struct_nan = (bias == 0)
+    if fullres_struct_nan.sum() != 0:
+        where_nan = np.where(fullres_struct_nan)[0]
+        is_nan = np.isin(idx, where_nan)
+        bad_idx[is_nan] = True
+        idx[is_nan] = 0
+
+    # Apply to bias, and set incorrect idx to np.nan
+    grouped_bias = np.where(
+        bad_idx.flatten(), np.nan, bias[idx.flatten(), :]).reshape(
+        multiscale_factor, -1, 3)
+
+    return np.nanmean(grouped_bias, axis=0)
+
+
 # def _get_stretch_of_fullres_beads(multiscale_factor, lengths, ploidy,
 #                                   fullres_struct_nan=None):
 #     """TODO

@@ -43,13 +43,15 @@ def compare_nghbr_dis(lengths, ploidy, multiscale_factor, struct_true,
         nghbr_dis_true.var(), nghbr_dis_.var(), decimal=var_decimal)
 
 
-def test_haploid():
+@pytest.mark.parametrize("multiscale_factor,multiscale_reform", [
+    (1, True), (2, True), (4, True), (8, True), (2, False), (4, False),
+    (8, False)])
+def test_haploid(multiscale_factor, multiscale_reform):
     lengths = np.array([20])
     ploidy = 1
     seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
-    est_hmlg_sep = None
     alpha, beta = -3, 1e3
     init = 'true'  # For convenience/speed
 
@@ -60,12 +62,14 @@ def test_haploid():
         ambiguity='ua', struct_nan=None, random_state=random_state,
         use_poisson=False)
 
-    struct_, infer_param = pastis_algorithms.pastis_poisson(
+    struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
-        seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, print_freq=None,
-        history_freq=None, save_freq=None, verbose=False, init=init,
-        struct_true=struct_true)
+        seed=seed, normalize=False, filter_threshold=0, beta=beta,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
+        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        struct_true=struct_true, multiscale_factor=multiscale_factor,
+        multiscale_reform=multiscale_reform, use_multiscale_variance=False,
+        verbose=False, init=init)
 
     assert infer_param['converged']
 
@@ -79,7 +83,6 @@ def test_diploid(ambiguity, multiscale_factor):
     seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
-    est_hmlg_sep = None
     alpha, beta = -3, 1e3
     true_interhmlg_dis = 10
     init = 'true'  # For convenience/speed
@@ -96,11 +99,11 @@ def test_diploid(ambiguity, multiscale_factor):
     struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
-        bcc_lambda=0, hsc_lambda=0,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
-        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init)
+        multiscale_reform=True, use_multiscale_variance=False,
+        verbose=False, init=init)
 
     assert infer_param['converged']
 
@@ -111,7 +114,6 @@ def test_diploid_combo():
     seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
-    est_hmlg_sep = None
     alpha, beta = -3, 1e3
     ratio_ambig, ratio_pa, ratio_ua = 0.2, 0.7, 0.1
     init = 'true'  # For convenience/speed
@@ -135,9 +137,9 @@ def test_diploid_combo():
     struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
+        hsc_lambda=hsc_lambda, est_hmlg_sep=None,
         print_freq=None, history_freq=None, save_freq=None, verbose=False,
-        struct_true=struct_true, init=init)
+        struct_true=struct_true, init=init, beta=None)  # Test _set_initial_beta
 
     assert infer_param['converged']
 
@@ -177,7 +179,7 @@ def test_constraint_bcc2019():
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         print_freq=None, history_freq=None, save_freq=None,
         bcc_version="2019", hsc_version="2019", verbose=False, init=init,
-        null=null, struct_true=struct_true)
+        null=null, struct_true=struct_true, beta=beta)
 
     assert infer_param['converged']
 
@@ -302,8 +304,9 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
 
     data_interchrom = get_true_data_interchrom(
         struct_true=struct_true, ploidy=ploidy, lengths=lengths,
-        ambiguity=ambiguity, alpha=alpha, beta=beta, random_state=random_state,
-        use_poisson=use_poisson, multiscale_rounds=np.log2(multiscale_factor) + 1,
+        ambiguity=ambiguity, struct_nan=struct_nan, alpha=alpha, beta=beta,
+        random_state=random_state, use_poisson=use_poisson,
+        multiscale_rounds=np.log2(multiscale_factor) + 1,
         multiscale_reform=True)
 
     print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
@@ -352,8 +355,9 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
 
     data_interchrom = get_true_data_interchrom(
         struct_true=struct_true, ploidy=ploidy, lengths=lengths,
-        ambiguity=ambiguity, alpha=alpha, beta=beta, random_state=random_state,
-        use_poisson=use_poisson, multiscale_rounds=np.log2(multiscale_factor) + 1,
+        ambiguity=ambiguity, struct_nan=struct_nan, alpha=alpha, beta=beta,
+        random_state=random_state, use_poisson=use_poisson,
+        multiscale_rounds=np.log2(multiscale_factor) + 1,
         multiscale_reform=True)
 
     print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
