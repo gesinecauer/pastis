@@ -31,11 +31,11 @@ def decrease_lengths_res(lengths, multiscale_factor):
         `multiscale_factor`.
     """
 
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
     if multiscale_factor == 1:
-        return np.array(lengths, copy=False, ndmin=1, dtype=int)
+        return lengths
     else:
-        return np.ceil(
-            np.asarray(lengths, dtype=float) / multiscale_factor).astype(int)
+        return np.ceil(lengths / multiscale_factor).astype(int)
 
 
 def increase_struct_res_gaussian(struct, current_multiscale_factor,
@@ -546,14 +546,32 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
     return (~bad_idx).sum(axis=0)
 
 
-def decrease_bias_res(bias, multiscale_factor, lengths, ploidy):
+def decrease_bias_res(bias, multiscale_factor, lengths):
     """Decrease resoluion of Hi-C biases."""
 
-    if bias is None or multiscale_factor == 1:
+    if bias is None or np.all(bias == 1):
+        return None
+
+    if multiscale_factor == 1:
+        if bias.size != lengths.sum():
+            raise ValueError("Bias size must be equal to the sum of the"
+                             f" chromosome lengths ({lengths.sum()}). It is of"
+                             f" size {bias.size}.")
         return bias
 
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    if bias.size == lengths_lowres.sum():  # Bias is already low-res
+        return bias
+
+    if bias.size != lengths.sum():
+        raise ValueError("Bias size must be equal to the sum of the chromosome "
+                         f"lengths ({lengths.sum()}). It is of size"
+                         f" {bias.size}.")
+
+    # Bias is the same for both homologs - it is of size lengths.sum()
     idx, bad_idx = _get_struct_index(
-        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy)
+        multiscale_factor=multiscale_factor, lengths=lengths, ploidy=1)
 
     fullres_struct_nan = (bias == 0)
     if fullres_struct_nan.sum() != 0:
@@ -564,10 +582,13 @@ def decrease_bias_res(bias, multiscale_factor, lengths, ploidy):
 
     # Apply to bias, and set incorrect idx to np.nan
     grouped_bias = np.where(
-        bad_idx.flatten(), np.nan, bias[idx.flatten(), :]).reshape(
-        multiscale_factor, -1, 3)
+        bad_idx.ravel(), np.nan, bias[idx.ravel()]).reshape(
+        multiscale_factor, -1)
 
-    return np.nanmean(grouped_bias, axis=0)
+    bias_lowres = np.nanmean(grouped_bias, axis=0)
+    bias_lowres[np.isnan(bias_lowres)] = 0
+
+    return bias_lowres
 
 
 # def _get_stretch_of_fullres_beads(multiscale_factor, lengths, ploidy,

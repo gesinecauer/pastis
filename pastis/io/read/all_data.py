@@ -38,7 +38,8 @@ def _get_bias(bias, lengths):
     bias = np.array(bias, dtype=float, ndmin=1, copy=False).flatten()
     if bias.size != lengths.sum():
         raise ValueError("Bias size must be equal to the sum of the chromosome "
-                         f"lengths ({lengths.sum}). It is of size {bias.size}.")
+                         f"lengths ({lengths.sum()}). It is of size"
+                         f" {bias.size}.")
     return bias
 
 

@@ -227,7 +227,7 @@ def remove_struct_nan_from_counts(counts, lengths, struct_nan):
 
 
 def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity,
-                             struct_nan=None, alpha=-3, beta=1,
+                             struct_nan=None, alpha=-3, beta=1, bias=None,
                              random_state=None, use_poisson=False,
                              multiscale_rounds=1, multiscale_reform=True):
 
@@ -242,10 +242,12 @@ def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity,
     counts_unambig = sparse.coo_matrix(sum([get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta_ua,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=use_poisson, bias=None).toarray() for i in range(4)]))
+        use_poisson=use_poisson, bias=bias).toarray() for i in range(4)]))
+    if bias is not None:
+        bias = np.tile(bias, 2)
     data_interchrom = get_counts_interchrom(
         counts_unambig, lengths=np.tile(lengths, 2), ploidy=1,
-        filter_threshold=0, normalize=False, bias=None,
+        filter_threshold=0, normalize=False, bias=bias,
         multiscale_rounds=multiscale_rounds,
         multiscale_reform=multiscale_reform, verbose=False)
     return data_interchrom

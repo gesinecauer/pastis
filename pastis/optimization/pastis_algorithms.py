@@ -24,6 +24,7 @@ from .poisson import PastisPM, _convergence_criteria, get_eps_types
 # from .multiscale_optimization import _get_stretch_of_fullres_beads
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res
+from .multiscale_optimization import decrease_bias_res
 from ..io.read import load_data
 
 
@@ -57,7 +58,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
         struct_true=struct_true, verbose=False)
 
-    multiscale_factor_for_lowres = _choose_max_multiscale_factor(
+    multires_factor_draft = _choose_max_multiscale_factor(
         lengths=lengths, min_beads=hsc_min_beads)
     if verbose:
         if (infer_draft_fullres and infer_draft_lowres):
@@ -70,7 +71,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         elif infer_draft_lowres:
             _print_code_header(
                 ['INFERRING DRAFT STRUCTURE',
-                    f'Low resolution ({multiscale_factor_for_lowres}x)'],
+                    f'Low resolution ({multires_factor_draft}x)'],
                 max_length=60, blank_lines=2)
 
     if beta is None:
@@ -81,10 +82,9 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         beta = [beta]
 
     if infer_draft_fullres:
-        if verbose and infer_draft_lowres:
-            _print_code_header(
-                "Inferring full-res draft structure",
-                max_length=50, blank_lines=1)
+        _print_code_header(
+            "Inferring full-res draft structure", max_length=50, blank_lines=1,
+            verbose=verbose and infer_draft_lowres)
         if outdir is None:
             fullres_outdir = None
         else:
@@ -104,11 +104,10 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
             return None, est_hmlg_sep, False
 
     if infer_draft_lowres:
-        if verbose and infer_draft_fullres:
-            _print_code_header(
-                "Inferring low-res draft structure (%dx)"
-                % multiscale_factor_for_lowres,
-                max_length=50, blank_lines=1)
+        _print_code_header(
+            f"Inferring low-res draft structure ({multires_factor_draft}x)",
+            max_length=50, blank_lines=1,
+            verbose=verbose and infer_draft_fullres)
         if ploidy == 1:
             raise ValueError("Can not apply homolog-separating constraint"
                              " to haploid data.")
@@ -139,7 +138,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
             lengths=lengths, ploidy=ploidy, alpha=alpha, seed=seed,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
             beta=beta_for_lowres, beta_init=beta_init,
-            multiscale_factor=multiscale_factor_for_lowres,
+            multiscale_factor=multires_factor_draft,
             use_multiscale_variance=use_multiscale_variance,
             init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
             struct_draft_fullres=struct_draft_fullres, draft=True,
@@ -155,7 +154,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         est_hmlg_sep = distance_between_homologs(
             structures=struct_draft_lowres,
             lengths=decrease_lengths_res(
-                lengths=lengths, multiscale_factor=multiscale_factor_for_lowres),
+                lengths=lengths, multiscale_factor=multires_factor_draft),
             mixture_coefs=mixture_coefs,
             simple_diploid=simple_diploid_for_lowres)
         if verbose:
@@ -169,10 +168,9 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                       " " + " ".join([f'{x:.2g}' for x in true_hmlg_sep]),
                       flush=True)
 
-    if verbose:
-        _print_code_header(
-            ['Draft inference complete', 'INFERRING STRUCTURE'],
-            max_length=60, blank_lines=2)
+    _print_code_header(
+        ['Draft inference complete', 'INFERRING STRUCTURE'],
+        max_length=60, blank_lines=2, verbose=verbose)
 
     return struct_draft_fullres, est_hmlg_sep, True
 
@@ -215,6 +213,11 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # else:
     #     multiscale_variances = None
     multiscale_variances = None
+
+    # GET LOW-RES BIAS, IF NEEDED
+    if multiscale_factor > 1 and not multiscale_reform:
+        bias = decrease_bias_res(
+            bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
     # PREPARE COUNTS OBJECTS
     counts, struct_nan, fullres_struct_nan = preprocess_counts(
@@ -524,18 +527,18 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
         pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
         null=null, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
-    pm._fit_structure(alpha_loop=alpha_loop)
+    pm.fit_structure(alpha_loop=alpha_loop)
     struct_ = pm.struct_.reshape(-1, 3)
     struct_[struct_nan] = np.nan
 
     # OPTIONALLY RE-INFER ALPHA
     alpha_converged_ = None
     if update_alpha and multiscale_factor == 1:
-        if alpha_loop is not None:
-            _print_code_header([
-                "Jointly inferring structure & alpha",
-                f"Inferring ALPHA #{alpha_loop}"], max_length=80)
-        pm._fit_alpha(alpha_loop=alpha_loop)
+        _print_code_header([
+            "Jointly inferring structure & alpha",
+            f"Inferring ALPHA #{alpha_loop}"], max_length=80,
+            verbose=verbose and alpha_loop is not None)
+        pm.fit_alpha(alpha_loop=alpha_loop)
         alpha_converged_ = pm.alpha_converged_
 
     # GET RESCALING FACTOR: RE-SCALES STRUCTURE TO MATCH ORIGINAL BETA
@@ -611,21 +614,26 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         if alpha_init is None:
             random_state = np.random.RandomState(seed)
             alpha_init = random_state.uniform(low=-4, high=-1)
-        alpha = alpha_init
-        if verbose:
-            print("JOINTLY INFERRING STRUCTURE + ALPHA with initial alpha of",
-                  f" {alpha_init:.3g}", flush=True)
-    elif verbose:
-        print(f"INFERRING STRUCTURE WITH FIXED ALPHA = {alpha:.3g}", flush=True)
     if update_alpha and alpha_loop is None:
         alpha_loop = 1
-    if update_alpha:
+    if update_alpha and outdir is not None:
         outdir_ = os.path.join(outdir, f"alpha_coord_desc.{alpha_loop:03d}")
     else:
         outdir_ = outdir
     first_alpha_loop = update_alpha and alpha_loop == 1
     if multiscale_rounds <= 0:
         multiscale_rounds = 1
+    if verbose:
+        if first_alpha_loop and alpha is None and multiscale_rounds == 1:
+            _print_code_header([
+                "JOINTLY INFERRING STRUCTURE + ALPHA",
+                f"Initial alpha = {alpha_init:.3g}"], max_length=100)
+        elif alpha_loop is None:
+            _print_code_header([
+                "INFERRING STRUCTURE WITH FIXED ALPHA",
+                f"Fixed alpha = {alpha:.3g}"], max_length=100)
+    if alpha is None:
+        alpha = alpha_init
 
     # LOAD DATA
     if first_alpha_loop or multiscale_rounds == 1:
@@ -666,10 +674,15 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
         # foar later infer() call: alpha=infer_param['alpha'], prev_alpha_obj=infer_param['alpha_obj'], alpha_loop=alpha_loop + 1, beta=infer_param['beta'], init=X_
         #                         max_alpha_loop?
+
+        if outdir is None:
+            outdir_1x_alpha = None
+        else:
+            outdir_1x_alpha = os.path.join(outdir, 'singleres_alpha_inference')
+
         init, infer_param = infer(
             counts=_counts, lengths=lengths, ploidy=ploidy,
-            outdir=os.path.join(outdir, 'singleres_alpha_inference'),
-            alpha_init=alpha_init, seed=seed,
+            outdir=outdir_1x_alpha, alpha_init=alpha_init, seed=seed,
             filter_threshold=0, normalize=normalize, bias=_bias,
             update_alpha=update_alpha,
             beta_init=beta_init, max_alpha_loop=max_alpha_loop,
@@ -695,10 +708,10 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_loop = infer_param['alpha_loop']
         first_alpha_loop = False
 
-    if alpha_loop is not None:
-        _print_code_header([
-            "Jointly inferring structure & alpha",
-            f"Inferring STRUCTURE #{alpha_loop}"], max_length=80)
+    _print_code_header([
+        "Jointly inferring structure & alpha",
+        f"Inferring STRUCTURE #{alpha_loop}"], max_length=80,
+        verbose=verbose and alpha_loop is not None)
 
     # INFER DRAFT STRUCTURES (to obtain multiscale_variance & est_hmlg_sep)
     struct_draft_fullres_, est_hmlg_sep_, draft_converged = _infer_draft(
@@ -729,11 +742,10 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     epsilon_max_ = epsilon_max
     init_std_dev = None  # TODO
     for multiscale_factor in all_multiscale_factors:
-        if verbose and len(all_multiscale_factors) > 1:
-            _print_code_header(
-                f'MULTISCALE FACTOR {multiscale_factor}', max_length=60,
-                blank_lines=1)
-        if multiscale_factor == 1:
+        _print_code_header(
+            f'MULTISCALE FACTOR {multiscale_factor}', max_length=60,
+            blank_lines=1, verbose=verbose and len(all_multiscale_factors) > 1)
+        if outdir_ is None or multiscale_factor == 1:
             outdir_multires = outdir_
         else:
             outdir_multires = os.path.join(

@@ -14,6 +14,7 @@ from jax.nn import relu
 from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
+from .multiscale_optimization import decrease_bias_res
 from .utils_poisson import find_beads_to_remove, _euclidean_distance
 from .utils_poisson import relu_min
 from .utils_poisson import _inter_counts, _intra_mask
@@ -401,17 +402,6 @@ class BeadChainConnectivity2022(Constraint):
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
 
-        # Used for computing bias corresponding to neighboring beads
-        if bias is None or np.all(bias == 1):
-            row_nghbr_bias = None
-        elif self.multires_naive:
-            row_nghbr_bias = _neighboring_bead_indices(
-                lengths=self.lengths, ploidy=1,
-                multiscale_factor=self.multiscale_factor)
-        else:
-            row_nghbr_bias = _neighboring_bead_indices(
-                lengths=self.lengths, ploidy=1, multiscale_factor=1)
-
         # Get counts corresponding to neighboring beads
         row_nghbr_ambig_lowres = _neighboring_bead_indices(
             lengths=self.lengths, ploidy=1,
@@ -497,8 +487,7 @@ class BeadChainConnectivity2022(Constraint):
                 counts_nghbr[~counts_nghbr_mask] = 0
 
         var = {
-            'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
-            'row_nghbr_bias': row_nghbr_bias, 'beta': beta,
+            'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr, 'beta': beta,
             'counts_nghbr_mask': counts_nghbr_mask}
         if not self._lowmem:
             self._var = var
@@ -516,10 +505,9 @@ class BeadChainConnectivity2022(Constraint):
         if bias is None or np.all(bias == 1):
             bias_per_bin = None
         else:
-            row_nghbr_bias = np.tile(var['row_nghbr_bias'], 2)
             bias_per_bin = _get_bias_per_bin(
-                ploidy=self.ploidy, multiscale_factor=self.multiscale_factor,
-                bias=bias, row=row_nghbr_bias, col=row_nghbr_bias + 1,
+                ploidy=self.ploidy, bias=bias, row=var['row_nghbr'],
+                col=var['row_nghbr'] + 1, multiscale_factor=self.multiscale_factor,
                 lengths=self.lengths, multires_naive=self.multires_naive)
         if var['counts_nghbr_mask'] is None:
             counts_nghbr_mask = None
@@ -635,13 +623,19 @@ class HomologSeparating2022(Constraint):
         beta = _ambiguate_beta(
             [c.beta for c in counts], counts=counts, lengths=self.lengths,
             ploidy=self.ploidy)
-        n = self.lengths_lowres.sum()
+
+        bias_lowres = decrease_bias_res(
+            bias, multiscale_factor=self.multiscale_factor, lengths=self.lengths)
+
         if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
             mask_interchrom = None
         else:
+            n = self.lengths_lowres.sum()
             mask_interchrom = np.invert(_intra_mask(
                 (n, n), lengths_at_res=self.lengths_lowres))
-        var = {'beta': beta, 'mask_interchrom': mask_interchrom}
+
+        var = {'beta': beta, 'mask_interchrom': mask_interchrom,
+               'bias_lowres': bias_lowres}
 
         if not self._lowmem:
             self._var = var
@@ -693,7 +687,7 @@ class HomologSeparating2022(Constraint):
             n, p = _get_hsc_negbinom_params(
                 struct, row=row, col=col, alpha=alpha, beta=var["beta"],
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
-                bias=bias,
+                bias_lowres=var["bias_lowres"],
                 fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'], mods=self.mods)
             log_lambda_pmf = logpmf_negbinom(
                 self.hparams['data_interchrom'][self.multiscale_factor]['x'],
@@ -708,7 +702,7 @@ class HomologSeparating2022(Constraint):
             n, p = _get_hsc_negbinom_params(
                 struct, row=row_all, col=col_all, alpha=alpha, beta=var["beta"],
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
-                bias=bias,
+                bias_lowres=var["bias_lowres"],
                 fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'], mods=self.mods)
             nb_mean = (1 - p) * n / p
             nb_var = nb_mean / p
@@ -734,7 +728,7 @@ class HomologSeparating2022(Constraint):
 
 
 def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
-                             epsilon=None, bias=None,
+                             epsilon=None, bias_lowres=None,
                              fullres_per_lowres_bead=None, mods=[]):
     """TODO"""
 
@@ -743,33 +737,34 @@ def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
             struct=struct, epsilon=epsilon, alpha=alpha,
             beta=beta, multiscale_factor=multiscale_factor,
             row3d=row, col3d=col, mods=mods)
-        lambda_mixture_var = ag_np.mean(lambda_mixture_var)
     else:
         lambda_mean = beta * ag_np.power(
             _euclidean_distance(struct, row=row, col=col), alpha)
-        lambda_mixture_var = 0
+        lambda_mixture_var = None
 
         if multiscale_factor > 1:  # Naive multires approach
             fullres_per_lowres_dis = fullres_per_lowres_bead[
                 row] * fullres_per_lowres_bead[col]
             lambda_mean = lambda_mean * fullres_per_lowres_dis
 
+    # Multiply gamma distrib by bias
+    if bias_lowres is not None and not np.all(bias_lowres == 1):
+        bias_per_bin = _get_bias_per_bin(
+            ploidy=2, bias=bias_lowres, row=row, col=col)
+        lambda_mean = lambda_mean * bias_per_bin
+        if lambda_mixture_var is not None:
+            lambda_mixture_var = lambda_mixture_var * np.square(bias_per_bin)
+
     # Get gamma params: moment matching (full-res) or mixture model (low-res)
     mean = lambda_mean.mean()
-    var = lambda_mean.var() + lambda_mixture_var
+    var = lambda_mean.var()
+    if lambda_mixture_var is not None:
+        var = var + ag_np.mean(lambda_mixture_var)
     theta = var / mean
     k = ag_np.square(mean) / var
 
     # Mulyiply gamma distrib by 4 to account for 4 combinations across hmlgs
     theta = theta * 4
-
-    # Multiply gamma distrib by bias
-    if bias is not None and not np.all(bias == 1):
-        raise NotImplementedError("bias for hsc2022 - must reduce res")
-        bias_per_bin = _get_bias_per_bin(
-            ploidy=2, multiscale_factor=multiscale_factor, bias=bias,
-            row=row, col=col, multires_naive=True)
-        theta = theta * bias_per_bin
 
     # Compound this gamma distrib with a Poisson to yield a negbinom distrib
     n = k
@@ -878,8 +873,6 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     if lengths.size == 1:
         raise ValueError(
             "Must input counts_interchrom if inferring a single chromosome.")
-    if bias is not None and bias.size != lengths.sum() * ploidy:
-        raise ValueError("Length of bias vector does not match the counts")
 
     # Reduce resolution (should only be done when using naive multires approach)
     counts_ambig = ambiguate_counts(

@@ -220,7 +220,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
     data_interchrom = get_true_data_interchrom(
         struct_true=struct_true, ploidy=ploidy, lengths=lengths,
         ambiguity=ambiguity, struct_nan=struct_nan, alpha=alpha, beta=beta,
-        random_state=random_state, use_poisson=use_poisson,
+        bias=bias, random_state=random_state, use_poisson=use_poisson,
         multiscale_rounds=np.log2(multiscale_factor) + 1,
         multiscale_reform=multiscale_reform)
 

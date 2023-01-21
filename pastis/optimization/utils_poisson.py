@@ -80,16 +80,17 @@ def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
     """Prints a header, for demarcation of output.
     """
 
-    if verbose:
-        if not isinstance(header, list):
-            header = [header]
-        if blank_lines is not None and blank_lines > 0:
-            print('\n' * (blank_lines - 1), flush=True)
-        print('=' * max_length, flush=True)
-        for line_full in header:
-            for line in textwrap.wrap(line_full, width=max_length - 4):
-                print(f" {line} ".center(max_length, '='), flush=True)
-        print('=' * max_length, flush=True)
+    if not verbose:
+        return
+    if not isinstance(header, list):
+        header = [header]
+    if blank_lines is not None and blank_lines > 0:
+        print('\n' * (blank_lines - 1), flush=True)
+    print('=' * max_length, flush=True)
+    for line_full in header:
+        for line in textwrap.wrap(line_full, width=max_length - 4):
+            print(f" {line} ".center(max_length, '='), flush=True)
+    print('=' * max_length, flush=True)
 
 
 def _load_infer_param(infer_param_file):

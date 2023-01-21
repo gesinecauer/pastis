@@ -85,28 +85,20 @@ def _approx_ln_f_var(epsilon_over_dis, alpha, inferring_alpha=False):
 
 
 def _approx_ln_f(dis, epsilon, alpha, inferring_alpha=False,
-                 return_mean=True, return_var=True,
                  min_epsilon_over_dis=1e-3, max_epsilon_over_dis=25, mods=[]):
     """TODO"""
-
-    if not (return_mean or return_var):
-        raise ValueError("Must select return_mean or return_var")
 
     epsilon_over_dis = epsilon / dis
     # TODO temp, verify jax_min, jax_max
     epsilon_over_dis = relu_max(epsilon_over_dis, min_epsilon_over_dis)
     epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)
 
-    # if 'c_log_eps' in mods:
     epsilon_over_dis = ag_np.log(epsilon_over_dis)
 
-    ln_f_mean = ln_f_var = None
-    if return_mean:
-        ln_f_mean = _approx_ln_f_mean(
-            epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
-    if return_var:
-        ln_f_var = _approx_ln_f_var(
-            epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
+    ln_f_mean = _approx_ln_f_mean(
+        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
+    ln_f_var = _approx_ln_f_var(
+        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
 
     return ln_f_mean, ln_f_var
 

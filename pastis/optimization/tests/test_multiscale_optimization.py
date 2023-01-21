@@ -284,6 +284,28 @@ def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
     assert_array_equal(correct, current)
 
 
+@pytest.mark.parametrize("multiscale_factor", [2, 4, 8])
+def test_decrease_bias_res(multiscale_factor):
+    lengths = np.array([100, 45, 21])
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+
+    # Create full-res bias, set struct_nan to 0
+    bias_fullres = np.arange(lengths.sum(), dtype=float)
+    bias_fullres[struct_nan[struct_nan < lengths.sum()]] = 0
+
+    # Get correct low-res bias
+    tmp = np.tile(bias_fullres.reshape(-1, 1), (1, 3))
+    tmp[tmp == 0] = np.nan
+    bias_lowres_correct = decrease_struct_res_correct(
+        tmp, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=1)[:, 0].ravel()
+    bias_lowres_correct[np.isnan(bias_lowres_correct)] = 0
+
+    bias_lowres_test = multiscale_optimization.decrease_bias_res(
+        bias_fullres, multiscale_factor=multiscale_factor, lengths=lengths)
+    assert_array_equal(bias_lowres_correct, bias_lowres_test)
+
+
 # def test_infer_multiscale_variances_ambig():  # TODO remove
 #     lengths = np.array([160])
 #     ploidy = 2

@@ -189,13 +189,13 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
-    new_beta = _estimate_beta(
+    beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
         mixture_coefs=mixture_coefs)
-    counts = [c.update_beta(new_beta) for c in counts]
+    counts = [c.update_beta(beta_new) for c in counts]
 
     new_obj, obj_logs, structures, alpha, epsilon = objective_alpha(
         alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy, bias=bias,
@@ -220,13 +220,13 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
-    new_beta = _estimate_beta(
+    beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances,
         multiscale_reform=multiscale_reform, reorienter=reorienter,
         mixture_coefs=mixture_coefs)
-    counts = [c.update_beta(new_beta) for c in counts]
+    counts = [c.update_beta(beta_new) for c in counts]
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -316,12 +316,6 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
-    # if bias is None:  # TODO remove
-    #     if multiscale_reform:
-    #         bias = np.ones((lengths.sum(),))
-    #     else:
-    #         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    #         bias = np.ones((lengths_lowres.sum(),))
 
     # Initialize alpha if necessary
     if random_state is None:
@@ -330,9 +324,10 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         alpha_init = random_state.uniform(low=-4, high=-1)
 
     if verbose:
-        #print('=' * 30, flush=True)
-        print('\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\n Machine'
-              ' precision = %.4g\n' % np.finfo(np.float).eps, flush=True)
+        print("\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\nMachine"
+              f" precision = {np.finfo(float).eps:.4g}\n", flush=True)
+
+    beta_init = {c.ambiguity: c.beta for c in counts}
 
     if callback is not None:
         if reorienter is not None and reorienter.reorient:
@@ -371,14 +366,25 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     alpha, obj, d = results
     converged = d['warnflag'] == 0
-    # TODO add conv_desc to main branch
     conv_desc = d['task']
     if isinstance(conv_desc, bytes):
         conv_desc = conv_desc.decode('utf8')
 
+    beta_new = _estimate_beta(
+        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
+        multiscale_factor=multiscale_factor,
+        multiscale_variances=multiscale_variances,
+        multiscale_reform=multiscale_reform, reorienter=reorienter,
+        mixture_coefs=mixture_coefs)
+    counts = [c.update_beta(beta_new) for c in counts]
+
     if verbose:
-        print(f'INIT ALPHA: {alpha_init:.3g},  FINAL ALPHA: {float(alpha):.3g}',
-              flush=True)
+        print(f'INITIAL ALPHA: {alpha_init:.3g},  INFERRED ALPHA:'
+              f' {float(alpha):.3g}', flush=True)
+        print('INITIAL BETA:  ' + ', '.join(
+              [f'{k}={v:.3g}' for k, v in beta_init.items()]), flush=True)
+        print('INFERRED BETA: ' + ', '.join(
+              [f'{k}={v:.3g}' for k, v in beta_new.items()]), flush=True)
         if converged:
             print('CONVERGED\n', flush=True)
         else:

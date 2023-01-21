@@ -2,6 +2,7 @@ import numpy as np
 from .multiscale_optimization import increase_struct_res_gaussian
 from .multiscale_optimization import increase_struct_res, decrease_struct_res
 from .multiscale_optimization import decrease_lengths_res
+from .multiscale_optimization import decrease_bias_res
 import os
 from .mds import estimate_X
 from .utils_poisson import find_beads_to_remove
@@ -16,32 +17,39 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     if verbose:
         print('INITIALIZATION: multi-dimensional scaling', flush=True)
 
+    if alpha is None:
+        raise ValueError("Must supply alpha for MDS initialization.")
+
     ua_counts = [c for c in counts if c.ambiguity == 'ua' and (
         c.multiscale_factor == multiscale_factor)]
     if len(ua_counts) == 1:
         ua_counts = ua_counts[0]
-    elif len(ua_counts) != 0:
+    elif len(ua_counts) == 0:
+        raise ValueError("Unambiguous counts needed to initialize via MDS.")
+    else:
         raise ValueError(
             "Multiple unambiguous counts matrices detected. Pool data from"
             " unambiguous counts matrices before inference.")
-    else:
-        raise ValueError("Unambiguous counts needed to initialize via MDS.")
 
     ua_beta = ua_counts.beta
     if ua_beta is not None:
         ua_beta = ua_beta * multiscale_factor ** 2
-    if bias is not None and not np.all(bias == 1):
-        bias_per_bin = np.tile(bias, ploidy)
-    else:
-        bias_per_bin = None
 
-    if alpha is None:
-        raise ValueError("Must supply alpha for MDS initialization.")
+    bias = decrease_bias_res(
+        bias, multiscale_factor=multiscale_factor, lengths=lengths)
+    if bias is not None and not np.all(bias == 1):
+        bias_tiled = np.tile(bias, ploidy)
+    else:
+        bias_tiled = None
+
+    ua_counts = ua_counts.tocoo()
+    if bias is not None:
+        ua_counts = ua_counts.astype(float)
 
     struct = estimate_X(
-        ua_counts.tocoo(), alpha=alpha, beta=ua_beta,
+        ua_counts, alpha=alpha, beta=ua_beta,
         verbose=False, use_zero_entries=False, precompute_distances='auto',
-        bias=bias_per_bin, random_state=random_state, type="MDS2", factr=1e12,
+        bias=bias_tiled, random_state=random_state, type="MDS2", factr=1e12,
         maxiter=10000, ini=None)
 
     struct = struct.reshape(-1, 3)
@@ -64,7 +72,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 
     if not isinstance(counts, list):
         counts = [counts]
-    have_unambig = ([c for c in counts if c.ambiguity == 'ua'])
+    have_unambig = len([c for c in counts if c.ambiguity == 'ua']) > 0
 
     lengths_lowres = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor)

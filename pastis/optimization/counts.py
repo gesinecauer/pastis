@@ -106,13 +106,14 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
 
     if beta is None:
         return None
+
+    if not isinstance(beta, list):
+        beta = [beta]
     if ploidy == 1:
         return beta[0]
 
     if not isinstance(counts, list):
         counts = [counts]
-    if not isinstance(beta, list):
-        beta = [beta]
     if len(counts) != len(beta):
         raise ValueError(f"Inconsistent number of betas ({len(beta)}) and"
                          f" counts matrices ({len(counts)}).")
@@ -134,18 +135,32 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
     if ploidy == 1:
         return [beta_ambig]
 
+    if bias is not None and bias.size != lengths.sum():
+        raise ValueError("Bias size must be equal to the sum of the chromosome "
+                         f"lengths ({lengths.sum()}). It is of size"
+                         f" {bias.size}.")
+
     if not isinstance(counts, list):
         counts = [counts]
 
+    raise NotImplementedError("total_counts should be normalized (or we don't need bias?)")
     total_counts = sum([c.sum() for c in counts])
     beta = []
     for i in range(len(counts)):
         if counts[i].sum() == 0:
             continue
-        if counts[i].shape[0] == counts[i].shape[1]:
-            beta.append(beta_ambig * counts[i].sum() / total_counts)
+
+        # Normalize counts (divide by biases for each locus)
+        if bias is not None and not np.all(bias == 1):
+            bias_per_bin = bias[counts[i].row] * bias[counts[i].col]
+            counts_i_sum = np.sum(counts[i].data / bias_per_bin)
         else:
-            beta.append(beta_ambig * counts[i].sum() / total_counts / 2)
+            counts_i_sum = counts[i].sum()
+
+        if counts[i].shape[0] == counts[i].shape[1]:
+            beta.append(beta_ambig * counts_i_sum / total_counts)
+        else:
+            beta.append(beta_ambig * counts_i_sum / total_counts / 2)
     return beta
 
 
@@ -484,11 +499,11 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
         counts_ambig = ambiguate_counts(counts, lengths=lengths, ploidy=ploidy)
         bias = ICE_normalization(
             counts_ambig, max_iter=300, output_bias=True)[1].flatten()
+    elif bias is not None and verbose:
+        print('USING USER-PROVIDED BIAS', flush=True)
 
     # In each counts matrix, zero out counts for which bias is NaN
     if bias is not None:
-        if verbose:
-            print('USING USER-PROVIDED BIAS', flush=True)
         for i in range(len(counts)):
             # How many beads are initially zero?
             counts_ambig_i = ambiguate_counts(
@@ -497,7 +512,7 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
                 counts_ambig_i, lengths=lengths, ploidy=1).size
 
             # Remove beads with bias=NaN from counts
-            bias_is_finite = np.where(np.isfinite(bias))[0]
+            bias_is_finite = np.where(np.isfinite(np.tile(bias, ploidy)))[0]
             mask = np.isin(counts[i].row, bias_is_finite) & np.isin(
                 counts[i].col, bias_is_finite)
             counts[i] = sparse.coo_matrix(
@@ -530,6 +545,11 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
 
     from .constraints import _neighboring_bead_indices
 
+    if bias is not None and bias.size != lengths.sum():
+        raise ValueError("Bias size must be equal to the sum of the chromosome "
+                         f"lengths ({lengths.sum()}). It is of size"
+                         f" {bias.size}.")
+
     # Get relevant counts
     counts_ambig = ambiguate_counts(counts, lengths=lengths, ploidy=ploidy)
     if neighboring_beads_only:
@@ -551,11 +571,11 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
         # the contribution of inter-hmlg counts to nghbr counts is negligible
         num_dis_bins /= ploidy
 
-    # Normalize counts
+    # Normalize counts (divide by biases for each locus)
     if bias is not None and not np.all(bias == 1):
         bias_per_bin = bias[counts_ambig.row] * bias[counts_ambig.col]
         counts_ambig = sparse.coo_matrix(
-            (counts_ambig.data * bias_per_bin,
+            (counts_ambig.data / bias_per_bin,
                 (counts_ambig.row, counts_ambig.col)),
             shape=counts_ambig.shape)
 
@@ -657,11 +677,25 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
     return row3d, col3d
 
 
-def _get_bias_per_bin(ploidy, multiscale_factor, bias, row, col, lengths=None,
+def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
                       multires_naive=False):
     """Determines bias corresponding to each bin of the distance matrix."""
     if bias is None or np.all(bias == 1):
         return 1
+
+    if lengths is not None:
+        if multiscale_factor > 1 and multires_naive:
+            lengths_lowres = decrease_lengths_res(
+                lengths, multiscale_factor=multiscale_factor)
+            if bias.size != lengths_lowres.sum():
+                raise ValueError("Bias size must be equal to the sum of low-res"
+                                 f" chromosome lengths ({lengths_lowres.sum()})."
+                                 f" It is of size {bias.size}.")
+        elif bias.size != lengths.sum():
+            raise ValueError("Bias size must be equal to the sum of the"
+                             f" chromosome lengths ({lengths.sum()}). It is of"
+                             f" size {bias.size}.")
+
     bias = np.tile(bias.ravel(), ploidy)
     if multiscale_factor == 1 or multires_naive:
         return bias[row] * bias[col]
@@ -1273,8 +1307,8 @@ class CountsBins(object):
             Bias for each bin of the distance matrix.
         """
         return _get_bias_per_bin(
-            ploidy=self.ploidy, multiscale_factor=self.multiscale_factor,
-            bias=bias, row=self.row, col=self.col, lengths=self.lengths,
+            ploidy=self.ploidy, bias=bias, row=self.row, col=self.col,
+            multiscale_factor=self.multiscale_factor, lengths=self.lengths,
             multires_naive=self.multires_naive)
 
     def sum(self, axis=None, dtype=None, out=None):
