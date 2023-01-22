@@ -31,7 +31,7 @@ def decrease_lengths_res(lengths, multiscale_factor):
         `multiscale_factor`.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     if multiscale_factor == 1:
         return lengths
     else:
@@ -90,7 +90,7 @@ def increase_struct_res_gaussian(struct, current_multiscale_factor,
     struct = struct.reshape(-1, 3)
     if isinstance(lengths, str):
         lengths = load_lengths(lengths)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     lengths_current = decrease_lengths_res(
         lengths=lengths, multiscale_factor=current_multiscale_factor)
     if random_state is None:
@@ -166,7 +166,7 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
     struct = struct.reshape(-1, 3)
     if isinstance(lengths, str):
         lengths = load_lengths(lengths)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     lengths_lowres = decrease_lengths_res(
         lengths=lengths, multiscale_factor=multiscale_factor)
 

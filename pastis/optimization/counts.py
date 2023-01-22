@@ -65,7 +65,7 @@ def ambiguate_counts(counts, lengths, ploidy):
         Aggregated and ambiguated contact counts matrix.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
     if not isinstance(counts, list):
         counts = [counts]
@@ -122,7 +122,7 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
     for i in range(len(beta)):
         if counts[i].shape[0] == counts[i].shape[1]:
             beta_ambig += beta[i]
-        else:
+        else:  # Adjust for partially ambiguous: multiply by 2
             beta_ambig += beta[i] * 2
     return beta_ambig
 
@@ -143,24 +143,26 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
     if not isinstance(counts, list):
         counts = [counts]
 
-    raise NotImplementedError("total_counts should be normalized (or we don't need bias?)")
-    total_counts = sum([c.sum() for c in counts])
-    beta = []
+    # Get sum of each (normalized) counts matrix
+    counts_sums = np.zeros(len(counts))
     for i in range(len(counts)):
         if counts[i].sum() == 0:
             continue
-
-        # Normalize counts (divide by biases for each locus)
-        if bias is not None and not np.all(bias == 1):
+        if bias is not None and not np.all(bias == 1):  # Divide by locus biases
+            bias = np.tile(bias.ravel(), ploidy)
             bias_per_bin = bias[counts[i].row] * bias[counts[i].col]
-            counts_i_sum = np.sum(counts[i].data / bias_per_bin)
+            counts_sums[i] = np.sum(counts[i].data / bias_per_bin)
         else:
-            counts_i_sum = counts[i].sum()
+            counts_sums[i] = counts[i].sum()
 
-        if counts[i].shape[0] == counts[i].shape[1]:
-            beta.append(beta_ambig * counts_i_sum / total_counts)
-        else:
-            beta.append(beta_ambig * counts_i_sum / total_counts / 2)
+    beta = counts_sums / counts_sums.sum() * beta_ambig
+
+    # Adjust beta for partially ambiguous: divide by 2
+    for i in range(len(counts)):
+        if counts[i].shape[0] != counts[i].shape[1]:
+            beta[i] /= 2
+
+    beta = beta.tolist()
     return beta
 
 
@@ -203,7 +205,7 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
     """Check counts dimensions, reformat, & excise selected chromosomes.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     # Check input
@@ -258,33 +260,6 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
             hmlg1.eliminate_zeros()
             hmlg2.eliminate_zeros()
         counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat: (2n, n)
-        # if counts.shape[1] == n:  # Hmlgs were vertically concat: (2n, n)  # TODO remove
-        #     counts = counts.tocsr()
-        #     hmlg1 = counts[:n, :]
-        #     hmlg2 = counts[n:, :]
-        # else:  # Hmlgs were horizontally concat: (n, 2n)... must transpose
-        #     counts = counts.tocsc()
-        #     hmlg1 = counts[:, :n].T
-        #     hmlg2 = counts[:, n:].T
-        # counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat: (2n, n)
-        # mask1 = (counts.row < n) & (counts.col < n)  # TODO remove
-        # mask2 = np.invert(mask1)
-        # if remove_diag:
-        #     not_diag = (counts.row != counts.col) & (
-        #         counts.row != counts.col + n) & (
-        #         counts.row + n != counts.col)
-        #     mask1 = mask1 & not_diag
-        #     mask2 = mask2 & not_diag
-        # hmlg1 = sparse.coo_matrix(
-        #     (counts.data[mask1], (counts.row[mask1], counts.col[mask1])),
-        #     shape=(n, n))
-        # hmlg2 = sparse.coo_matrix(
-        #     (counts.data[mask2], (counts.row[mask2], counts.col[mask2])),
-        #     shape=(n, n))
-        # if counts.shape[0] == min(counts.shape):  # If were horizontally concat
-        #     hmlg1 = hmlg1.T
-        #     hmlg2 = hmlg2.T
-        # counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat
 
     if chrom_subset_idx is not None:
         counts = counts.tocsr()[chrom_subset_idx, :]
@@ -326,7 +301,7 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
         Checked and reformatted counts data.
     """
 
-    lengths = np.array(lengths, ndmin=1, dtype=int, copy=False)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     if not isinstance(counts, list):
         counts = [counts]
 
@@ -536,12 +511,13 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
 
 def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
                       neighboring_beads_only=True):
-    """Estimate compatible betas for each counts matrix."""
+    """Estimate compatible betas for each counts matrix.
 
-    # Set the mean (distance ** alpha) for either
-    #   (1) the whole structure, or
-    #   (2) distances between neighboring beads (default)
-    # ...to be equal to 1
+    Set the mean (distance ** alpha) using either
+      (1) distances between all bead pairs (if neighboring_beads_only=False), or
+      (2) only the distances between neighboring beads (default)
+    ...to be equal to 1
+    """
 
     from .constraints import _neighboring_bead_indices
 

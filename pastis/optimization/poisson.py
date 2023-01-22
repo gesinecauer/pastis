@@ -346,7 +346,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     counts = (counts if isinstance(counts, list) else [counts])
     if lengths is None:
         lengths = np.array([min([min(c.shape) for c in counts])])
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     # Format X
     if reorienter is None or (not reorienter.reorient):
@@ -618,7 +618,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
 
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     # if bias is None:  # TODO remove
     #     if multiscale_reform:
@@ -799,7 +799,7 @@ class PastisPM(object):
                  mods=[]):
         from .callbacks import Callback
 
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
         if constraints is None:
             constraints = []

@@ -31,6 +31,8 @@ def get_coord_diff_from_euc_dis(rng, nghbr_bead_dis=1, ndim=3):
 def make_3d_bead(rng, nghbr_bead_dis=1, noise=0.1, prev_bead=None,
                  ndim=3):
     """Create new bead in 3D structure"""
+    if noise is None:
+        noise = 0
     if prev_bead is None:
         prev_bead = np.zeros(ndim)
     coord_diffs = get_coord_diff_from_euc_dis(
@@ -98,7 +100,7 @@ def make_3d_struct(nbeads, rng, nghbr_bead_dis=1, noise=0.1,
 
 def separate_homologs(struct, lengths, true_interhmlg_dis):
     """Separate homolog centers of mass by specified distance"""
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     if isinstance(true_interhmlg_dis, (int, float)):
@@ -126,7 +128,7 @@ def get_struct_randwalk(lengths, ploidy, random_state=None,
         random_state = np.random.RandomState(seed=0)
     elif isinstance(random_state, int):
         random_state = np.random.RandomState(seed=random_state)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     # Create structure, without any beads overlapping
@@ -185,7 +187,7 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
         elif isinstance(random_state, int):
             random_state = np.random.RandomState(seed=random_state)
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     dis = euclidean_distances(struct)
@@ -258,7 +260,7 @@ def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
         return struct
 
     struct = struct.copy().reshape(-1, 3)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     struct_lowres = []
     begin = end = 0
@@ -287,7 +289,7 @@ def decrease_counts_res_correct(counts, multiscale_factor, lengths):
 
     if sparse.issparse(counts):
         counts = counts.toarray()
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     triu = counts.shape[0] == counts.shape[1]
     if triu:
         counts = np.triu(counts, 1)
@@ -338,7 +340,7 @@ def decrease_counts_res_correct(counts, multiscale_factor, lengths):
 
 
 def ambiguate_counts_correct(counts, lengths, ploidy):
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
     if not isinstance(counts, list):
         counts = [counts]

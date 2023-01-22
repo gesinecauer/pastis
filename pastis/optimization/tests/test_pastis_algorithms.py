@@ -421,15 +421,16 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
+    bias = None
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
-        use_poisson=use_poisson, bias=None)
+        use_poisson=use_poisson, bias=bias)
 
     data_interchrom = get_true_data_interchrom(
         struct_true=struct_true, ploidy=ploidy, lengths=lengths,
         ambiguity=ambiguity, struct_nan=struct_nan, alpha=alpha, beta=beta,
-        bias=None, random_state=random_state, use_poisson=use_poisson,
+        bias=bias, random_state=random_state, use_poisson=use_poisson,
         multiscale_rounds=np.log2(multiscale_factor) + 1,
         multiscale_reform=True)
 
@@ -442,7 +443,59 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
         multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init, null=null)
+        init=init, null=null, bias=bias)
+
+    assert infer_param['converged']
+
+    compare_nghbr_dis(
+        lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
+        var_decimal=-1)
+
+
+@pytest.mark.parametrize("ambiguity,multiscale_factor", [
+    ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
+    ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
+def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
+    lengths = np.array([40])
+    ploidy = 2
+    seed = 0
+    alpha, beta = -3, 1e3
+    true_interhmlg_dis = 10
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+    use_poisson = True  # Must be true if including hsc2022
+    bcc_lambda = 0.1  # Update this as needed
+    hsc_lambda = 1  # Can include to improve stability, update as needed
+    null = True  # Only optimize constraints, not main obj
+    init = None
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis)
+    bias = 0.1 + random_state.rand(lengths.sum())
+    counts = get_counts(
+        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
+        use_poisson=use_poisson, bias=bias)
+
+    data_interchrom = get_true_data_interchrom(
+        struct_true=struct_true, ploidy=ploidy, lengths=lengths,
+        ambiguity=ambiguity, struct_nan=struct_nan, alpha=alpha, beta=beta,
+        bias=bias, random_state=random_state, use_poisson=use_poisson,
+        multiscale_rounds=np.log2(multiscale_factor) + 1,
+        multiscale_reform=True)
+
+    print(f"{bcc_lambda=:g}    {hsc_lambda=:g}    {true_interhmlg_dis=:g}")
+    struct_, infer_param = pastis_algorithms.infer_at_alpha(
+        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
+        seed=seed, normalize=False, filter_threshold=0, beta=beta,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
+        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        struct_true=struct_true, multiscale_factor=multiscale_factor,
+        bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
+        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
+        init=init, null=null, bias=bias)
 
     assert infer_param['converged']
 
@@ -472,15 +525,16 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
+    bias = None
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
-        use_poisson=use_poisson, bias=None)
+        use_poisson=use_poisson, bias=bias)
 
     data_interchrom = get_true_data_interchrom(
         struct_true=struct_true, ploidy=ploidy, lengths=lengths,
         ambiguity=ambiguity, struct_nan=struct_nan, alpha=alpha, beta=beta,
-        bias=None, random_state=random_state, use_poisson=use_poisson,
+        bias=bias, random_state=random_state, use_poisson=use_poisson,
         multiscale_rounds=np.log2(multiscale_factor) + 1,
         multiscale_reform=True)
 
@@ -493,7 +547,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
         multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init, null=null)
+        init=init, null=null, bias=bias)
 
     assert infer_param['converged']
 

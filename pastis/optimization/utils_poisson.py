@@ -163,6 +163,8 @@ def _format_structures(structures, lengths=None, ploidy=None,
 
     from .poisson import _format_X
 
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+
     if isinstance(structures, list):
         if not all([isinstance(
                 struct, (np.ndarray, jnp.ndarray)) for struct in structures]):
@@ -273,7 +275,7 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
         return struct
 
     struct = struct.reshape(-1, 3)
-    lengths = np.array(lengths, dtype=int, ndmin=1, copy=False)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     if struct.shape[0] != lengths.sum() * ploidy:
         raise ValueError("Structure shape inconsistent with nbeads")
@@ -398,11 +400,9 @@ def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
         `lengths_full.sum() * ploidy`.
     """
 
-    if not isinstance(chrom_full, np.ndarray) or chrom_full.shape == ():
-        chrom_full = np.array([chrom_full]).flatten()
-    if not isinstance(lengths_full, np.ndarray) or lengths_full.shape == ():
-        lengths_full = np.array([lengths_full]).flatten()
-    lengths_full = lengths_full.astype(int)
+    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=int).ravel()
+    lengths_full = np.array(
+        lengths_full, copy=False, ndmin=1, dtype=int).ravel()
 
     if chrom_subset is None:
         chrom_subset = chrom_full.copy()
@@ -476,6 +476,10 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     """
 
     from .counts import check_counts
+
+    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=int).ravel()
+    lengths_full = np.array(
+        lengths_full, copy=False, ndmin=1, dtype=int).ravel()
 
     lengths_subset, chrom_subset, subset_idx = subset_chromosomes(
         lengths_full=lengths_full, chrom_full=chrom_full,

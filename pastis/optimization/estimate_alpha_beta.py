@@ -89,13 +89,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     counts = (counts if isinstance(counts, list) else [counts])
     if lengths is None:
         lengths = np.array([min([min(c.shape) for c in counts])])
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
-    # if bias is None:  # TODO remove
-    #     if multiscale_reform:
-    #         bias = np.ones((lengths.sum(),))
-    #     else:
-    #         lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
-    #         bias = np.ones((lengths_lowres.sum(),))
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     if not isinstance(structures, list):
         structures = [structures]
     if mixture_coefs is None:
@@ -315,7 +309,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     # Initialize alpha if necessary
     if random_state is None:

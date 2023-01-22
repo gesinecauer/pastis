@@ -19,7 +19,7 @@ def _get_lengths(lengths):
         if len(lengths) == 1 and isinstance(lengths[0], str) and os.path.exists(
                 lengths[0]):
             lengths = load_lengths(lengths[0])
-    lengths = np.array(lengths, dtype=int, ndmin=1, copy=False).flatten()
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     return lengths
 
 

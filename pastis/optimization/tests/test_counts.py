@@ -8,7 +8,7 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
-    from utils import get_counts, ambiguate_counts_correct
+    from utils import get_counts, ambiguate_counts_correct, get_struct_randwalk
     import pastis.optimization.counts as counts_py
     from pastis.optimization.estimate_alpha_beta import _estimate_beta
 
@@ -280,8 +280,10 @@ def test_3d_indices_diploid_partially_ambig():
     assert_array_equal(col3d_true, col3d)
 
 
-@pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
-def test_ambiguate_beta(ambiguity):
+@pytest.mark.parametrize("ambiguity,use_bias", [
+    ("ua", False), ("ambig", False), ("pa", False),
+    ("ua", True), ("ambig", True), ("pa", True)])
+def test_ambiguate_beta(ambiguity, use_bias):
     lengths = np.array([20])
     ploidy = 2
     seed = 0
@@ -290,11 +292,14 @@ def test_ambiguate_beta(ambiguity):
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.rand(lengths.sum() * ploidy, 3)
-    bias = None
+    if use_bias:
+        bias = 0.1 + random_state.rand(lengths.sum())
+    else:
+        bias = None
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
-        use_poisson=False)
+        use_poisson=False, bias=bias)
 
     # Confirm that beta MLE is working
     counts_objects, _, _ = counts_py.preprocess_counts(
@@ -302,7 +307,7 @@ def test_ambiguate_beta(ambiguity):
         verbose=False)
     beta_mle = _estimate_beta(
         struct_true, counts=counts_objects, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)[ambiguity]
+        ploidy=ploidy, bias=bias)[ambiguity]._value
     assert_array_almost_equal(beta, beta_mle)
 
     # Test _ambiguate_beta
@@ -313,7 +318,7 @@ def test_ambiguate_beta(ambiguity):
         verbose=False)
     beta_ambig_correct = _estimate_beta(
         struct_true, counts=counts_ambig_objects, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)["ambig"]
+        ploidy=ploidy, bias=bias)["ambig"]._value
     beta_ambig_test = counts_py._ambiguate_beta(
         beta, counts=counts, lengths=lengths, ploidy=ploidy)
     assert_array_almost_equal(beta_ambig_correct, beta_ambig_test)
@@ -323,3 +328,44 @@ def test_ambiguate_beta(ambiguity):
         beta_ambig_correct, counts=counts, lengths=lengths, ploidy=ploidy,
         bias=bias)[0]
     assert_array_almost_equal(beta, beta_disambig)
+
+
+@pytest.mark.parametrize("use_bias", [False, True])
+def test_set_initial_beta(use_bias):
+    lengths = np.array([40])
+    ploidy = 2
+    seed = 0
+    alpha, beta = -3, 1
+    struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
+    true_interhmlg_dis = 10
+
+    random_state = np.random.RandomState(seed=seed)
+    if use_bias:
+        bias = 0.1 + random_state.rand(lengths.sum())
+    else:
+        bias = None
+
+    # Create 2 structures where distances between nghbr beads are always == 1
+    struct_true1 = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis, noise=0)
+    counts1 = get_counts(
+        struct_true1, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        struct_nan=struct_nan, random_state=random_state, use_poisson=False,
+        bias=bias, ambiguity="ambig")  # Counts get ambiguated later anyways
+    struct_true2 = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state,
+        true_interhmlg_dis=true_interhmlg_dis, noise=0)
+    counts2 = get_counts(
+        struct_true2, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+        struct_nan=struct_nan, random_state=random_state, use_poisson=False,
+        bias=bias, ambiguity="ambig")  # Counts get ambiguated later anyways
+
+    # Get betas using only the distances between neighboring beads
+    _, beta_nghbr1 = counts_py._set_initial_beta(
+        counts1, lengths=lengths, ploidy=ploidy, bias=bias, exclude_zeros=False,
+        neighboring_beads_only=True)
+    _, beta_nghbr2 = counts_py._set_initial_beta(
+        counts2, lengths=lengths, ploidy=ploidy, bias=bias, exclude_zeros=False,
+        neighboring_beads_only=True)
+    assert_array_almost_equal(beta_nghbr1, beta_nghbr2, decimal=5)  # Approx eq

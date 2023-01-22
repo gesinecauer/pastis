@@ -164,7 +164,7 @@ class BeadChainConnectivity2019(Constraint):
         self.name = "Bead-chain connectivity (2019)"
         self.during_alpha_infer = False
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
@@ -226,7 +226,7 @@ class HomologSeparating2019(Constraint):
         self.name = "Homolog separating (2019)"
         self.during_alpha_infer = False
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
@@ -353,7 +353,7 @@ class BeadChainConnectivity2022(Constraint):
         self.name = "Bead-chain connectivity (2022)"
         self.during_alpha_infer = True
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
@@ -581,7 +581,7 @@ class HomologSeparating2022(Constraint):
         self.name = "Homolog separating (2022)"
         self.during_alpha_infer = True
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int)
+        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
