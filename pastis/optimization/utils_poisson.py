@@ -37,8 +37,8 @@ from typing import Any as Array
 import jax.numpy as jnp
 from jax import custom_jvp
 from jax import lax
-import jax.numpy as ag_np
 from jax.nn import relu
+import jax
 
 
 if sys.version_info[0] < 3:
@@ -72,8 +72,8 @@ def _get_output_files(outdir, seed=None):
 
 def _euclidean_distance(struct, row, col):
     """Get euclidian distances between beads in given row and col of struct."""
-    dis_sq = (ag_np.square(struct[row] - struct[col])).sum(axis=1)
-    return ag_np.sqrt(dis_sq)
+    dis_sq = (jnp.square(struct[row] - struct[col])).sum(axis=1)
+    return jnp.sqrt(dis_sq)
 
 
 def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
@@ -343,6 +343,7 @@ def relu_max(x1, x2):
 
 
 @custom_jvp
+@jax.jit
 def jax_max(x1: Array, x2: Array) -> Array:
     """Element-wise maximum of array elements.
 
@@ -353,6 +354,11 @@ def jax_max(x1: Array, x2: Array) -> Array:
     of the real or imaginary parts being a NaN. The net effect is that NaNs are
     propagated.
 
+    Under differentiation, we take:
+
+    .. math::
+        \nabla \mathrm{max}(x, x) = 0
+
     Parameters
     ----------
     x1,x2 : array-like
@@ -362,20 +368,20 @@ def jax_max(x1: Array, x2: Array) -> Array:
 
     Returns
     -------
-    obj : array or scalar
+    x : array or scalar
         The maximum of x1 and x2, element-wise. This is a scalar if both x1 and
         x2 are scalars.
     """
     return jnp.maximum(x1, x2)
 
 
-# FIXME double check this
 jax_max.defjvps(
     lambda g1, ans, x1, x2: lax.select(x1 > x2, g1, lax.full_like(g1, 0)),
     lambda g2, ans, x1, x2: lax.select(x1 < x2, g2, lax.full_like(g2, 0)))
 
 
 @custom_jvp
+@jax.jit
 def jax_min(x1: Array, x2: Array) -> Array:
     """Element-wise minimum of array elements.
 
@@ -386,6 +392,11 @@ def jax_min(x1: Array, x2: Array) -> Array:
     of the real or imaginary parts being a NaN. The net effect is that NaNs are
     propagated.
 
+    Under differentiation, we take:
+
+    .. math::
+        \nabla \mathrm{min}(x, x) = 0
+
     Parameters
     ----------
     x1,x2 : array-like
@@ -395,14 +406,13 @@ def jax_min(x1: Array, x2: Array) -> Array:
 
     Returns
     -------
-    obj : array or scalar
+    x : array or scalar
         The minimum of x1 and x2, element-wise. This is a scalar if both x1 and
         x2 are scalars.
     """
     return jnp.minimum(x1, x2)
 
 
-# FIXME double check this
 jax_min.defjvps(
     lambda g1, ans, x1, x2: lax.select(x1 < x2, g1, lax.full_like(g1, 0)),
     lambda g2, ans, x1, x2: lax.select(x1 > x2, g2, lax.full_like(g2, 0)))

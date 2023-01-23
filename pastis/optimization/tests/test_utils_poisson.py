@@ -1,7 +1,6 @@
 import sys
 import pytest
 import numpy as np
-from scipy import sparse
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 from sklearn.metrics.pairwise import paired_distances
 
@@ -11,10 +10,7 @@ pytestmark = pytest.mark.skipif(
 if sys.version_info[0] >= 3:
     from pastis.optimization.utils_poisson import _setup_jax
     _setup_jax(debug_nan_inf=True)
-    from jax.nn import relu
-    from jax.test_util import check_grads
     from jax import grad
-    import jax.numpy as jnp
 
     from utils import get_counts, set_counts_ambiguity
     from pastis.optimization import utils_poisson
@@ -97,34 +93,48 @@ def test_struct_replace_nan(seed):
 def test_jax_max(seed):
     random_state = np.random.RandomState(seed=seed)
     input1, input2 = random_state.uniform(low=-10, high=10, size=2)
-    while input1 == input2:
-        input1, input2 = random_state.uniform(low=-10, high=10, size=2)
+    while input1 == input2:  # We don't care about grad if both values are equal
+        input2 = random_state.uniform(low=-10, high=10)
 
-    # Check gradients from automatic differentiation against finite differences.
-    check_grads(utils_poisson.jax_max, (input1, input2), order=1)
+    # Check objective
+    obj = utils_poisson.jax_max(input1, input2)._value
+    assert obj == np.maximum(input1, input2)
 
-    # If both args are the same, grad should be the same regardless of
-    # whether differentiating with respect to 1st or 2nd arg
-    diff_wrt_1st_arg = grad(utils_poisson.jax_max, argnums=0)(input1, input1)
-    diff_wrt_2nd_arg = grad(utils_poisson.jax_max, argnums=1)(input1, input1)
-    assert_array_equal(diff_wrt_1st_arg, diff_wrt_2nd_arg)
+    # Check gradient
+    diff_wrt_1st_arg = grad(
+        utils_poisson.jax_max, argnums=0)(input1, input2)._value
+    diff_wrt_2nd_arg = grad(
+        utils_poisson.jax_max, argnums=1)(input1, input2)._value
+    if input1 > input2:
+        assert diff_wrt_1st_arg == 1
+        assert diff_wrt_2nd_arg == 0
+    else:
+        assert diff_wrt_1st_arg == 0
+        assert diff_wrt_2nd_arg == 1
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5])
 def test_jax_min(seed):
     random_state = np.random.RandomState(seed=seed)
     input1, input2 = random_state.uniform(low=-10, high=10, size=2)
-    while input1 == input2:
-        input1, input2 = random_state.uniform(low=-10, high=10, size=2)
+    while input1 == input2:  # We don't care about grad if both values are equal
+        input2 = random_state.uniform(low=-10, high=10)
 
-    # Check gradients from automatic differentiation against finite differences.
-    check_grads(utils_poisson.jax_min, (input1, input2), order=1)
+    # Check objective
+    obj = utils_poisson.jax_min(input1, input2)._value
+    assert obj == np.minimum(input1, input2)
 
-    # If both args are the same, grad should be the same regardless of
-    # whether differentiating with respect to 1st or 2nd arg
-    diff_wrt_1st_arg = grad(utils_poisson.jax_min, argnums=0)(input1, input1)
-    diff_wrt_2nd_arg = grad(utils_poisson.jax_min, argnums=1)(input1, input1)
-    assert_array_equal(diff_wrt_1st_arg, diff_wrt_2nd_arg)
+    # Check gradient
+    diff_wrt_1st_arg = grad(
+        utils_poisson.jax_min, argnums=0)(input1, input2)._value
+    diff_wrt_2nd_arg = grad(
+        utils_poisson.jax_min, argnums=1)(input1, input2)._value
+    if input1 < input2:
+        assert diff_wrt_1st_arg == 1
+        assert diff_wrt_2nd_arg == 0
+    else:
+        assert diff_wrt_1st_arg == 0
+        assert diff_wrt_2nd_arg == 1
 
 
 def test_subset_chrom_of_struct_and_bias():
