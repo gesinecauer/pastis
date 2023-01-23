@@ -19,7 +19,7 @@ from .initialization import initialize
 from .callbacks import Callback
 from .constraints import prep_constraints, distance_between_homologs
 from .constraints import get_counts_interchrom
-from .poisson import PastisPM, _convergence_criteria, get_eps_types
+from .poisson import PastisPM, _convergence_criteria
 # from .multiscale_optimization import get_multiscale_variances_from_struct
 # from .multiscale_optimization import _get_stretch_of_fullres_beads
 from .multiscale_optimization import _choose_max_multiscale_factor
@@ -260,54 +260,6 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     else:
         epsilon = None
 
-    # SETUP MULTI-RES
-    stretch_fullres_beads = mean_fullres_nghbr_dis = None
-    # if multiscale_reform and multiscale_factor != 1 and ('adjust_eps' in mods):
-    #     if beta is None:
-    #         mean_fullres_nghbr_dis = 1
-    #     else:
-    #         mean_fullres_nghbr_dis = 1
-    #         # FIXME get mean_fullres_nghbr_dis the same way BCC2022 constraint param is derived
-    #         # from .constraints import _neighboring_bead_indices
-    #         # from .utils_poisson import _euclidean_distance
-    #         # row_nghbr = _neighboring_bead_indices(
-    #         #     lengths=lengths, ploidy=1, multiscale_factor=1)
-    #         # dis_nghbr = _euclidean_distance(struct_true, row=row_nghbr, col=row_nghbr + 1)._value
-    #         # print(f"\n{dis_nghbr.mean()=:.4g}")
-    #         # print(f"{np.power(dis_nghbr, alpha).mean()=:.4g}\n")
-
-    #         # beta_tmp, _ = _set_initial_beta(
-    #         #     counts, lengths=lengths, ploidy=ploidy, bias=bias,
-    #         #     exclude_zeros=exclude_zeros, neighboring_beads_only=True)
-    #         # beta_ambig = _ambiguate_beta(
-    #         #     beta, counts, lengths=lengths, ploidy=ploidy)
-    #         # mean_fullres_nghbr_dis_alpha = np.power(
-    #         #     beta_tmp / beta_ambig, 1 / alpha)
-
-    #         # print(f"\n{beta_tmp=:.3g}")
-    #         # print(f"{beta_ambig=:.3g}\n")
-
-    #         # row_nghbr2 = _neighboring_bead_indices(
-    #         #     lengths=lengths, ploidy=2, multiscale_factor=1)
-    #         # c = counts[0]
-    #         # c_nghbr = c[row_nghbr2, row_nghbr2 + 1]
-    #         # print(f"{np.nanmean(c_nghbr / beta_ambig)=:.4g}")
-    #         # print(f"{np.nanmean(np.power(c_nghbr / beta_ambig, 1 / alpha))=:.4g}\n")
-
-    #         # mean_fullres_nghbr_dis = beta_tmp / beta_ambig
-    #         # print(f"{mean_fullres_nghbr_dis=:.4g}")
-    #         # print(f"{mean_fullres_nghbr_dis_alpha=:.4g}\n")
-    #         # exit(1)
-
-    #     stretch_fullres_beads = _get_stretch_of_fullres_beads(
-    #         multiscale_factor=multiscale_factor, lengths=lengths,
-    #         ploidy=ploidy, fullres_struct_nan=fullres_struct_nan)
-    #     if 'adjust_eps_all' in mods:
-    #         eps_types = get_eps_types(stretch_fullres_beads)
-    #         if eps_types.size > 1:
-    #             epsilon = np.append(
-    #                 epsilon, random_state.uniform(size=eps_types.size - 1))
-
     # HOMOLOG-SEPARATING CONSTRAINT
     if ploidy == 1 and hsc_lambda > 0:
         raise ValueError("Can not apply homolog-separating constraint to"
@@ -348,13 +300,10 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
         mixture_coefs=mixture_coefs, **callback_fxns,
         multiscale_variances=multiscale_variances,
-        stretch_fullres_beads=stretch_fullres_beads,
-        mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
         verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
-            multiscale_variances, epsilon, stretch_fullres_beads,
-            mean_fullres_nghbr_dis, ploidy)
+            multiscale_variances, epsilon, ploidy)
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -511,8 +460,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
         outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, bias, struct_nan, struct_init, constraints, callback,
-        multiscale_variances, epsilon, stretch_fullres_beads,
-        mean_fullres_nghbr_dis, ploidy) = prepped
+        multiscale_variances, epsilon, ploidy) = prepped
 
     # INFER STRUCTURE
     pm = PastisPM(
@@ -521,8 +469,6 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         callback=callback, multiscale_factor=multiscale_factor,
         multiscale_variances=multiscale_variances, epsilon=epsilon,
         epsilon_bounds=[epsilon_min, epsilon_max],
-        stretch_fullres_beads=stretch_fullres_beads,
-        mean_fullres_nghbr_dis=mean_fullres_nghbr_dis,
         epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
         max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
         pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,

@@ -577,12 +577,13 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
     multiscale_variances = np.mean(multiscale_variances, axis=0)  # ie >1 struct
 
     epsilon_per_bead = np.sqrt(multiscale_variances * 2 / 3)
+    epsilon = np.mean(epsilon_per_bead)
 
     if verbose:
-        print(f"MULTISCALE EPSILON ({multiscale_factor}x):"
-              f" {np.mean(epsilon_per_bead):.3g}", flush=True)
+        print(f"MULTISCALE EPSILON ({multiscale_factor}x): {epsilon:.3g}",
+              flush=True)
 
-    return epsilon_per_bead
+    return epsilon
 
 
 def _choose_max_multiscale_factor(lengths, min_beads):

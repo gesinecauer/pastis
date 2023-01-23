@@ -185,14 +185,12 @@ def test_get_epsilon_from_struct(multiscale_factor):
         begin = end
     multiscale_var_correct = np.array(multiscale_var_correct)
     epsilon_correct = np.sqrt(multiscale_var_correct * 2 / 3)
-    # multiscale_var_correct[np.isnan(multiscale_var_correct)] = np.nanmedian(
-    #     multiscale_var_correct)
 
     epsilon_test = multiscale_optimization.get_epsilon_from_struct(
         struct, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, replace_nan=False, verbose=False)
 
-    assert_array_almost_equal(epsilon_correct, epsilon_test)
+    assert_array_almost_equal(np.mean(epsilon_correct), epsilon_test)
 
 
 @pytest.mark.parametrize("min_beads", [5, 10, 11, 100, 101, 200])

@@ -539,8 +539,6 @@ class BeadChainConnectivity2022(Constraint):
                 struct=struct, epsilon=epsilon, alpha=alpha,
                 beta=var['beta'], multiscale_factor=self.multiscale_factor,
                 row3d=var['row_nghbr'], col3d=var['row_nghbr'] + 1,
-                stretch_fullres_beads=self.hparams['stretch_fullres_beads'],
-                mean_fullres_nghbr_dis=self.hparams['mean_fullres_nghbr_dis'],
                 mods=self.mods)
             gamma_mean = gamma_mean * 2
             gamma_var = gamma_var * 4
@@ -795,8 +793,7 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
                      bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
                      hsc_version='2019', data_interchrom=None,
                      est_hmlg_sep=None, hsc_perc_diff=None,
-                     fullres_struct_nan=None, stretch_fullres_beads=None,
-                     mean_fullres_nghbr_dis=None, verbose=True, mods=[]):
+                     fullres_struct_nan=None, verbose=True, mods=[]):
     """TODO"""
 
     # TODO remove
@@ -830,15 +827,11 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
     bcc_hparams = {
         '2019': None,
         '2022': {'fullres_per_lowres_bead': fullres_per_lowres_bead,
-                 'data_interchrom': data_interchrom,
-                 'stretch_fullres_beads': stretch_fullres_beads,
-                 'mean_fullres_nghbr_dis': mean_fullres_nghbr_dis}}
+                 'data_interchrom': data_interchrom}}
     hsc_hparams = {
         '2019': {'est_hmlg_sep': est_hmlg_sep, 'perc_diff': hsc_perc_diff},
         '2022': {'data_interchrom': data_interchrom,
-                 'fullres_per_lowres_bead': fullres_per_lowres_bead,
-                 'stretch_fullres_beads': stretch_fullres_beads,
-                 'mean_fullres_nghbr_dis': mean_fullres_nghbr_dis}}
+                 'fullres_per_lowres_bead': fullres_per_lowres_bead}}
     constraints = []
     if bcc_lambda != 0:
         constraints.append(bcc_class[bcc_version](

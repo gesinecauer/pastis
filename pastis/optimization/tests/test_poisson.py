@@ -147,9 +147,9 @@ def test_objective_multires(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true = np.mean(get_epsilon_from_struct(
+        epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, verbose=False))
+            multiscale_factor=multiscale_factor, verbose=False)
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -193,9 +193,9 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true = np.mean(get_epsilon_from_struct(
+        epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, verbose=False))
+            multiscale_factor=multiscale_factor, verbose=False)
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -232,24 +232,24 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=True, bias=None)  # Counts can be unbiased, doesn't matter
 
-    counts, struct_nan, _ = preprocess_counts(
-        counts, lengths=lengths, ploidy=ploidy,
-        multiscale_factor=multiscale_factor, beta=beta, bias=None,
-        multiscale_reform=multiscale_reform, verbose=False)
-    if multiscale_reform:
-        epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, verbose=False))
-    else:
-        epsilon_true = None
-        bias = decrease_bias_res(
-            bias, multiscale_factor=multiscale_factor, lengths=lengths)
-
     # Bias should be as close as possible to 1 without being exactly 1
     # (If bias is exactly 1, it gets set to None in the objective)
     bias = np.ones(lengths.sum()) + random_state.choice(
         [-1, 1], size=lengths.sum()) * np.finfo(np.float64).resolution / 9
     assert not np.all(bias == 1)  # Make sure we aren't exactly at 1
+
+    counts, struct_nan, _ = preprocess_counts(
+        counts, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, beta=beta, bias=None,
+        multiscale_reform=multiscale_reform, verbose=False)
+    if multiscale_reform:
+        epsilon_true = get_epsilon_from_struct(
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False)
+    else:
+        epsilon_true = None
+        bias = decrease_bias_res(
+            bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
     obj_unbiased = poisson.objective(
         X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
@@ -293,9 +293,9 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true = np.mean(get_epsilon_from_struct(
+        epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, verbose=False))
+            multiscale_factor=multiscale_factor, verbose=False)
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -338,9 +338,9 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true = np.mean(get_epsilon_from_struct(
+        epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=multiscale_factor, verbose=False))
+            multiscale_factor=multiscale_factor, verbose=False)
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -352,57 +352,3 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         multiscale_reform=multiscale_reform, epsilon=epsilon_true)._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
-
-
-# @pytest.mark.parametrize("ambiguity,multiscale_factor", [
-#     ('ua', 2), ('ambig', 2), ('pa', 2), ('ua', 4), ('ambig', 4), ('pa', 4),
-#     ('ua', 8), ('ambig', 8), ('pa', 8)])
-# def test_objective_multires_bias_unbias(ambiguity, multiscale_factor):  # TODO remove, not a fair test
-#     lengths = np.array([30])
-#     ploidy = 2
-#     seed = 0
-#     alpha, beta = -3, 1e3
-#     true_interhmlg_dis = 15
-
-#     random_state = np.random.RandomState(seed=seed)
-#     struct_true = get_struct_randwalk(
-#         lengths=lengths, ploidy=ploidy, random_state=random_state,
-#         true_interhmlg_dis=true_interhmlg_dis)
-#     struct_true_lowres = decrease_struct_res_correct(
-#         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
-#         ploidy=ploidy)
-#     epsilon_true = np.mean(get_epsilon_from_struct(
-#         struct_true, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-#         verbose=False))
-
-#     # Unbiased counts & objective
-#     counts_unbiased = get_counts(
-#         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-#         ambiguity=ambiguity, struct_nan=None, random_state=seed,
-#         use_poisson=False, bias=None)  # use exact values, not Poisson
-#     counts_unbiased, struct_nan, _ = preprocess_counts(
-#         counts_unbiased, lengths=lengths, ploidy=ploidy,
-#         multiscale_factor=multiscale_factor, beta=beta, verbose=False)
-#     obj_unbiased = poisson.objective(
-#         X=struct_true_lowres, counts=counts_unbiased, alpha=alpha,
-#         lengths=lengths, ploidy=ploidy, bias=None,
-#         multiscale_factor=multiscale_factor, multiscale_reform=True,
-#         epsilon=epsilon_true)._value
-
-#     # Biased counts & objective
-#     bias = 0.1 + random_state.rand(lengths.sum())
-#     counts_biased = get_counts(
-#         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-#         ambiguity=ambiguity, struct_nan=None, random_state=seed,
-#         use_poisson=False, bias=bias)  # use exact values, not Poisson
-#     counts_biased, struct_nan, _ = preprocess_counts(
-#         counts_biased, lengths=lengths, ploidy=ploidy,
-#         multiscale_factor=multiscale_factor, beta=beta, verbose=False)
-#     obj_biased = poisson.objective(
-#         X=struct_true_lowres, counts=counts_biased, alpha=alpha,
-#         lengths=lengths, ploidy=ploidy, bias=bias,
-#         multiscale_factor=multiscale_factor, multiscale_reform=True,
-#         epsilon=epsilon_true)._value
-
-#     print(f"{obj_unbiased=:g}   {obj_biased=:g}")
-#     assert_array_almost_equal(obj_unbiased, obj_biased)
