@@ -9,14 +9,13 @@ import warnings
 
 from .utils_poisson import _setup_jax
 _setup_jax()
-import jax.numpy as ag_np
+import jax.numpy as jnp
 from jax.nn import relu
 from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .multiscale_optimization import decrease_bias_res
 from .utils_poisson import find_beads_to_remove, _euclidean_distance
-from .utils_poisson import relu_min
 from .utils_poisson import _intermol_counts, _intramol_mask
 from .counts import ambiguate_counts, _ambiguate_beta, _get_nonzero_mask
 from .counts import _get_included_counts_bins, _idx_isin, _get_bias_per_bin
@@ -207,11 +206,11 @@ class BeadChainConnectivity2019(Constraint):
         nghbr_dis = _euclidean_distance(
             struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
         n_edges = nghbr_dis.shape[0]
-        nghbr_dis_var = n_edges * ag_np.square(
-            nghbr_dis).sum() / ag_np.square(nghbr_dis.sum())
+        nghbr_dis_var = n_edges * jnp.square(
+            nghbr_dis).sum() / jnp.square(nghbr_dis.sum())
         obj = nghbr_dis_var - 1.
 
-        if not ag_np.isfinite(obj):
+        if not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
@@ -310,13 +309,13 @@ class HomologSeparating2019(Constraint):
         # Get homolog separation
         struct_bw = struct * np.repeat(var['bead_weights'], 3, axis=1)
         n = self.lengths_lowres.sum()
-        hmlg_sep = ag_np.zeros(self.lengths_lowres.shape)
+        hmlg_sep = jnp.zeros(self.lengths_lowres.shape)
         begin = end = 0
         for i in range(self.lengths_lowres.size):
-            end = end + ag_np.int32(self.lengths_lowres[i])
-            chrom1_mean = ag_np.sum(struct_bw[begin:end], axis=0)
-            chrom2_mean = ag_np.sum(struct_bw[(n + begin):(n + end)], axis=0)
-            hmlg_sep_i = ag_np.sqrt(ag_np.sum(ag_np.square(
+            end = end + jnp.int32(self.lengths_lowres[i])
+            chrom1_mean = jnp.sum(struct_bw[begin:end], axis=0)
+            chrom2_mean = jnp.sum(struct_bw[(n + begin):(n + end)], axis=0)
+            hmlg_sep_i = jnp.sqrt(jnp.sum(jnp.square(
                 chrom1_mean - chrom2_mean)))
             hmlg_sep = hmlg_sep.at[i].set(hmlg_sep_i)
             begin = end
@@ -328,17 +327,17 @@ class HomologSeparating2019(Constraint):
             hmlg_sep_diff = relu(hmlg_sep_diff)
             # raise ValueError("I thought we weren't doing RELU for HSC anymore")
         else:
-            hsc_cutoff = ag_np.array(self.hparams['perc_diff'] * self.hparams[
+            hsc_cutoff = jnp.array(self.hparams['perc_diff'] * self.hparams[
                 "est_hmlg_sep"])
             gt0 = hmlg_sep_diff > 0
             hmlg_sep_diff = hmlg_sep_diff.at[gt0].set(relu(
                 hmlg_sep_diff[gt0] - hsc_cutoff[gt0]))
             hmlg_sep_diff = hmlg_sep_diff.at[~gt0].set(-relu(
                 -(hmlg_sep_diff[~gt0] + hsc_cutoff[~gt0])))
-        hmlg_sep_diff_sq = ag_np.square(hmlg_sep_diff)
-        obj = ag_np.mean(hmlg_sep_diff_sq)
+        hmlg_sep_diff_sq = jnp.square(hmlg_sep_diff)
+        obj = jnp.mean(hmlg_sep_diff_sq)
 
-        if not ag_np.isfinite(obj):
+        if not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
@@ -517,7 +516,7 @@ class BeadChainConnectivity2022(Constraint):
         if self.multiscale_factor == 1 or self.multires_naive:
             nghbr_dis = _euclidean_distance(
                 struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
-            lambda_pois = (2 * var['beta']) * ag_np.power(nghbr_dis, alpha)
+            lambda_pois = (2 * var['beta']) * jnp.power(nghbr_dis, alpha)
             if bias_per_bin is not None:
                 lambda_pois = lambda_pois * bias_per_bin
 
@@ -553,7 +552,7 @@ class BeadChainConnectivity2022(Constraint):
                 gamma_mean = gamma_mean + counts_inter_mean
 
             theta = gamma_var / gamma_mean
-            k = ag_np.square(gamma_mean) / gamma_var
+            k = jnp.square(gamma_mean) / gamma_var
             obj = gamma_poisson_nll(
                 theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
                 bias_per_bin=bias_per_bin, mask=counts_nghbr_mask, mods=self.mods)
@@ -563,10 +562,10 @@ class BeadChainConnectivity2022(Constraint):
             to_print = f"𝔼[c]={var['counts_nghbr'].mean():.2g}\t   μ={lambda_pois.mean():.2g}"
             if epsilon is not None:
                 to_print += f"\t   V[c]={var['counts_nghbr'].var(axis=0).mean():.2g}"
-                to_print += f"\t   σ²NB={(gamma_mean + gamma_var).mean():.2g}\t   ε={ag_np.asarray(epsilon).mean():.2g}"
+                to_print += f"\t   σ²NB={(gamma_mean + gamma_var).mean():.2g}\t   ε={jnp.asarray(epsilon).mean():.2g}"
             print(to_print + f"\t   OBJ={obj:.2g}", flush=True)
 
-        if not ag_np.isfinite(obj):
+        if not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
@@ -710,8 +709,8 @@ class HomologSeparating2022(Constraint):
             to_print = f"KL_NB: 𝔼[c]={self.hparams['data_interchrom'][self.multiscale_factor]['mean']:.2g}\t   NBμ={nb_mean:.2g}\t   V[c]={self.hparams['data_interchrom'][self.multiscale_factor]['var']:.2g}\t   NBσ²={nb_var:.2g}"
             to_print += f"\t   OBJ={obj:.2g}"
             if epsilon is not None:
-                to_print += f"\t   ε={ag_np.asarray(epsilon).mean():.2g}"
-                if ag_np.asarray(epsilon).size > 1:
+                to_print += f"\t   ε={jnp.asarray(epsilon).mean():.2g}"
+                if jnp.asarray(epsilon).size > 1:
                     from .poisson import get_epsilon_per_bin
                     epsilon = get_epsilon_per_bin(
                         epsilon, row3d=row_all, col3d=col_all,
@@ -722,7 +721,7 @@ class HomologSeparating2022(Constraint):
                 to_print += f"\t   ε/D={epsilon_over_dis.mean():.2g}"
             print(to_print, flush=True)
 
-        if not ag_np.isfinite(obj):
+        if not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
@@ -738,7 +737,7 @@ def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
             beta=beta, multiscale_factor=multiscale_factor,
             row3d=row, col3d=col, mods=mods)
     else:
-        lambda_mean = beta * ag_np.power(
+        lambda_mean = beta * jnp.power(
             _euclidean_distance(struct, row=row, col=col), alpha)
         lambda_mixture_var = None
 
@@ -759,9 +758,9 @@ def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
     mean = lambda_mean.mean()
     var = lambda_mean.var()
     if lambda_mixture_var is not None:
-        var = var + ag_np.mean(lambda_mixture_var)
+        var = var + jnp.mean(lambda_mixture_var)
     theta = var / mean
-    k = ag_np.square(mean) / var
+    k = jnp.square(mean) / var
 
     # Mulyiply gamma distrib by 4 to account for 4 combinations across hmlgs
     theta = theta * 4
@@ -785,11 +784,11 @@ def _kl_divergence(p, log_q):
     """
     mask = (p != 0)
     if mask.sum() == mask.size:
-        tmp = p * (ag_np.log(p) - log_q)
+        tmp = p * (jnp.log(p) - log_q)
     else:
-        tmp = p[mask] * (ag_np.log(p[mask]) - log_q[mask])
+        tmp = p[mask] * (jnp.log(p[mask]) - log_q[mask])
 
-    return ag_np.sum(tmp)
+    return jnp.sum(tmp)
 
 
 def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=True,
@@ -955,63 +954,6 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
                 multiscale_factor=multiscale_factor, verbose=verbose, mods=mods)
 
     return data_interchrom
-
-
-# def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
-#     """TODO"""
-
-#     if scale_by_expected:
-#         actual = actual / expected
-#         expected = 1
-
-#     if cutoff is not None and cutoff != 0:
-#         if scale_by_expected:
-#             window = cutoff
-#         else:
-#             window = cutoff * expected
-
-#         mle_expected = ag_np.mean(actual)
-
-#         sub_from_expected = relu_min(relu(expected - mle_expected), window)
-#         add_to_expected = relu_min(relu(mle_expected - expected), window)
-#         expected = expected + add_to_expected - sub_from_expected
-
-#     diff = expected - actual
-#     mse = ag_np.mean(ag_np.square(diff))
-
-#     return mse
-
-
-# def _mse_outside_of_window(actual, expected, cutoff=None, scale_by_expected=True):
-#     """TODO"""
-#     if scale_by_expected:
-#         diff = 1 - actual / expected
-#     else:
-#         diff = expected - actual
-
-#     if cutoff is None:
-#         diff = relu(diff)
-#         mse = ag_np.mean(ag_np.square(diff))
-#         raise ValueError("I thought we weren't doing ReLU for HSC anymore")  # TODO remove ValueError
-#         return mse
-
-#     if cutoff == 0:
-#         mse = ag_np.mean(ag_np.square(diff))
-#         return mse
-
-#     if scale_by_expected:
-#         window = cutoff
-#     else:
-#         window = cutoff * expected
-
-#     n = diff.size
-#     diff_gt0 = relu(diff)
-#     diff_lt0 = -relu(-diff)
-#     diff_gt0 = relu(diff_gt0 - window)
-#     diff_lt0 = -relu(-(diff_lt0 + window))
-#     mse = (ag_np.square(diff_gt0).sum() + ag_np.square(diff_lt0).sum()) / n
-
-#     return mse
 
 
 def _neighboring_bead_indices(lengths, ploidy, multiscale_factor=1,
