@@ -1,5 +1,4 @@
 import numpy as np
-from .multiscale_optimization import increase_struct_res_gaussian
 from .multiscale_optimization import increase_struct_res, decrease_struct_res
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_bias_res
@@ -62,7 +61,7 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
 
 
 def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
-                       init='mds', multiscale_factor=1, std_dev=None,
+                       init='mds', multiscale_factor=1,
                        mixture_coefs=None, verbose=True):
     """Initialize structure, randomly or via MDS of unambig counts.
     """
@@ -134,17 +133,10 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
             if verbose:
                 print('INITIALIZATION: increasing resolution of structure by'
                       ' %d' % resize_factor, flush=True)
-            if std_dev is not None:
-                structures[i] = increase_struct_res_gaussian(
-                    structures[i],
-                    current_multiscale_factor=resize_factor * multiscale_factor,
-                    final_multiscale_factor=multiscale_factor, lengths=lengths,
-                    ploidy=ploidy, std_dev=std_dev, random_state=random_state)
-            else:
-                structures[i] = increase_struct_res(
-                    structures[i], multiscale_factor=resize_factor,
-                    lengths=lengths_lowres, ploidy=ploidy,
-                    random_state=random_state)
+            structures[i] = increase_struct_res(
+                structures[i], multiscale_factor=resize_factor,
+                lengths=lengths_lowres, ploidy=ploidy,
+                random_state=random_state)
 
         elif struct_length > lengths_lowres.sum() * ploidy:
             resize_factor = int(np.ceil(
@@ -164,7 +156,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 
 
 def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
-               bias=None, multiscale_factor=1, reorienter=None, std_dev=None,
+               bias=None, multiscale_factor=1, reorienter=None,
                mixture_coefs=None, verbose=False, mods=[]):
     """Initialize optimization.
 
@@ -236,6 +228,6 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
         struct_init = _initialize_struct(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state, init=init,
-            multiscale_factor=multiscale_factor, std_dev=std_dev,
-            mixture_coefs=mixture_coefs, verbose=verbose)
+            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
+            verbose=verbose)
         return struct_init

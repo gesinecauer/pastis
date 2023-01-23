@@ -2,7 +2,6 @@ import sys
 import pytest
 import numpy as np
 from numpy.testing import assert_array_almost_equal, assert_array_equal
-from scipy import sparse
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -83,35 +82,6 @@ def test_increase_struct_res():
         ploidy=ploidy)
     assert_array_almost_equal(
         struct_highres_correct, struct_highres_test)
-
-
-# def test_increase_struct_res_gaussian():  # TODO remove
-#     lengths = np.array([10, 21])
-#     ploidy = 2
-#     current_multiscale_factor = 2
-#     rescale_by = 2
-#     seed = 0
-#     final_multiscale_factor = int(current_multiscale_factor / rescale_by)
-
-#     lengths_current = multiscale_optimization.decrease_lengths_res(
-#         lengths=lengths, multiscale_factor=current_multiscale_factor)
-#     lengths_final = multiscale_optimization.decrease_lengths_res(
-#         lengths=lengths, multiscale_factor=final_multiscale_factor)
-
-#     random_state = np.random.RandomState(seed=seed)
-#     struct_current = random_state.rand(lengths_current.sum() * ploidy, 3)
-
-#     struct_highres = multiscale_optimization.increase_struct_res_gaussian(
-#         struct_current, current_multiscale_factor=current_multiscale_factor,
-#         final_multiscale_factor=final_multiscale_factor, lengths=lengths,
-#         ploidy=ploidy, std_dev=0.000001)
-
-#     struct_lowres_new = multiscale_optimization.decrease_struct_res(
-#         struct_highres, multiscale_factor=rescale_by, lengths=lengths_final,
-#         ploidy=ploidy)
-#     mask = np.invert(np.isnan(struct_current[:, 0]))
-#     assert_array_almost_equal(
-#         struct_current[mask], struct_lowres_new[mask], decimal=5)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor", [

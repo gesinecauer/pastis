@@ -186,7 +186,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     hsc_min_beads=5, hsc_perc_diff=None, excluded_counts=None,
                     struct_draft_fullres=None, draft=False, simple_diploid=False,
                     callback_freq=None, callback_fxns=None, reorienter=None,
-                    multiscale_reform=False, init_std_dev=None,
+                    multiscale_reform=False,
                     alpha_true=None, struct_true=None, input_weight=None,
                     exclude_zeros=False, null=False, chrom_full=None, chrom_subset=None,
                     mixture_coefs=None,
@@ -253,8 +253,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         random_state=random_state,
         alpha=alpha_init if alpha is None else alpha,
         bias=bias, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, std_dev=init_std_dev,
-        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+        reorienter=reorienter, mixture_coefs=mixture_coefs, verbose=verbose,
+        mods=mods)
     if multiscale_reform and multiscale_factor != 1:
         epsilon = random_state.uniform()
     else:
@@ -369,7 +369,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                    struct_draft_fullres=None, draft=False, simple_diploid=False,
                    callback_freq=None, callback_fxns=None, reorienter=None,
                    multiscale_reform=False, epsilon_min=1e-2, epsilon_max=1e6,
-                   epsilon_coord_descent=False, init_std_dev=None,
+                   epsilon_coord_descent=False,
                    alpha_true=None, struct_true=None, input_weight=None,
                    exclude_zeros=False, null=False,
                    chrom_full=None, chrom_subset=None, mixture_coefs=None, verbose=True,
@@ -505,7 +505,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         struct_draft_fullres=struct_draft_fullres, draft=draft,
         simple_diploid=simple_diploid, callback_freq=callback_freq,
         callback_fxns=callback_fxns, reorienter=reorienter,
-        multiscale_reform=multiscale_reform, init_std_dev=init_std_dev,
+        multiscale_reform=multiscale_reform,
         alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null,
         chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
@@ -740,7 +740,6 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))
     X_ = init
     epsilon_max_ = epsilon_max
-    init_std_dev = None  # TODO
     for multiscale_factor in all_multiscale_factors:
         _print_code_header(
             f'MULTISCALE FACTOR {multiscale_factor}', max_length=60,
@@ -770,8 +769,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             callback_freq=callback_freq, reorienter=reorienter,
             multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
             epsilon_max=epsilon_max_,
-            epsilon_coord_descent=epsilon_coord_descent,
-            init_std_dev=init_std_dev, alpha_true=alpha_true,
+            epsilon_coord_descent=epsilon_coord_descent, alpha_true=alpha_true,
             struct_true=struct_true, input_weight=input_weight,
             exclude_zeros=exclude_zeros, null=null,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
@@ -794,8 +792,6 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 epsilon_max_ = infer_param['epsilon'].max()
             else:
                 epsilon_max_ = infer_param['epsilon'][0]
-        # if use_prev_std_dev and multiscale_reform:
-        #     init_std_dev = infer_param['epsilon'] / np.sqrt(2)
         if 'lowres_exit' in mods:
             exit(0)
 
