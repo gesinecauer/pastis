@@ -17,7 +17,7 @@ from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .multiscale_optimization import decrease_bias_res
 from .utils_poisson import find_beads_to_remove, _euclidean_distance
 from .utils_poisson import relu_min
-from .utils_poisson import _inter_counts, _intra_mask
+from .utils_poisson import _intermol_counts, _intramol_mask
 from .counts import ambiguate_counts, _ambiguate_beta, _get_nonzero_mask
 from .counts import _get_included_counts_bins, _idx_isin, _get_bias_per_bin
 from .likelihoods import poisson_nll, gamma_poisson_nll
@@ -631,7 +631,7 @@ class HomologSeparating2022(Constraint):
             mask_interchrom = None
         else:
             n = self.lengths_lowres.sum()
-            mask_interchrom = np.invert(_intra_mask(
+            mask_interchrom = np.invert(_intramol_mask(
                 (n, n), lengths_at_res=self.lengths_lowres))
 
         var = {'beta': beta, 'mask_interchrom': mask_interchrom,
@@ -874,6 +874,10 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
         raise ValueError(
             "Must input counts_interchrom if inferring a single chromosome.")
 
+    if not all([np.issubdtype(c.dtype, np.integer) for c in counts]):
+        raise ValueError("Counts must be integer-valued to get PMF of"
+                         " inter-chromosomal data.")
+
     # Reduce resolution (should only be done when using naive multires approach)
     counts_ambig = ambiguate_counts(
         counts=counts, lengths=lengths, ploidy=ploidy)
@@ -888,7 +892,7 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
                       f" multiscale_reform=False, ignoring {multiscale_factor=}")
 
     # Get inter-chromosomal ambiguated counts bins... for counts > 0
-    counts_interchrom = _inter_counts(
+    counts_interchrom = _intermol_counts(
         counts_ambig, lengths_at_res=lengths, ploidy=ploidy)
     counts_interchrom = counts_interchrom.data
 
@@ -896,7 +900,7 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     dummy = sparse.coo_matrix(_get_included_counts_bins(
         np.ones(counts_ambig.shape, dtype=np.uint8), lengths=lengths,
         ploidy=ploidy, check_counts=False).astype(np.uint8))
-    dummy = _inter_counts(dummy, lengths_at_res=lengths, ploidy=ploidy)
+    dummy = _intermol_counts(dummy, lengths_at_res=lengths, ploidy=ploidy)
     # Exclude bins that have nonzero counts
     # Exclude loci that have no data in any row/col bin
     _empty_idx_lowres = find_beads_to_remove(
@@ -953,61 +957,61 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     return data_interchrom
 
 
-def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
-    """TODO"""
+# def _mse_flexible(actual, expected, cutoff=None, scale_by_expected=True):
+#     """TODO"""
 
-    if scale_by_expected:
-        actual = actual / expected
-        expected = 1
+#     if scale_by_expected:
+#         actual = actual / expected
+#         expected = 1
 
-    if cutoff is not None and cutoff != 0:
-        if scale_by_expected:
-            window = cutoff
-        else:
-            window = cutoff * expected
+#     if cutoff is not None and cutoff != 0:
+#         if scale_by_expected:
+#             window = cutoff
+#         else:
+#             window = cutoff * expected
 
-        mle_expected = ag_np.mean(actual)
+#         mle_expected = ag_np.mean(actual)
 
-        sub_from_expected = relu_min(relu(expected - mle_expected), window)
-        add_to_expected = relu_min(relu(mle_expected - expected), window)
-        expected = expected + add_to_expected - sub_from_expected
+#         sub_from_expected = relu_min(relu(expected - mle_expected), window)
+#         add_to_expected = relu_min(relu(mle_expected - expected), window)
+#         expected = expected + add_to_expected - sub_from_expected
 
-    diff = expected - actual
-    mse = ag_np.mean(ag_np.square(diff))
+#     diff = expected - actual
+#     mse = ag_np.mean(ag_np.square(diff))
 
-    return mse
+#     return mse
 
 
-def _mse_outside_of_window(actual, expected, cutoff=None, scale_by_expected=True):
-    """TODO"""
-    if scale_by_expected:
-        diff = 1 - actual / expected
-    else:
-        diff = expected - actual
+# def _mse_outside_of_window(actual, expected, cutoff=None, scale_by_expected=True):
+#     """TODO"""
+#     if scale_by_expected:
+#         diff = 1 - actual / expected
+#     else:
+#         diff = expected - actual
 
-    if cutoff is None:
-        diff = relu(diff)
-        mse = ag_np.mean(ag_np.square(diff))
-        raise ValueError("I thought we weren't doing ReLU for HSC anymore")  # TODO remove ValueError
-        return mse
+#     if cutoff is None:
+#         diff = relu(diff)
+#         mse = ag_np.mean(ag_np.square(diff))
+#         raise ValueError("I thought we weren't doing ReLU for HSC anymore")  # TODO remove ValueError
+#         return mse
 
-    if cutoff == 0:
-        mse = ag_np.mean(ag_np.square(diff))
-        return mse
+#     if cutoff == 0:
+#         mse = ag_np.mean(ag_np.square(diff))
+#         return mse
 
-    if scale_by_expected:
-        window = cutoff
-    else:
-        window = cutoff * expected
+#     if scale_by_expected:
+#         window = cutoff
+#     else:
+#         window = cutoff * expected
 
-    n = diff.size
-    diff_gt0 = relu(diff)
-    diff_lt0 = -relu(-diff)
-    diff_gt0 = relu(diff_gt0 - window)
-    diff_lt0 = -relu(-(diff_lt0 + window))
-    mse = (ag_np.square(diff_gt0).sum() + ag_np.square(diff_lt0).sum()) / n
+#     n = diff.size
+#     diff_gt0 = relu(diff)
+#     diff_lt0 = -relu(-diff)
+#     diff_gt0 = relu(diff_gt0 - window)
+#     diff_lt0 = -relu(-(diff_lt0 + window))
+#     mse = (ag_np.square(diff_gt0).sum() + ag_np.square(diff_lt0).sum()) / n
 
-    return mse
+#     return mse
 
 
 def _neighboring_bead_indices(lengths, ploidy, multiscale_factor=1,

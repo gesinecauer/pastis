@@ -15,81 +15,81 @@ if sys.version_info[0] >= 3:
     from topsy.utils.debug import print_array_non0  # TODO remove
 
 
-def compare_counts_bins_objects(bins, bins_true):
-    if bins_true is None and bins is None:
+def compare_counts_bins_objects(bins, bins_correct):
+    if bins_correct is None and bins is None:
         return
 
-    if bins_true is None:  # TODO remove
+    if bins_correct is None:  # TODO remove
         print(bins.row)
         print(bins.col)
     if bins is None:
-        print(bins_true.row)
-        print(bins_true.col)
+        print(bins_correct.row)
+        print(bins_correct.col)
 
-    assert bins_true is not None
+    assert bins_correct is not None
     assert bins is not None
 
-    print(bins_true.row)
-    print(bins_true.col); print()
+    print(bins_correct.row)
+    print(bins_correct.col); print()
     print(bins.row)
     print(bins.col); print('\n')
-    assert_array_equal(bins_true.row, bins.row)
-    assert_array_equal(bins_true.col, bins.col)
+    assert_array_equal(bins_correct.row, bins.row)
+    assert_array_equal(bins_correct.col, bins.col)
 
-    # print_array_non0(bins_true.data == bins.data)
-    # print(bins_true.data[:, 0])
+    # print_array_non0(bins_correct.data == bins.data)
+    # print(bins_correct.data[:, 0])
     # print(bins.data[:, 0])
 
-    if bins_true.data is not None and bins.data is not None:
+    if bins_correct.data is not None and bins.data is not None:
         assert_array_almost_equal(
-            bins_true.data.sum(axis=0), bins.data.sum(axis=0))
-        assert_array_almost_equal(bins_true.data, bins.data)
+            bins_correct.data.sum(axis=0), bins.data.sum(axis=0))
+        assert_array_almost_equal(bins_correct.data, bins.data)
     else:
-        assert bins_true.data is None
+        assert bins_correct.data is None
         assert bins.data is None
 
-    assert bins_true.multiscale_factor == bins.multiscale_factor
-    if bins_true.multiscale_factor > 1:
-        if bins_true.mask is not None and bins.mask is not None:
-            if bins_true.mask.shape == bins.mask.shape:
-                where_diff = np.where(bins_true.mask != bins.mask)
+    assert bins_correct.multiscale_factor == bins.multiscale_factor
+    if bins_correct.multiscale_factor > 1:
+        if bins_correct.mask is not None and bins.mask is not None:
+            if bins_correct.mask.shape == bins.mask.shape:
+                where_diff = np.where(bins_correct.mask != bins.mask)
                 if where_diff[0].size > 0:
-                    print('row', bins_true.row[np.unique(where_diff[0])])
-                    print('col', bins_true.col[np.unique(where_diff[1])])
-                    print_array_non0(bins_true.mask[:10, :10]); print()
+                    print('row', bins_correct.row[np.unique(where_diff[0])])
+                    print('col', bins_correct.col[np.unique(where_diff[1])])
+                    print_array_non0(bins_correct.mask[:10, :10]); print()
                     print_array_non0(bins.mask[:10, :10]); print('\ndiff:')
-                    print_array_non0((bins_true.mask != bins.mask)[:10, :10])
+                    print_array_non0((bins_correct.mask != bins.mask)[:10, :10])
             else:
-                print(f"{bins_true.mask.shape=}, {bins.mask.shape=}... {bins_true.data.shape=}")
+                print(f"{bins_correct.mask.shape=}, {bins.mask.shape=}... {bins_correct.data.shape=}")
 
-            assert_array_equal(bins_true.mask, bins.mask)
+            assert_array_equal(bins_correct.mask, bins.mask)
         else:
-            assert bins_true.mask is None
+            assert bins_correct.mask is None
             assert bins.mask is None
 
-    assert bins_true == bins
+    assert bins_correct == bins
 
 
-def compare_counts_objects(counts, counts_true):
+def compare_counts_objects(counts, counts_correct):
     # Compare counts ndarrays
-    counts_true_arr = counts_true.tocoo().toarray()
+    counts_correct_arr = counts_correct.tocoo().toarray()
     counts_arr = counts.tocoo().toarray()
-    counts_true_non0 = np.invert(
-        np.isnan(counts_true_arr)) & (counts_true_arr != 0)
+    counts_correct_non0 = np.invert(
+        np.isnan(counts_correct_arr)) & (counts_correct_arr != 0)
     counts_non0 = np.invert(np.isnan(counts_arr)) & (counts_arr != 0)
-    assert_array_equal(counts_true_non0, counts_non0)
-    assert_array_almost_equal(counts_true_arr, counts_arr)
+    assert_array_equal(counts_correct_non0, counts_non0)
+    assert_array_almost_equal(counts_correct_arr, counts_arr)
 
     # Compare CountsBins objects
     print("COMPARING NONZERO BINS")
     compare_counts_bins_objects(
-        counts.bins_nonzero, bins_true=counts_true.bins_nonzero)
+        counts.bins_nonzero, bins_correct=counts_correct.bins_nonzero)
     print("COMPARING ZERO BINS")
     compare_counts_bins_objects(
-        counts.bins_zero, bins_true=counts_true.bins_zero)
+        counts.bins_zero, bins_correct=counts_correct.bins_zero)
 
     # Compare other attributes
-    assert counts_true == counts
+    assert counts_correct == counts
 
 
 @pytest.mark.parametrize(
@@ -134,7 +134,7 @@ def test_add_counts_haploid(multiscale_factor, beta):
     counts_sum_object = sum([counts_object1, counts_object2])
 
     compare_counts_objects(
-        counts_sum_object, counts_true=true_counts_sum_object)
+        counts_sum_object, counts_correct=true_counts_sum_object)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor,beta", [
@@ -183,7 +183,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
         counts_objects, lengths=lengths, ploidy=ploidy)
 
     compare_counts_objects(
-        counts_ambig_object, counts_true=true_counts_ambig_object)
+        counts_ambig_object, counts_correct=true_counts_ambig_object)
 
 
 def test_3d_indices_haploid():
@@ -244,15 +244,15 @@ def test_3d_indices_diploid_ambig():
         ambiguity="ambig", struct_nan=struct_nan, random_state=random_state,
         use_poisson=False)
 
-    row3d, col3d = counts_py._counts_indices_to_3d_indices(
+    row3d_test, col3d_test = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=True)
 
     n = lengths.sum()
-    row3d_true = np.concatenate([np.tile(counts.row, 2), np.tile(counts.row, 2) + n])
-    col3d_true = np.tile(np.concatenate([counts.col, counts.col + n]), 2)
-    assert_array_equal(row3d_true, row3d)
-    assert_array_equal(col3d_true, col3d)
+    row3d_correct = np.concatenate([np.tile(counts.row, 2), np.tile(counts.row, 2) + n])
+    col3d_correct = np.tile(np.concatenate([counts.col, counts.col + n]), 2)
+    assert_array_equal(row3d_correct, row3d_test)
+    assert_array_equal(col3d_correct, col3d_test)
 
 
 def test_3d_indices_diploid_partially_ambig():
@@ -269,15 +269,15 @@ def test_3d_indices_diploid_partially_ambig():
         ambiguity="pa", struct_nan=struct_nan, random_state=random_state,
         use_poisson=False)
 
-    row3d, col3d = counts_py._counts_indices_to_3d_indices(
+    row3d_test, col3d_test = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=True)
 
     n = lengths.sum()
-    row3d_true = np.tile(counts.row, 2)
-    col3d_true = np.concatenate([counts.col, counts.col + n])
-    assert_array_equal(row3d_true, row3d)
-    assert_array_equal(col3d_true, col3d)
+    row3d_correct = np.tile(counts.row, 2)
+    col3d_correct = np.concatenate([counts.col, counts.col + n])
+    assert_array_equal(row3d_correct, row3d_test)
+    assert_array_equal(col3d_correct, col3d_test)
 
 
 @pytest.mark.parametrize("ambiguity,use_bias", [

@@ -84,10 +84,10 @@ def test_gamma_poisson_nll(seed):
     tmp2 = - np.mean(gammaln(n))
     tmp3 = np.mean(data * np.log(1 - p))
     tmp4 = np.mean(n * np.log(p))
-    nll_true = - (tmp1 + tmp2 + tmp3 + tmp4)
+    nll_correct = - (tmp1 + tmp2 + tmp3 + tmp4)
 
     assert_array_almost_equal(nll, nll_scipy)
-    assert_array_almost_equal(nll, nll_true)
+    assert_array_almost_equal(nll, nll_correct)
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5])

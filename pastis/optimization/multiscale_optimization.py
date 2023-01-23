@@ -189,20 +189,20 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
         chrom_idx_lowres = np.arange(begin_lowres, end_lowres)[~nan_mask_lowres]
         chrom_idx_highres = np.arange(begin_highres, end_highres)
 
-        # Create highres beads
-        if (~nan_mask_lowres).sum() == 0:  # 0 non-NaN beads in lowres
+        # Create highres beads for this molecule
+        if (~nan_mask_lowres).sum() == 0:  # 0 non-NaN beads in lowres mol
             chrom_idx_highres = chrom_idx_highres[
                 ~np.isnan(chrom_idx_highres)].astype(int)
             random_chrom = random_state.uniform(
                 low=-1, high=1, size=(chrom_idx_highres.size, 3))
             struct_highres[chrom_idx_highres] = random_chrom
-        elif (~nan_mask_lowres).sum() == 1:  # Only 1 non-NaN bead in lowres
+        elif (~nan_mask_lowres).sum() == 1:  # Only 1 non-NaN bead in lowres mol
             chrom_idx_highres = chrom_idx_highres[
                 ~np.isnan(chrom_idx_highres)].astype(int)
             lowres_bead = struct[chrom_idx_lowres]
             struct_highres[chrom_idx_highres] = random_state.normal(
                 lowres_bead, 1, (chrom_idx_highres.size, 3))
-        else:  # Enough non-NaN beads in lowres to interpolate
+        else:  # There are enough non-NaN beads in lowres mol to interpolate
             struct_highres[chrom_idx_highres, 0] = interp1d(
                 x=chrom_xloc_lowres, y=struct[chrom_idx_lowres, 0],
                 kind="linear", fill_value="extrapolate")(chrom_idx_highres)
@@ -852,6 +852,8 @@ def get_epsilon_from_struct(structures, lengths, multiscale_factor,
 
     if multiscale_factor == 1:
         return None
+
+    # FIXME ploidy should be an arg here...
 
     structures = _format_structures(structures, mixture_coefs=mixture_coefs)
     struct_length = set([s.shape[0] for s in structures])

@@ -9,7 +9,7 @@ from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
 
 from .utils_poisson import find_beads_to_remove
-from .utils_poisson import _intra_counts, _inter_counts, _counts_near_diag
+from .utils_poisson import _intramol_counts, _intermol_counts, _counts_near_diag
 
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _group_counts_multiscale
@@ -213,15 +213,11 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
         raise ValueError("Counts must be ndarray or sparse.coo_matrix.")
     if counts.ndim != 2:
         raise ValueError(
-            f"Counts must be 2D matrix, current shape = ({counts.shape}).")
+            f"Counts must be 2D matrix, current shape = {counts.shape}.")
     if set(counts.shape) not in ({n}, {n * ploidy}, {n, n * ploidy}):
         raise ValueError(
-            f"Counts matrix shape ({counts.shape}) is not consistent with"
+            f"Counts matrix shape {counts.shape} is not consistent with"
             f" number of beads ({lengths.sum() * ploidy}).")
-    if chrom_subset_idx is not None and len(
-            chrom_subset_idx) / max(counts.shape) not in (1, 2):
-        raise ValueError(
-            f"{chrom_subset_idx.size=} does not match {counts.shape=}")
 
     if copy:
         counts = counts.copy()
@@ -262,14 +258,10 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
         counts = sparse.vstack([hmlg1, hmlg2])  # Vertical concat: (2n, n)
 
     if chrom_subset_idx is not None:
-        counts = counts.tocsr()[chrom_subset_idx, :]
-        counts = counts.tocsc()[:, chrom_subset_idx].tocoo()
-        # in_subset = np.isin(counts.row, chrom_subset_idx) & np.isin(  # TODO remove
-        #     counts.col, chrom_subset_idx)
-        # counts = sparse.coo_matrix(
-        #     (counts.data[in_subset], (
-        #         counts.row[in_subset], counts.col[in_subset])),
-        #     shape=counts.shape)
+        counts = counts.tocsr()[
+            chrom_subset_idx[chrom_subset_idx < counts.shape[0]], :]
+        counts = counts.tocsc()[
+            :, chrom_subset_idx[chrom_subset_idx < counts.shape[1]]].tocoo()
 
     counts = counts.tocsr()
     counts.sort_indices()
@@ -388,10 +380,10 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
                 c, lengths_at_res=lengths, ploidy=ploidy,
                 nbins=excluded_counts) for c in counts]
         elif excluded_counts.lower() == 'intra':
-            counts = [_inter_counts(
+            counts = [_intermol_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
         elif excluded_counts.lower() == 'inter':
-            counts = [_intra_counts(
+            counts = [_intramolecular_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
         else:
             raise ValueError(
@@ -476,6 +468,10 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
             counts_ambig, max_iter=300, output_bias=True)[1].flatten()
     elif bias is not None and verbose:
         print('USING USER-PROVIDED BIAS', flush=True)
+        if bias.size != lengths.sum():
+            raise ValueError("Bias size must be equal to the sum of the"
+                             f" chromosome lengths ({lengths.sum()}). It is of"
+                             f" size {bias.size}.")
 
     # In each counts matrix, zero out counts for which bias is NaN
     if bias is not None:

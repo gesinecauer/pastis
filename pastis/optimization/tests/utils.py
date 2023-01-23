@@ -200,6 +200,29 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
     if use_poisson:
         counts = random_state.poisson(counts)
 
+    counts = set_counts_ambiguity(
+        counts, lengths=lengths, ploidy=ploidy, ambiguity=ambiguity)
+
+    return remove_struct_nan_from_counts(
+        counts, lengths=lengths, struct_nan=struct_nan)
+
+
+def set_counts_ambiguity(counts, lengths, ploidy, ambiguity='ua'):
+    if ambiguity is None:
+        ambiguity = 'ua'
+    if ambiguity.lower() not in ('ua', 'ambig', 'pa'):
+        raise ValueError(f"Ambiguity not understood: {ambiguity}")
+
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    n = lengths.sum()
+
+    if counts.shape != (n * ploidy, n * ploidy):
+        raise ValueError("Inputted counts must be unambiguous, of"
+                         f" shape={(n * ploidy, n * ploidy)}.")
+
+    if sparse.issparse(counts):
+        counts = counts.toarray()
+
     if ploidy == 1 or ambiguity.lower() == 'ua':
         counts = np.triu(counts, 1)
     elif ambiguity.lower() == 'ambig':
@@ -211,20 +234,23 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
         np.fill_diagonal(counts[:n, :], 0)
         np.fill_diagonal(counts[n:, :], 0)
 
-    return remove_struct_nan_from_counts(
-        counts, lengths=lengths, struct_nan=struct_nan)
+    return sparse.coo_matrix(counts)
 
 
 def remove_struct_nan_from_counts(counts, lengths, struct_nan):
     if struct_nan is None or struct_nan.size == 0:
         return sparse.coo_matrix(counts)
 
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+
     if sparse.issparse(counts):
         counts = counts.toarray()
+
     struct_nan = struct_nan[struct_nan < lengths.sum()]
     struct_nan = np.append(struct_nan, struct_nan + lengths.sum())
     counts[struct_nan[struct_nan < counts.shape[0]], :] = 0
     counts[:, struct_nan[struct_nan < counts.shape[1]]] = 0
+
     return sparse.coo_matrix(counts)
 
 

@@ -77,8 +77,7 @@ def _euclidean_distance(struct, row, col):
 
 
 def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
-    """Prints a header, for demarcation of output.
-    """
+    """Prints a header, for demarcation of output."""
 
     if not verbose:
         return
@@ -123,9 +122,10 @@ def _load_infer_param(infer_param_file):
 
 def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,
                    piecewise_step=None, lengths=None):
-    """Returns subdirectory for inference output files.
-    """
+    """Returns subdirectory for inference output files."""
     from ..io.read import _get_chrom
+
+    raise NotImplementedError('update me?')
 
     if outdir is None:
         return None
@@ -135,7 +135,8 @@ def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,
 
     if chrom_subset is not None and chrom_full is not None:
         chrom_full = _get_chrom(chrom_full, lengths=lengths)
-        if len(chrom_subset) != len(chrom_full):
+        chrom_subset = _get_chrom(chrom_subset)
+        if chrom_subset.size != chrom_full.size:
             outdir = os.path.join(outdir, '.'.join(chrom_subset))
 
     if piecewise_step is not None:
@@ -156,8 +157,7 @@ def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,
 
 def _format_structures(structures, lengths=None, ploidy=None,
                        mixture_coefs=None):
-    """Reformats and checks shape of structures.
-    """
+    """Reformats and checks shape of structures."""
 
     # TODO this function was written by an idiot
 
@@ -234,7 +234,8 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
 
     from .multiscale_optimization import decrease_lengths_res
 
-    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
     n = lengths_lowres.sum()
     nbeads = n * ploidy
 
@@ -248,14 +249,12 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
         if set(c.shape) not in ({n}, {nbeads}, {nbeads, n}):
             raise ValueError(
                 "Resolution of counts is not consistent with lengths at"
-                f" multiscale_factor={multiscale_factor}. Counts={c.shape},"
+                f" {multiscale_factor=}... counts.shape={c.shape},"
                 f" {lengths_lowres.sum()=}.")
         axis0sum = np.tile(
-            np.array(c.sum(axis=0).flatten()).flatten(),
-            int(nbeads / c.shape[1]))
+            np.array(c.sum(axis=0).ravel()).ravel(), int(nbeads / c.shape[1]))
         axis1sum = np.tile(
-            np.array(c.sum(axis=1).flatten()).flatten(),
-            int(nbeads / c.shape[0]))
+            np.array(c.sum(axis=1).ravel()).ravel(), int(nbeads / c.shape[0]))
         inverse_struct_nan_mask += (axis0sum + axis1sum > threshold).astype(int)
 
     struct_nan_mask = ~inverse_struct_nan_mask.astype(bool)
@@ -264,46 +263,50 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
 
 
 def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
-                        random_state=None):
-    """Replace NaNs in structure via linear interpolation.
-    """
-
-    if random_state is None:
-        random_state = np.random.RandomState(seed=0)
-
-    if not np.isnan(struct).any():
-        return struct
+                        random_state=None, chromosomes=None):
+    """Replace empty (NaN) beads in structure via linear interpolation."""
+    from ..io.read import _get_chrom
 
     struct = struct.reshape(-1, 3)
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     if struct.shape[0] != lengths.sum() * ploidy:
-        raise ValueError("Structure shape inconsistent with nbeads")
+        raise ValueError(f"The structure must contain {lengths.sum() * ploidy}"
+                         f" beads. It contains {struct.shape[0]} beads.")
 
-    nan_chroms = []
+    if not np.isnan(struct).any():
+        return struct
+
+    chromosomes = _get_chrom(chromosomes, lengths=lengths)
+
+    if random_state is None:
+        random_state = np.random.RandomState(seed=0)
+
+    empty_chroms = {f"hmlg{i + 1}": [] for i in range(ploidy)}
     mask = np.invert(np.isnan(struct[:, 0]))
-    interp_struct = struct.copy()
+    struct_interp = struct.copy()
     begin, end = 0, 0
-    for j, length in enumerate(np.tile(lengths, ploidy)):
+    for i, length in enumerate(np.tile(lengths, ploidy)):
         end += length
         mask_chrom = mask[begin:end]
         if (~mask_chrom).sum() == 0:   # No NaN beads in molecule
             pass
-        elif mask_chrom.sum() <= 1:  # Only 0-1 non-NaN beads in molecule
+        elif mask_chrom.sum() == 0:  # 0 non-NaN beads in molecule
             random_chrom = random_state.uniform(
                 low=-1, high=1, size=((~mask_chrom).sum(), 3))
-            interp_struct[begin:end, :][~mask_chrom] = random_chrom
-            if mask_chrom.sum() == 0:
-                if ploidy == 1:
-                    nan_chroms.append(f'chr{j + 1:g}')
-                elif j < lengths.size:
-                    nan_chroms.append(f'chr{j + 1:g}_hmlg1')
-                else:
-                    nan_chroms.append(f'chr{j + 1 - lengths.size:g}_hmlg2')
-        else:
+            struct_interp[begin:end] = random_chrom
+            if i < lengths.size:
+                empty_chroms['hmlg1'].append(f'num{i + 1:g}')
+            else:
+                empty_chroms['hmlg2'].append(f'num{i + 1 - lengths.size:g}')
+        elif mask_chrom.sum() == 1:  # Only 0-1 non-NaN beads in molecule
+            struct_interp[begin:end][~mask_chrom] = random_state.normal(
+                struct_interp[begin:end][mask_chrom], 1,
+                ((~mask_chrom).sum(), 3))
+        else:  # There are enough non-NaN beads in molecule to interpolate
             idx_orig = np.arange(length)[mask_chrom]
             idx_interp = np.arange(length)
-            interp_chrom = np.full_like(struct[begin:end, :], np.nan)
+            interp_chrom = np.full_like(struct[begin:end], np.nan)
             interp_chrom[idx_interp, 0] = interp1d(
                 idx_orig, struct[begin:end, 0][mask_chrom], kind=kind,
                 fill_value="extrapolate")(idx_interp)
@@ -313,26 +316,30 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
             interp_chrom[idx_interp, 2] = interp1d(
                 idx_orig, struct[begin:end, 2][mask_chrom], kind=kind,
                 fill_value="extrapolate")(idx_interp)
-            interp_struct[begin:end, :] = interp_chrom
+            struct_interp[begin:end] = interp_chrom
         begin = end
 
-    if len(nan_chroms) != 0:
-        warnings.warn(
-            'The following chromosomes were all NaN: ' + ' '.join(nan_chroms))
+    if any([len(x) != 0 for x in empty_chroms.values()]):
+        if ploidy == 1 or set(empty_chroms['hmlg1']) == set(
+                empty_chroms['hmlg2']):
+            warnings.warn("All beads in the following chromosomes were NaN:"
+                          " " + ', '.join(empty_chroms['hmlg1']))
+        else:
+            warnings.warn("All beads in the following molecules were NaN:"
+                          f"\nHomolog1: {', '.join(empty_chroms['hmlg1'])}"
+                          f"\nHomolog2: {', '.join(empty_chroms['hmlg2'])}")
 
-    return(interp_struct)
+    return struct_interp
 
 
 def relu_min(x1, x2):
-    # TODO this is temporary, remove this and switch to jax_min
-    # returns min(x1, x2)
+    """Returns min(x1, x2), jax-compatible."""
     return - (relu((-x1) - (-x2)) + (-x2))
 
 
 def relu_max(x1, x2):
-    # TODO this is temporary, remove this and switch to jax_max
-    # returns max(x1, x2)
-    return (relu((x1) - (x2)) + (x2))
+    """Returns max(x1, x2), jax-compatible."""
+    return relu(x1 - x2) + x2
 
 
 @custom_jvp
@@ -368,6 +375,39 @@ jax_max.defjvps(
     lambda g2, ans, x1, x2: lax.select(x1 < x2, g2, lax.full_like(g2, 0)))
 
 
+@custom_jvp
+def jax_min(x1: Array, x2: Array) -> Array:
+    """Element-wise minimum of array elements.
+
+    Compare two arrays and returns a new array containing the element-wise
+    minima. If one of the elements being compared is a NaN, then that element is
+    returned. If both elements are NaNs then the first is returned. The latter
+    distinction is important for complex NaNs, which are defined as at least one
+    of the real or imaginary parts being a NaN. The net effect is that NaNs are
+    propagated.
+
+    Parameters
+    ----------
+    x1,x2 : array-like
+        The arrays holding the elements to be compared. If `x1.shape !=
+        x2.shape`, they must be broadcastable to a common shape (which becomes
+        the shape of the output).
+
+    Returns
+    -------
+    obj : array or scalar
+        The minimum of x1 and x2, element-wise. This is a scalar if both x1 and
+        x2 are scalars.
+    """
+    return jnp.minimum(x1, x2)
+
+
+# FIXME double check this
+jax_min.defjvps(
+    lambda g1, ans, x1, x2: lax.select(x1 < x2, g1, lax.full_like(g1, 0)),
+    lambda g2, ans, x1, x2: lax.select(x1 > x2, g2, lax.full_like(g2, 0)))
+
+
 def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
     """Return lengths, names, and indices for selected chromosomes only.
 
@@ -400,23 +440,36 @@ def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
         `lengths_full.sum() * ploidy`.
     """
 
-    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=int).ravel()
     lengths_full = np.array(
         lengths_full, copy=False, ndmin=1, dtype=int).ravel()
+    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=str).ravel()
+
+    if chrom_full.size != np.unique(chrom_full).size:
+        raise ValueError("Chromosome names may not contain duplicates.")
+    if chrom_full.size != lengths_full.size:
+        raise ValueError(
+            f"Size of chromosome names ({chrom_full.size}) does not"
+            f"match size of chromosome lengths ({lengths_full.size}).")
 
     if chrom_subset is None:
         chrom_subset = chrom_full.copy()
     else:
-        if not isinstance(chrom_subset, np.ndarray) or chrom_subset.shape == ():
-            chrom_subset = np.array([chrom_subset]).flatten()
-        missing_chrom = [x for x in chrom_subset if x not in chrom_full]
-        if len(missing_chrom) > 0:
-            raise ValueError("Chromosomes to be subsetted (%s) are not in full"
-                             " list of chromosomes (%s)" %
-                             (','.join(missing_chrom), ','.join(chrom_full)))
-        # Make sure chrom_subset is sorted properly
         chrom_subset = np.array(
-            [chrom for chrom in chrom_full if chrom in chrom_subset])
+            chrom_subset, copy=False, ndmin=1, dtype=str).ravel()
+
+        if chrom_subset.size != np.unique(chrom_subset).size:
+            raise ValueError(
+                "List of chromosomes to subset may not contain duplicates.")
+        missing_chrom = chrom_subset[~np.isin(chrom_subset, chrom_full)]
+        if missing_chrom.size > 0:
+            raise ValueError(
+                f"Chromosomes to be subsetted ({', '.join(missing_chrom)}) are"
+                f" not in full list of chromosomes ({', '.join(chrom_full)}).")
+        if chrom_subset.size == 0:
+            raise ValueError(f"No chromosomes selected, {chrom_subset.size=}.")
+
+        # Make sure chrom_subset is sorted properly
+        chrom_subset = chrom_full[np.isin(chrom_full, chrom_subset)]
 
     if np.array_equal(chrom_subset, chrom_full):
         # Not subsetting chrom
@@ -459,7 +512,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     structures : array or list of array, optional
         Structure(s) with all chromosomes.
 
-    Returns
+    Returns  TODO update
     -------
     lengths_subset : array of int
         Number of beads per homolog of each chromosome in the subsetted data
@@ -477,9 +530,24 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
 
     from .counts import check_counts
 
-    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=int).ravel()
     lengths_full = np.array(
         lengths_full, copy=False, ndmin=1, dtype=int).ravel()
+    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=str).ravel()
+
+    if bias is not None and bias.size != lengths_full.sum():
+        raise ValueError("Bias size must be equal to the sum of the chromosome "
+                         f"lengths ({lengths_full.sum()}). It is of size"
+                         f" {bias.size}.")
+    if structures is not None:
+        if isinstance(structures, list):
+            struct_list = structures
+        else:
+            struct_list = [structures]
+        for i in range(len(struct_list)):
+            if struct_list[i].size != lengths_full.sum() * ploidy * 3:
+                raise ValueError(
+                    f"Structure shape {struct_list[i].shape} is inconsistent"
+                    f" with number of beads ({lengths_full.sum() * ploidy}).")
 
     lengths_subset, chrom_subset, subset_idx = subset_chromosomes(
         lengths_full=lengths_full, chrom_full=chrom_full,
@@ -494,7 +562,7 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
             chrom_subset_idx=subset_idx)
 
     if subset_idx is not None and bias is not None:
-        bias = bias[subset_idx]
+        bias = bias[subset_idx[subset_idx < bias.size]]
 
     if subset_idx is not None and structures is not None:
         if isinstance(structures, list):
@@ -507,9 +575,8 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     return lengths_subset, chrom_subset, data_subset
 
 
-def _intra_mask(data, lengths_at_res):
-    """Return mask of intra-chromosomal rows/cols for given counts/dis data.  # TODO move to counts.py??
-    """
+def _intramol_mask(data, lengths_at_res):
+    """Get mask of intra-molecular row/col for given counts/distance data."""
 
     if (isinstance(data, (tuple, list)) and len(data) == 2) or (
             isinstance(data, np.ndarray) and data.size == 2):
@@ -520,7 +587,14 @@ def _intra_mask(data, lengths_at_res):
         col = data.col
         shape = data.shape
 
-    if lengths_at_res.size == 1:  # Only one chromosome, all bins are intra
+    n = lengths_at_res.sum()
+    if set(shape) not in ({n}, {n * 2}, {n, n * 2}):
+        raise ValueError(
+            f"Counts matrix shape {shape} is not consistent with"
+            f" number of beads ({lengths_at_res.sum()=}).")
+
+    # If only one chromosome, all bins are intra
+    if lengths_at_res.size == 1 and set(shape) == {n}:
         return np.full(row.size, True)
 
     bins_for_row = np.tile(
@@ -539,8 +613,7 @@ def _intra_mask(data, lengths_at_res):
 
 
 def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
-    """Return masked counts.  # TODO move to counts.py
-    """
+    """Set counts outside the given section to zero."""  # TODO move to counts.py
     from .counts import _check_counts_matrix
 
     sections = sections.lower()
@@ -552,7 +625,7 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
 
     counts = _check_counts_matrix(counts, lengths=lengths_at_res, ploidy=ploidy)
 
-    mask_intra = _intra_mask(counts, lengths_at_res)
+    mask_intra = _intramol_mask(counts, lengths_at_res=lengths_at_res)
     if sections == 'intra':
         mask = mask_intra
     elif sections == 'inter':
@@ -590,25 +663,22 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
         shape=counts.shape)
 
 
-def _intra_counts(counts, lengths_at_res, ploidy):
-    """Return intra-chromosomal counts.  # TODO move to counts.py
-    """
+def _intramol_counts(counts, lengths_at_res, ploidy):
+    """Return intra-molecular counts."""  # TODO move to counts.py
     return _get_counts_sections(
         counts=counts, sections='intra', lengths_at_res=lengths_at_res,
         ploidy=ploidy)
 
 
-def _inter_counts(counts, lengths_at_res, ploidy):
-    """Return inter-chromosomal counts.  # TODO move to counts.py
-    """
+def _intermol_counts(counts, lengths_at_res, ploidy):
+    """Return inter-molecular counts."""  # TODO move to counts.py
     return _get_counts_sections(
         counts=counts, sections='inter', lengths_at_res=lengths_at_res,
         ploidy=ploidy)
 
 
 def _counts_near_diag(counts, lengths_at_res, ploidy, nbins):
-    """Return intra-chromosomal counts within `nbins` of diagonal.  # TODO move to counts.py
-    """
+    """Return intra-molecular counts within nbins of diagonal."""  # TODO move to counts.py
     return _get_counts_sections(
         counts=counts, sections='near diag', lengths_at_res=lengths_at_res,
         ploidy=ploidy, nbins=nbins)

@@ -487,8 +487,8 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
         raise ValueError("X.shape[0] should be divisible by the length of"
                          f" mixture_coefs, {num_mix}. {X.shape=}")
     if nbeads is not None and nbeads_ != nbeads:
-        raise ValueError(f"Structures must be of length {nbeads}. They are"
-                         f" of length {nbeads_}.")
+        raise ValueError(f"Structures must contain {nbeads}"
+                         f" beads. They contain {nbeads_} beads.")
     X = [X[i * nbeads_:(i + 1) * nbeads_] for i in range(num_mix)]
 
     return X, epsilon, mixture_coefs

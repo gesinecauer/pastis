@@ -8,12 +8,11 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
+    from pastis.optimization.utils_poisson import _setup_jax
+    _setup_jax(debug_nan_inf=False)  # FIXME TODO should be True
+
     from utils import get_counts, get_struct_randwalk, get_true_data_interchrom
     from utils import decrease_struct_res_correct
-
-    from pastis.optimization.utils_poisson import _setup_jax
-    _setup_jax(debug_nan_inf=True)  # FIXME TODO
-
     from pastis.optimization import pastis_algorithms
     from pastis.optimization.constraints import _inter_homolog_dis
     from pastis.optimization.constraints import _neighboring_bead_indices
@@ -30,17 +29,17 @@ def compare_nghbr_dis(lengths, ploidy, multiscale_factor, struct_true,
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    nghbr_dis_true = paired_distances(
+    nghbr_dis_correct = paired_distances(
         struct_true_lowres[row_nghbr], struct_true_lowres[row_nghbr + 1])
     nghbr_dis_ = paired_distances(
         struct_infer[row_nghbr], struct_infer[row_nghbr + 1])
-    print(f"{np.median(nghbr_dis_true)=:g}    {np.median(nghbr_dis_)=:g}")
-    print(f"{nghbr_dis_true.mean()=:g}    {nghbr_dis_.mean()=:g}")
-    print(f"{nghbr_dis_true.var()=:g}    {nghbr_dis_.var()=:g}")
+    print(f"{np.median(nghbr_dis_correct)=:g}    {np.median(nghbr_dis_)=:g}")
+    print(f"{nghbr_dis_correct.mean()=:g}    {nghbr_dis_.mean()=:g}")
+    print(f"{nghbr_dis_correct.var()=:g}    {nghbr_dis_.var()=:g}")
     assert_array_almost_equal(
-        nghbr_dis_true.mean(), nghbr_dis_.mean(), decimal=mean_decimal)
+        nghbr_dis_correct.mean(), nghbr_dis_.mean(), decimal=mean_decimal)
     assert_array_almost_equal(
-        nghbr_dis_true.var(), nghbr_dis_.var(), decimal=var_decimal)
+        nghbr_dis_correct.var(), nghbr_dis_.var(), decimal=var_decimal)
 
 
 def compare_hmlg_dis(lengths, ploidy, multiscale_factor, struct_true,
@@ -52,17 +51,18 @@ def compare_hmlg_dis(lengths, ploidy, multiscale_factor, struct_true,
     n = decrease_lengths_res(
         lengths, multiscale_factor=multiscale_factor).sum()
     mask = np.isfinite(struct_infer[:n, 0]) & np.isfinite(struct_infer[n:, 0])
-    dis_interhmlg_true = euclidean_distances(
+    dis_interhmlg_correct = euclidean_distances(
         struct_true_lowres[:n][mask], struct_true_lowres[n:][mask])
     dis_interhmlg_ = euclidean_distances(
         struct_infer[:n][mask], struct_infer[n:][mask])
-    print(f"{np.median(dis_interhmlg_true)=:g}    {np.median(dis_interhmlg_)=:g}")
-    print(f"{dis_interhmlg_true.mean()=:g}    {dis_interhmlg_.mean()=:g}")
-    print(f"{dis_interhmlg_true.var()=:g}    {dis_interhmlg_.var()=:g}")
+    print(f"{np.median(dis_interhmlg_correct)=:g}    {np.median(dis_interhmlg_)=:g}")
+    print(f"{dis_interhmlg_correct.mean()=:g}    {dis_interhmlg_.mean()=:g}")
+    print(f"{dis_interhmlg_correct.var()=:g}    {dis_interhmlg_.var()=:g}")
     assert_array_almost_equal(
-        dis_interhmlg_true.mean(), dis_interhmlg_.mean(), decimal=mean_decimal)
+        dis_interhmlg_correct.mean(), dis_interhmlg_.mean(),
+        decimal=mean_decimal)
     assert_array_almost_equal(
-        dis_interhmlg_true.var(), dis_interhmlg_.var(), decimal=var_decimal)
+        dis_interhmlg_correct.var(), dis_interhmlg_.var(), decimal=var_decimal)
 
 
 @pytest.mark.parametrize("multiscale_factor,multiscale_reform", [

@@ -8,15 +8,15 @@ from ...optimization.counts import _prep_counts, _check_counts_matrix
 
 
 def _get_lengths(lengths):
-    """Load chromosome lengths from file, or reformat lengths object.
-    """
+    """Parse chromosome lengths, load from file if necessary."""
 
     if lengths is None:
-        raise ValueError("Must input chromosome lengths")
+        raise ValueError("Must input chromosome lengths.")
     if isinstance(lengths, str) and os.path.exists(lengths):
         lengths = load_lengths(lengths)
     elif isinstance(lengths, (list, np.ndarray)):
-        if len(lengths) == 1 and isinstance(lengths[0], str) and os.path.exists(
+        lengths = np.asarray(lengths)
+        if lengths.size == 1 and isinstance(lengths[0], str) and os.path.exists(
                 lengths[0]):
             lengths = load_lengths(lengths[0])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
@@ -24,7 +24,7 @@ def _get_lengths(lengths):
 
 
 def _get_bias(bias, lengths):
-    """Load bias from file, or reformat lengths object."""
+    """Parse bias, load from file if necessary."""
 
     if bias is None:
         return None
@@ -32,10 +32,12 @@ def _get_bias(bias, lengths):
     if isinstance(bias, str) and os.path.exists(bias):
         bias = np.loadtxt(bias)
     elif isinstance(bias, (list, np.ndarray)):
-        if len(bias) == 1 and isinstance(bias[0], str) and os.path.exists(
+        bias = np.asarray(bias)
+        if bias.size == 1 and isinstance(bias[0], str) and os.path.exists(
                 bias[0]):
             bias = np.loadtxt(bias[0])
-    bias = np.array(bias, dtype=float, ndmin=1, copy=False).flatten()
+    bias = np.array(bias, copy=False, ndmin=1, dtype=float).ravel()
+
     if bias.size != lengths.sum():
         raise ValueError("Bias size must be equal to the sum of the chromosome "
                          f"lengths ({lengths.sum()}). It is of size"
@@ -43,28 +45,59 @@ def _get_bias(bias, lengths):
     return bias
 
 
+def _get_struct(struct, lengths, ploidy):
+    """Parse structure, load from file if necessary."""
+
+    if struct is None:
+        return None
+    lengths = _get_lengths(lengths)
+    if isinstance(struct, str) and os.path.exists(struct):
+        struct = np.loadtxt(struct)
+    elif isinstance(struct, (list, np.ndarray)):
+        struct = np.asarray(struct)
+        if struct.size == 1 and isinstance(struct[0], str) and os.path.exists(
+                struct[0]):
+            struct = np.loadtxt(struct[0])
+    struct = np.array(struct, copy=False, dtype=float)
+
+    try:
+        struct = struct.reshape(-1, 3)
+    except ValueError:
+        raise ValueError("Structure should be composed of 3D bead coordinates,"
+                         f" {struct.shape=}")
+    if struct.shape[0] != lengths.sum() * ploidy:
+        raise ValueError(f"The structure must contain {lengths.sum() * ploidy}"
+                         f" beads. It contains {struct.shape[0]} beads.")
+    return struct
+
+
 def _get_chrom(chrom, lengths=None):
-    """Load chromosome names from file, or reformat chromosome names object.
-    """
+    """Parse chromosome names, load from file if necessary."""
 
     if isinstance(chrom, str) and os.path.exists(chrom):
         chrom = np.loadtxt(chrom, dtype='str')
     elif chrom is not None and isinstance(chrom, (list, np.ndarray)):
-        if len(chrom) == 1 and isinstance(chrom[0], str) and os.path.exists(
+        chrom = np.asarray(chrom)
+        if chrom.size == 1 and isinstance(chrom[0], str) and os.path.exists(
                 chrom[0]):
             chrom = np.loadtxt(chrom[0], dtype='str')
-        chrom = np.array(chrom, dtype=str, ndmin=1, copy=False).flatten()
-    else:
+    else:  # Create chromosome names: num1, num2, num3... etc
         if lengths is None:
             raise ValueError("Must supply chromosome lengths")
         lengths = _get_lengths(lengths)
         chrom = np.array([f'num{i}' for i in range(1, lengths.size + 1)])
+    chrom = np.array(chrom, copy=False, ndmin=1, dtype=str).ravel()
+
+    if chrom.size != np.unique(chrom).size:
+        raise ValueError("Chromosome names may not contain duplicates.")
+    if lengths is not None and chrom.size != lengths.size:
+        raise ValueError(f"Size of chromosome names ({chrom.size}) does not"
+                         f"match size of chromosome lengths ({lengths.size}).")
     return chrom
 
 
 def _get_counts(counts, lengths, ploidy):
-    """Load counts from file, or reformat counts object.
-    """
+    """Parse counts matrix, load from file if necessary."""
 
     if not isinstance(counts, list):
         counts = [counts]
@@ -78,9 +111,9 @@ def _get_counts(counts, lengths, ploidy):
         elif counts[i].endswith(".matrix") or counts[i].endswith(".matrix.gz"):
             counts[i] = load_hiclib_counts(counts[i], lengths=lengths)
         else:
-            raise ValueError(
-                "Counts must be saved as a numpy binary file (.npy/.npz) or"
-                " a hiclib file (.matrix/.matrix.gz).")
+            raise ValueError(  # TODO ask Nelle about this...
+                "Counts must be saved as a numpy matrix in binary file format"
+                " (.npy/.npz) or as a hiclib file (.matrix/.matrix.gz).")
 
         counts[i] = _check_counts_matrix(
             counts[i], lengths=lengths, ploidy=ploidy, copy=False)
@@ -141,10 +174,11 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     # Load
     lengths_full = _get_lengths(lengths_full)
     chrom_full = _get_chrom(chrom_full, lengths=lengths_full)
+    if chrom_subset is not None:
+        chrom_subset = _get_chrom(chrom_subset)
     counts = _get_counts(counts, lengths=lengths_full, ploidy=ploidy)
     bias = _get_bias(bias, lengths=lengths_full)
-    if struct_true is not None and isinstance(struct_true, str):
-        struct_true = np.loadtxt(struct_true).reshape(-1, 3)
+    struct_true = _get_struct(struct_true, lengths=lengths, ploidy=ploidy)
 
     # Optionally limit the data to the specified chromosomes
     lengths_subset, chrom_subset, data_subset = subset_chrom_of_data(
