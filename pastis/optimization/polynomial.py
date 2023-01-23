@@ -7,7 +7,7 @@ if sys.version_info[0] < 3:
 from .utils_poisson import _setup_jax
 _setup_jax()
 import jax.numpy as jnp
-from .utils_poisson import relu_min, relu_max
+from .utils_poisson import jax_min, jax_max
 
 
 def _polyval(x, c, unroll=128):
@@ -51,9 +51,8 @@ def _approx_ln_f(dis, epsilon, alpha, inferring_alpha=False,
     """TODO"""
 
     epsilon_over_dis = epsilon / dis
-    # TODO temp, verify jax_min, jax_max
-    epsilon_over_dis = relu_max(epsilon_over_dis, min_epsilon_over_dis)
-    epsilon_over_dis = relu_min(epsilon_over_dis, max_epsilon_over_dis)
+    epsilon_over_dis = jax_max(epsilon_over_dis, min_epsilon_over_dis)
+    epsilon_over_dis = jax_min(epsilon_over_dis, max_epsilon_over_dis)
 
     epsilon_over_dis = jnp.log(epsilon_over_dis)
 

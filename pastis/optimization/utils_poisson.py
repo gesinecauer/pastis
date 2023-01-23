@@ -331,16 +331,6 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
     return struct_interp
 
 
-def relu_min(x1, x2):
-    """Returns min(x1, x2), jax-compatible."""
-    return - (relu((-x1) - (-x2)) + (-x2))
-
-
-def relu_max(x1, x2):
-    """Returns max(x1, x2), jax-compatible."""
-    return relu(x1 - x2) + x2
-
-
 @custom_jvp
 @jax.jit
 def jax_max(x1: Array, x2: Array) -> Array:
