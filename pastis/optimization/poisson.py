@@ -12,10 +12,9 @@ from jax import grad
 from scipy import optimize
 import warnings
 from timeit import default_timer as timer
-from datetime import timedelta
 
 from .multiscale_optimization import decrease_lengths_res
-from .utils_poisson import _print_code_header, _euclidean_distance
+from .utils_poisson import _euclidean_distance
 from .polynomial import _approx_ln_f
 from .likelihoods import gamma_poisson_nll, poisson_nll
 
@@ -265,9 +264,9 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
         raise ValueError(f"Counts weight may not be {counts.weight}.")
 
     if mixture_coefs is not None and len(structures) != len(mixture_coefs):
-        raise ValueError("The number of structures (%d) and of mixture"
-                         " coefficents (%d) should be identical." %
-                         (len(structures), len(mixture_coefs)))
+        raise ValueError(
+            f"The number of structures ({len(structures)}) and of mixture"
+            f" coefficents ({len(mixture_coefs)}) should be identical.")
     elif mixture_coefs is None:
         mixture_coefs = [1.]
 
@@ -894,17 +893,9 @@ class PastisPM(object):
 
         from .estimate_alpha_beta import _estimate_beta
 
-        if (self.multiscale_factor > 1 and self.multiscale_reform):
-            X_ = np.append(self.X_.ravel(), self.epsilon)
-        else:
-            X_ = self.X_.ravel()
-
         beta_new = _estimate_beta(
-            X_, self.counts, alpha=self.alpha_,
+            self.X_.ravel(), self.counts, alpha=self.alpha_,
             lengths=self.lengths, ploidy=self.ploidy, bias=self.bias,
-            multiscale_factor=self.multiscale_factor,
-            multiscale_variances=self.multiscale_variances,
-            multiscale_reform=self.multiscale_reform,
             mixture_coefs=self.mixture_coefs,
             reorienter=self.reorienter, verbose=self.verbose)
         if update_counts:
@@ -914,11 +905,6 @@ class PastisPM(object):
     def fit_structure(self, alpha_loop=None):
         """Fit structure to counts data, given current alpha.
         """
-
-        # if alpha_loop is not None:
-        #     _print_code_header([
-        #         "Jointly inferring structure & alpha",
-        #         f"Inferring STRUCTURE #{alpha_loop}"], max_length=50)
 
         time_start = timer()
         self.X_, self.obj_, self.converged_, self.history_, self.conv_desc_ = estimate_X(
@@ -969,10 +955,9 @@ class PastisPM(object):
 
         from .estimate_alpha_beta import estimate_alpha
 
-        # if alpha_loop is not None:
-        #     _print_code_header([
-        #         "Jointly inferring structure & alpha",
-        #         f"Inferring ALPHA #{alpha_loop}"], max_length=50)
+        if self.multiscale_factor > 1:
+            raise ValueError(
+                "Alpha can only be inferred using full-resolution structures.")
 
         time_start = timer()
         self.alpha_, self.alpha_obj_, self.alpha_converged_, self.history_, self.conv_desc_ = estimate_alpha(
@@ -983,9 +968,6 @@ class PastisPM(object):
             ploidy=self.ploidy,
             bias=self.bias,
             constraints=self.constraints,
-            multiscale_factor=self.multiscale_factor,
-            multiscale_variances=self.multiscale_variances,
-            epsilon=self.epsilon_,
             random_state=None,
             max_iter=self.max_iter,
             factr=self.factr,
