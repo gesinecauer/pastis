@@ -219,8 +219,8 @@ def test_get_epsilon_from_struct(multiscale_factor):
     #     multiscale_var_correct)
 
     epsilon_test = multiscale_optimization.get_epsilon_from_struct(
-        struct, lengths=lengths, multiscale_factor=multiscale_factor,
-        replace_nan=False, verbose=False)
+        struct, lengths=lengths, ploidy=ploidy,
+        multiscale_factor=multiscale_factor, replace_nan=False, verbose=False)
 
     assert_array_almost_equal(epsilon_correct, epsilon_test)
 

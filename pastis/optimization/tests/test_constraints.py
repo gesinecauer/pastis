@@ -160,8 +160,8 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
         epsilon_true = None
     else:
         epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
-            verbose=False))
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False))
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
@@ -236,8 +236,8 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
         epsilon_true = None
     else:
         epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
-            verbose=False))
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False))
 
     constraint = constraints.prep_constraints(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,

@@ -148,8 +148,8 @@ def test_objective_multires(ambiguity, multiscale_factor):
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
         epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
-            verbose=False))
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False))
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -194,8 +194,8 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
         epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
-            verbose=False))
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False))
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -238,8 +238,8 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
         epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
-            verbose=False))
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False))
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -294,8 +294,8 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
         epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
-            verbose=False))
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False))
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -339,8 +339,8 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
         epsilon_true = np.mean(get_epsilon_from_struct(
-            struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
-            verbose=False))
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor, verbose=False))
     else:
         epsilon_true = None
         bias = decrease_bias_res(
@@ -372,7 +372,7 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
 #         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
 #         ploidy=ploidy)
 #     epsilon_true = np.mean(get_epsilon_from_struct(
-#         struct_true, lengths=lengths, multiscale_factor=multiscale_factor,
+#         struct_true, lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
 #         verbose=False))
 
 #     # Unbiased counts & objective

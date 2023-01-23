@@ -777,7 +777,7 @@ def _var3d(struct_grouped, replace_nan=True):
 #     """
 
 #     from scipy.stats import norm, mode
-#     #import plotille  # FIXME
+#     #import plotille  # TODO
 #     #from topsy.datasets.samples_generator import get_diff_coords_from_euc_dis
 
 #     # dis_grouped.shape = (multiscale_factor ** 2, nbins)
@@ -820,7 +820,7 @@ def _var3d(struct_grouped, replace_nan=True):
 #     return stddev
 
 
-def get_epsilon_from_struct(structures, lengths, multiscale_factor,
+def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
                             mixture_coefs=None, replace_nan=True, verbose=True):
     """Compute multiscale epsilon from full-res structure.
 
@@ -836,14 +836,16 @@ def get_epsilon_from_struct(structures, lengths, multiscale_factor,
         3D chromatin structure(s) at full resolution.
     lengths : array_like of int
         Number of beads per homolog of each chromosome at full resolution.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 does not change the resolution.
 
     Returns
     -------
-    array of float
-        Multiscale variances: for each low-resolution bead, the variances of the
+    epsilon_per_bead : array of float
+        Multiscale epsilons: for each low-resolution bead, the epsilon of the
         distances between all high-resolution beads that correspond to that
         low-resolution bead.
     """
@@ -853,19 +855,8 @@ def get_epsilon_from_struct(structures, lengths, multiscale_factor,
     if multiscale_factor == 1:
         return None
 
-    # FIXME ploidy should be an arg here...
-
-    structures = _format_structures(structures, mixture_coefs=mixture_coefs)
-    struct_length = set([s.shape[0] for s in structures])
-    if len(struct_length) > 1:
-        raise ValueError("Structures are of different shapes.")
-    else:
-        struct_length = struct_length.pop()
-    if struct_length / lengths.sum() not in (1, 2):
-        raise ValueError("Structures do not appear to be haploid or diploid.")
-    ploidy = int(struct_length / lengths.sum())
-    structures = _format_structures(structures, lengths=lengths,
-                                    ploidy=ploidy, mixture_coefs=mixture_coefs)
+    structures = _format_structures(
+        structures, lengths=lengths, ploidy=ploidy, mixture_coefs=mixture_coefs)
 
     multiscale_variances = []
     for struct in structures:
@@ -876,14 +867,13 @@ def get_epsilon_from_struct(structures, lengths, multiscale_factor,
             _var3d(struct_grouped, replace_nan=replace_nan))
     multiscale_variances = np.mean(multiscale_variances, axis=0)  # ie >1 struct
 
-    multiscale_epsilon = np.sqrt(multiscale_variances * 2 / 3)
+    epsilon_per_bead = np.sqrt(multiscale_variances * 2 / 3)
 
     if verbose:
         print(f"MULTISCALE EPSILON ({multiscale_factor}x):"
-              f" {np.mean(multiscale_epsilon):.3g}", flush=True)
+              f" {np.mean(epsilon_per_bead):.3g}", flush=True)
 
-    return multiscale_epsilon
-
+    return epsilon_per_bead
 
 
 # def get_epsilon_from_struct_old(structures, lengths, multiscale_factor,
@@ -949,7 +939,7 @@ def get_epsilon_from_struct(structures, lengths, multiscale_factor,
 #         else:
 #             mean_coords = np.nanmean(struct_group, axis=0)
 #             diff = struct_group - mean_coords
-#             diff *= 2  # FIXME IS THIS CORRECT?
+#             diff *= 2  # TODO IS THIS CORRECT?
 #             diff = diff[~np.isnan(diff[:, 0])]
 #             all_diff.append(diff)
 #             mu, stddev = norm.fit(diff)

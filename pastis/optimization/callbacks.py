@@ -185,7 +185,7 @@ class Callback(object):
             struct_true = struct_true.reshape(-1, 3)
             if multiscale_factor != 1 and multiscale_reform:
                 epsilon_per_bead_true = get_epsilon_from_struct(
-                    struct_true, lengths=lengths,
+                    struct_true, lengths=lengths, ploidy=ploidy,
                     multiscale_factor=multiscale_factor, verbose=False)
                 # if stretch_fullres_beads is not None:
                 #     eps_types = get_eps_types(stretch_fullres_beads)
