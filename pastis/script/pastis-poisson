@@ -126,8 +126,6 @@ parser.add_argument("--struct_true", type=str, default=None,
 parser.add_argument("--init", default="mds", type=str, help=argparse.SUPPRESS)
 parser.add_argument("--input_weight", default=None, nargs="+", type=float,
                     help=argparse.SUPPRESS)
-parser.add_argument('--no_multiscale_variance', dest='use_multiscale_variance',
-                    default=True, action='store_false', help=argparse.SUPPRESS)
 parser.add_argument('--exclude_zeros', default=False,
                     action='store_true', help=argparse.SUPPRESS)
 parser.add_argument('--null', dest='null', default=False,

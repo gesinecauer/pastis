@@ -409,7 +409,7 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
                     seed=0, normalize=True, filter_threshold=0.04,
                     chrom_subset=None,
                     alpha_init=-3., max_alpha_loop=20, beta=None,
-                    multiscale_rounds=1, use_multiscale_variance=True,
+                    multiscale_rounds=1,
                     max_iter=1e40, factr=1e7, pgtol=1e-05,
                     alpha_factr=1e12, bcc_lambda=0., hsc_lambda=0.,
                     est_hmlg_sep=None, hsc_min_beads=5, mhs_lambda=0., mhs_k=None,
@@ -457,19 +457,14 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
     step3_multiscale = multiscale_rounds > 1 and 3 in piecewise_step and \
         piecewise_step3_multiscale
     infer_draft_lowres = hsc_lambda > 0 and est_hmlg_sep is None
-    need_multiscale_var = use_multiscale_variance and (
-        step1_multiscale or step2_multiscale or step3_multiscale or
-        infer_draft_lowres)
-    infer_draft_fullres = need_multiscale_var or alpha is None
 
-    if infer_draft_fullres or infer_draft_lowres:
-        struct_draft_fullres, alpha_, beta_, est_hmlg_sep, draft_converged = _infer_draft(
+    if infer_draft_lowres:
+        alpha_, beta_, est_hmlg_sep, draft_converged = _infer_draft(
             counts_raw, lengths=lengths, ploidy=ploidy, outdir=outdir,
             alpha=alpha, seed=seed, normalize=normalize,
             filter_threshold=filter_threshold, alpha_init=alpha_init,
             max_alpha_loop=max_alpha_loop, beta=beta, multiscale_rounds=2,
-            use_multiscale_variance=use_multiscale_variance, init=init,
-            max_iter=max_iter, factr=factr, pgtol=pgtol,
+            init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
             hsc_min_beads=hsc_min_beads, callback_freq=callback_freq,
             callback_fxns=callback_fxns, alpha_true=alpha_true,
@@ -482,7 +477,6 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
     else:
         alpha_ = alpha
         beta_ = beta
-        struct_draft_fullres = None
 
     # Infer entire genome at low res
     if 1 in piecewise_step:
@@ -516,12 +510,10 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
             normalize=normalize, filter_threshold=filter_threshold,
             alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
             beta=beta_, multiscale_factor=piecewise_factor,
-            use_multiscale_variance=use_multiscale_variance,
             init=init, max_iter=max_iter, factr=factr_lowres, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, mhs_lambda=mhs_lambda,
-            mhs_k=mhs_k, struct_draft_fullres=struct_draft_fullres,
-            callback_fxns=callback_fxns,
+            mhs_k=mhs_k, callback_fxns=callback_fxns,
             callback_freq=callback_freq,
             alpha_true=alpha_true, struct_true=struct_true,
             input_weight=input_weight, exclude_zeros=exclude_zeros,
@@ -570,17 +562,6 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
                 counts=counts_raw, ploidy=ploidy, lengths_full=lengths,
                 chrom_full=chromosomes, chrom_subset=chrom,
                 exclude_zeros=exclude_zeros, bias=bias, struct_true=struct_true)
-            index = subset_chromosomes(
-                lengths_full=lengths, chrom_full=chromosomes,
-                chrom_subset=chrom)[-1]
-            if ploidy == 2:
-                draft_index = index[:lengths.sum()]
-            else:
-                draft_index = index
-            if struct_draft_fullres is None:
-                struct_draft_fullres_chrom = None
-            else:
-                struct_draft_fullres_chrom = struct_draft_fullres[draft_index]
 
             struct_, infer_param = infer(
                 counts_raw=chrom_counts,
@@ -589,12 +570,10 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
                 normalize=normalize, filter_threshold=filter_threshold,
                 alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
                 beta=beta_, multiscale_rounds=multiscale_rounds,
-                use_multiscale_variance=use_multiscale_variance,
                 init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
                 alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
                 hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep_chrom,
                 mhs_lambda=mhs_lambda, mhs_k=mhs_k_chrom,
-                struct_draft_fullres=struct_draft_fullres_chrom,
                 callback_fxns=callback_fxns,
                 callback_freq=callback_freq, alpha_true=alpha_true,
                 struct_true=chrom_struct_true, input_weight=input_weight,
@@ -621,7 +600,6 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
             normalize=normalize, filter_threshold=filter_threshold,
             alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
             beta=beta_, multiscale_rounds=1,
-            use_multiscale_variance=use_multiscale_variance,
             init=struct_fullres_genome_reoriented, max_iter=0, factr=factr,
             pgtol=pgtol, alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep, mhs_lambda=mhs_lambda,
@@ -658,12 +636,10 @@ def infer_piecewise(counts, outdir, lengths, ploidy, chromosomes, alpha,
                 normalize=normalize, filter_threshold=filter_threshold,
                 alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
                 beta=beta_, multiscale_rounds=multiscale_rounds_3,
-                use_multiscale_variance=use_multiscale_variance,
                 init=reorient_init, max_iter=max_iter, factr=factr,
                 pgtol=pgtol, alpha_factr=alpha_factr, bcc_lambda=0.,
                 hsc_lambda=hsc_lambda_3, est_hmlg_sep=est_hmlg_sep, mhs_lambda=mhs_lambda_3,
                 mhs_k=mhs_k, excluded_counts='intra',
-                struct_draft_fullres=struct_draft_fullres,
                 callback_fxns=callback_fxns,
                 callback_freq=callback_freq, reorienter=reorienter,
                 alpha_true=alpha_true, struct_true=struct_true,

@@ -91,8 +91,7 @@ def test_haploid(multiscale_factor, multiscale_reform):
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, use_multiscale_variance=False,
-        verbose=False, init=init)
+        multiscale_reform=multiscale_reform, verbose=False, init=init)
 
     assert infer_param['converged']
 
@@ -124,8 +123,7 @@ def test_haploid_biased(multiscale_factor, multiscale_reform):
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, use_multiscale_variance=False,
-        verbose=False, init=init, bias=bias)
+        multiscale_reform=multiscale_reform, verbose=False, init=init, bias=bias)
 
     assert infer_param['converged']
 
@@ -155,8 +153,7 @@ def test_haploid_run_pastis(multiscale_rounds, multiscale_reform):
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
         print_freq=None, history_freq=None, save_freq=None,
         struct_true=struct_true, multiscale_rounds=multiscale_rounds,
-        multiscale_reform=multiscale_reform, use_multiscale_variance=False,
-        verbose=False, init=init)
+        multiscale_reform=multiscale_reform, verbose=False, init=init)
 
     assert infer_param['converged']
 
@@ -186,8 +183,7 @@ def test_haploid_run_pastis_infer_alpha(multiscale_rounds, multiscale_reform):
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
         print_freq=None, history_freq=None, save_freq=None,
         struct_true=struct_true, multiscale_rounds=multiscale_rounds,
-        multiscale_reform=multiscale_reform, use_multiscale_variance=False,
-        verbose=False, init=init)
+        multiscale_reform=multiscale_reform, verbose=False, init=init)
 
     assert infer_param['converged']
 
@@ -226,8 +222,7 @@ def test_diploid(ambiguity, multiscale_factor):
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
-        multiscale_reform=True, use_multiscale_variance=False,
-        verbose=False, init=init)
+        multiscale_reform=True, verbose=False, init=init)
 
     assert infer_param['converged']
 
@@ -341,8 +336,7 @@ def test_constraint_hsc2019_infer_hmlg_sep():
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
         print_freq=None, history_freq=None, save_freq=None,
         struct_true=struct_true, bcc_version="2019", hsc_version="2019",
-        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init, null=null)
+        multiscale_reform=True, verbose=False, init=init, null=null)
 
     assert infer_param['converged']
 
@@ -390,7 +384,7 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2019", hsc_version="2019", multiscale_reform=True,
-        use_multiscale_variance=False, verbose=False, init=init, null=null)
+        verbose=False, init=init, null=null)
 
     assert infer_param['converged']
 
@@ -442,8 +436,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
-        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init, null=null, bias=bias)
+        multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)
 
     assert infer_param['converged']
 
@@ -494,8 +487,7 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
-        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init, null=null, bias=bias)
+        multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)
 
     assert infer_param['converged']
 
@@ -546,8 +538,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
-        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init, null=null, bias=bias)
+        multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)
 
     assert infer_param['converged']
 
@@ -604,8 +595,7 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
         callback_freq={'print': 0, 'history': 0, 'save': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
-        multiscale_reform=True, use_multiscale_variance=False, verbose=False,
-        init=init, null=null, bias=bias)
+        multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)
 
     assert infer_param['converged']
 
