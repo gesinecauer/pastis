@@ -158,49 +158,31 @@ def _format_structures(structures, lengths=None, ploidy=None,
                        mixture_coefs=None):
     """Reformats and checks shape of structures."""
 
-    # TODO this function was written by an idiot
-
-    from .poisson import _format_X
-
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
-
     if isinstance(structures, list):
-        if not all([isinstance(
-                struct, (np.ndarray, jnp.ndarray)) for struct in structures]):
-            raise ValueError("Individual structures must use numpy.ndarray"
-                             "format.")
-        try:
-            structures = [struct.reshape(-1, 3) for struct in structures]
-        except ValueError:
-            raise ValueError("Structures should be composed of 3D coordinates")
-    else:
-        if not isinstance(structures, (np.ndarray, jnp.ndarray)):
-            raise ValueError("Structures must be numpy.ndarray or list of"
-                             "numpy.ndarrays.")
-        try:
-            structures = structures.reshape(-1, 3)
-        except ValueError:
-            raise ValueError("Structure should be composed of 3D coordinates")
-        structures, _, _ = _format_X(
-            structures, lengths=lengths, ploidy=ploidy,
-            mixture_coefs=mixture_coefs)
+        structures = jnp.concatenate(structures)._value
 
-    if mixture_coefs is not None and len(structures) != len(mixture_coefs):
-        raise ValueError("The number of structures (%d) and of mixture "
-                         "coefficents (%d) should be identical." %
-                         (len(structures), len(mixture_coefs)))
+    # Reshape
+    try:
+        structures = structures.reshape(-1, 3)
+    except ValueError:
+        raise ValueError("Structures should be composed of 3D bead coordinates,"
+                         f" {structures.shape=}.")
 
-    if len(set([struct.shape[0] for struct in structures])) > 1:
-        raise ValueError("Structures are of different shapes.")
+    # Get list of structures, one per mix_coef
+    num_mix = 1 if mixture_coefs is None else len(mixture_coefs)
+    nbeads_ = int(structures.shape[0] / num_mix)
+    if nbeads_ != structures.shape[0] / num_mix:
+        raise ValueError("structures.shape[0] should be divisible by the length"
+                         f" of mixture_coefs, {num_mix}. {structures.shape=}.")
+    structures = [
+        structures[i * nbeads_:(i + 1) * nbeads_] for i in range(num_mix)]
 
+    # Check number of beads
     if lengths is not None and ploidy is not None:
-        nbeads = lengths.sum() * ploidy
-        for struct in structures:
-            if struct.shape != (nbeads, 3):
-                raise ValueError("Structure is of unexpected shape. Expected"
-                                 " shape of (%d, 3), structure is (%s)."
-                                 % (nbeads,
-                                    ', '.join([str(x) for x in struct.shape])))
+        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        if nbeads_ != lengths.sum() * ploidy:
+            raise ValueError(f"Structures must contain {lengths.sum() * ploidy}"
+                             f" beads. They contain {nbeads_} beads.")
 
     return structures
 

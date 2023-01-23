@@ -257,7 +257,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
         return obj
 
 
-def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
+def _format_X(X, lengths, ploidy, multiscale_factor=1,
               multiscale_reform=False, mixture_coefs=None, mods=[]):
     """Reformat and check X."""
 
@@ -265,40 +265,38 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
         mixture_coefs = [1]
 
     # Get number of beads
-    if lengths is None or ploidy is None:
-        nbeads = None
-    else:
-        lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor=multiscale_factor)
-        nbeads = lengths_lowres.sum() * ploidy
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    nbeads = lengths_lowres.sum() * ploidy
 
     # Get epsilon
     if multiscale_factor > 1 and multiscale_reform:
-        if nbeads is None:
-            raise ValueError("Must input lengths and ploidy.")
-
         if X.size == nbeads * 3 * len(mixture_coefs) + 1:
             epsilon = X[-1]
             X = X[:-1]
         else:
-            raise ValueError(f"Epsilon must be of length 1... {X.shape=}")
+            raise ValueError(f"Epsilon must be of length 1, {X.shape=}.")
     else:
         epsilon = None
 
+    # Reshape
     try:
         X = X.reshape(-1, 3)
     except ValueError:
-        raise ValueError(f"X should contain 3D structures, {X.shape=}")
+        raise ValueError(f"X should contain 3D structures, {X.shape=}.")
 
+    # Get list of structures, one per mix_coef
     num_mix = len(mixture_coefs)
     nbeads_ = int(X.shape[0] / num_mix)
     if nbeads_ != X.shape[0] / num_mix:
         raise ValueError("X.shape[0] should be divisible by the length of"
-                         f" mixture_coefs, {num_mix}. {X.shape=}")
-    if nbeads is not None and nbeads_ != nbeads:
+                         f" mixture_coefs, {num_mix}. {X.shape=}.")
+    X = [X[i * nbeads_:(i + 1) * nbeads_] for i in range(num_mix)]
+
+    # Check number of beads
+    if nbeads_ != nbeads:
         raise ValueError(f"Structures must contain {nbeads}"
                          f" beads. They contain {nbeads_} beads.")
-    X = [X[i * nbeads_:(i + 1) * nbeads_] for i in range(num_mix)]
 
     return X, epsilon, mixture_coefs
 
