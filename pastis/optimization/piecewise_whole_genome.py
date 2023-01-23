@@ -1,6 +1,6 @@
 from .utils_poisson import _setup_jax
 _setup_jax()
-import jax.numpy as ag_np
+import jax.numpy as jnp
 
 import numpy as np
 from sklearn.metrics import euclidean_distances
@@ -93,17 +93,17 @@ class ChromReorienter(object):
                 rotations = X[self.nchrom * 3:].reshape(-1, 4)
             elif self.translate:
                 translations = X.reshape(-1, 3)
-                rotations = ag_np.zeros((self.nchrom, 4))
+                rotations = jnp.zeros((self.nchrom, 4))
             elif self.rotate:
                 rotations = X.reshape(-1, 4)
-                translations = ag_np.zeros((self.nchrom, 3))
+                translations = jnp.zeros((self.nchrom, 3))
             else:
                 raise ValueError("Must translate or rotate.")
 
             lengths_tiled = np.tile(self.lengths, self.ploidy)
             if self.static_hmlg:
-                translations = ag_np.tile(translations, (self.ploidy, 1))
-                rotations = ag_np.tile(rotations, (self.ploidy, 1))
+                translations = jnp.tile(translations, (self.ploidy, 1))
+                rotations = jnp.tile(rotations, (self.ploidy, 1))
 
             new_structures = []
             for init_structure in self.struct_init:
@@ -113,7 +113,7 @@ class ChromReorienter(object):
                     length = lengths_tiled[i]
                     end += length
                     if self.rotate:
-                        new_structure.append(ag_np.dot(
+                        new_structure.append(jnp.dot(
                             init_structure[begin:end, :] + translations[i, :],
                             _quat_to_rotation_matrix(rotations[i, :])))
                     else:
@@ -121,7 +121,7 @@ class ChromReorienter(object):
                             init_structure[begin:end, :] + translations[i, :])
                     begin = end
 
-                new_structure = ag_np.concatenate(new_structure)
+                new_structure = jnp.concatenate(new_structure)
                 new_structures.append(new_structure)
 
             return new_structures
@@ -131,7 +131,7 @@ def _norm(x):
     """Vector norm.
     """
 
-    return ag_np.sqrt(ag_np.sum(x ** 2))
+    return jnp.sqrt(jnp.sum(x ** 2))
 
 
 def _quat_to_rotation_matrix(q):
@@ -147,13 +147,13 @@ def _quat_to_rotation_matrix(q):
     y = q[2]
     z = q[3]
 
-    n = ag_np.sum(q ** 2)
+    n = jnp.sum(q ** 2)
     if n == 0.0:
         raise ZeroDivisionError(
             "Input to `_quat_to_rotation_matrix({0})` has zero norm".format(q))
     elif abs(n - 1.0) < np.finfo(np.float).eps:
         # Input q is basically normalized
-        return ag_np.array([
+        return jnp.array([
             [1 - 2 * (y ** 2 + z ** 2), 2 * (x * y - z * w),
                 2 * (x * z + y * w)],
             [2 * (x * y + z * w), 1 - 2 * (x ** 2 + z ** 2),
@@ -162,7 +162,7 @@ def _quat_to_rotation_matrix(q):
                 1 - 2 * (x ** 2 + y ** 2)]])
     else:
         # Input q is not normalized
-        return ag_np.array([
+        return jnp.array([
             [1 - 2 * (y ** 2 + z ** 2) / n, 2 * (x * y - z * w) / n,
                 2 * (x * z + y * w) / n],
             [2 * (x * y + z * w) / n, 1 - 2 * (x ** 2 + z ** 2) / n,

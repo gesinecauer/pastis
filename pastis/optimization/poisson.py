@@ -6,7 +6,7 @@ if sys.version_info[0] < 3:
 
 from .utils_poisson import _setup_jax
 _setup_jax()
-import jax.numpy as ag_np
+import jax.numpy as jnp
 from jax import grad
 
 from scipy import optimize
@@ -23,14 +23,14 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
                       multiscale_factor, ambiguity='ua', inferring_alpha=False, mods=[]):
 
     dis = _euclidean_distance(struct, row=row3d, col=col3d)
-    dis_alpha = ag_np.power(dis, alpha)
+    dis_alpha = jnp.power(dis, alpha)
 
     ln_f_mean, ln_f_var = _approx_ln_f(
         dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha,
         mods=mods)
 
-    gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha * beta
-    gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha * beta)
+    gamma_mean = jnp.exp(ln_f_mean) * dis_alpha * beta
+    gamma_var = jnp.exp(ln_f_var) * jnp.square(dis_alpha * beta)
 
     if ambiguity != 'ua':
         if ambiguity == 'ambig':
@@ -47,18 +47,18 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
                      multiscale_factor, ambiguity='ua', inferring_alpha=False, mods=[]):
 
     dis = _euclidean_distance(struct, row=row3d, col=col3d)
-    dis_alpha = ag_np.power(dis, alpha)
+    dis_alpha = jnp.power(dis, alpha)
 
     ln_f_mean, ln_f_var = _approx_ln_f(
         dis, epsilon=epsilon, alpha=alpha, inferring_alpha=inferring_alpha,
         mods=mods)
 
     if ambiguity == 'ua':
-        theta_tmp = dis_alpha * ag_np.exp(ln_f_var - ln_f_mean)
-        k = ag_np.exp(2 * ln_f_mean - ln_f_var)
+        theta_tmp = dis_alpha * jnp.exp(ln_f_var - ln_f_mean)
+        k = jnp.exp(2 * ln_f_mean - ln_f_var)
     else:
-        gamma_mean = ag_np.exp(ln_f_mean) * dis_alpha
-        gamma_var = ag_np.exp(ln_f_var) * ag_np.square(dis_alpha)
+        gamma_mean = jnp.exp(ln_f_mean) * dis_alpha
+        gamma_var = jnp.exp(ln_f_var) * jnp.square(dis_alpha)
 
         if ambiguity == 'ambig':
             reshape_0 = 4
@@ -68,7 +68,7 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
         gamma_var = gamma_var.reshape(reshape_0, -1).sum(axis=0)
 
         theta_tmp = gamma_var / gamma_mean
-        k = ag_np.square(gamma_mean) / gamma_var
+        k = jnp.square(gamma_mean) / gamma_var
 
     theta = beta * theta_tmp
     return k, theta
@@ -91,7 +91,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             theta=theta, k=k, data=counts.data,
             bias_per_bin=counts.bias_per_bin(bias), mask=counts.mask, mods=mods)
 
-    if not ag_np.isfinite(obj):
+    if not jnp.isfinite(obj):
         raise ValueError(
             "Multires (negative binomial) component of objective function for"
             f" {counts.name} is {obj} at {multiscale_factor}x resolution.")
@@ -104,10 +104,10 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
     """Computes the Poisson objective function for a given counts matrix.
     """
 
-    lambda_pois = ag_np.zeros(counts.nbins)
+    lambda_pois = jnp.zeros(counts.nbins)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = _euclidean_distance(struct, row=counts.row3d, col=counts.col3d)
-        tmp1 = ag_np.power(dis, alpha)
+        tmp1 = jnp.power(dis, alpha)
         tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
         lambda_pois = lambda_pois + mix_coef * counts.bias_per_bin(
             bias) * counts.beta * tmp
@@ -115,7 +115,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
     obj = poisson_nll(counts.data, lambda_pois=lambda_pois, mask=counts.mask,
                       data_per_bin=counts.fullres_per_lowres_dis)
 
-    if not ag_np.isfinite(obj):
+    if not jnp.isfinite(obj):
         raise ValueError(
             f"Poisson component of objective function for {counts.name}"
             f" is {obj} at {multiscale_factor}x resolution.")
@@ -403,7 +403,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         objective function during optimization.
     """
 
-    # from jax import random; x = random.uniform(random.PRNGKey(0), (1000,), dtype=ag_np.float64); print(x.dtype); exit(0)
+    # from jax import random; x = random.uniform(random.PRNGKey(0), (1000,), dtype=jnp.float64); print(x.dtype); exit(0)
 
     multiscale_reform = (epsilon is not None)
 
@@ -704,7 +704,7 @@ class PastisPM(object):
                 multiscale_reform=self.multiscale_reform,
                 mixture_coefs=self.mixture_coefs, mods=self.mods)
             if self.epsilon_ is not None and isinstance(
-                    self.epsilon_, ag_np.ndarray):
+                    self.epsilon_, jnp.ndarray):
                 self.epsilon_ = self.epsilon_._value
             if len(self.struct_) == 1:
                 self.struct_ = self.struct_[0]

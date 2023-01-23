@@ -4,7 +4,7 @@ import warnings
 
 from .utils_poisson import _setup_jax
 _setup_jax()
-import jax.numpy as ag_np
+import jax.numpy as jnp
 from jax import grad
 
 from .poisson import _format_X, objective
@@ -33,9 +33,9 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
     lambda_pois_sum = 0.
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = _euclidean_distance(struct, row=counts.row3d, col=counts.col3d)
-        tmp1 = ag_np.power(dis, alpha)
+        tmp1 = jnp.power(dis, alpha)
         tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
-        lambda_pois_sum += ag_np.sum(mix_coef * counts.bias_per_bin(
+        lambda_pois_sum += jnp.sum(mix_coef * counts.bias_per_bin(
             bias) * tmp)
 
     return lambda_pois_sum
@@ -46,7 +46,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     """Estimates beta for all counts matrices.
     """
 
-    if isinstance(alpha, (np.ndarray, ag_np.ndarray)):
+    if isinstance(alpha, (np.ndarray, jnp.ndarray)):
         if alpha.size > 1:
             raise ValueError("Alpha should be of length 1.")
         alpha = alpha[0]
@@ -80,7 +80,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
 
     beta = {x: counts_sum[x] / lambda_sum[x] for x in counts_sum.keys()}
     for ambiguity, beta_maps in beta.items():
-        if not ag_np.isfinite(beta_maps) or beta_maps == 0:
+        if not jnp.isfinite(beta_maps) or beta_maps == 0:
             raise ValueError(f"Beta for {ambiguity} counts is {beta_maps}.")
 
     if verbose:
@@ -121,7 +121,7 @@ def objective_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         The total negative log likelihood of the poisson model and constraints.
     """
 
-    if isinstance(alpha, (np.ndarray, ag_np.ndarray)):
+    if isinstance(alpha, (np.ndarray, jnp.ndarray)):
         if alpha.size > 1:
             raise ValueError("Alpha should be of length 1.")
         alpha = alpha[0]
