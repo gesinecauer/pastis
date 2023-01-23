@@ -100,27 +100,14 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
 
 def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
-                 multiscale_factor=1, multiscale_variances=None,
-                 mixture_coefs=None, mods=[]):
+                 multiscale_factor=1, mixture_coefs=None, mods=[]):
     """Computes the Poisson objective function for a given counts matrix.
     """
-
-    if multiscale_variances is not None:
-        if isinstance(multiscale_variances, np.ndarray):
-            var_per_dis = multiscale_variances[
-                counts.row3d] + multiscale_variances[counts.col3d]
-        else:
-            var_per_dis = multiscale_variances * 2
-    else:
-        var_per_dis = 0
 
     lambda_pois = ag_np.zeros(counts.nbins)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = _euclidean_distance(struct, row=counts.row3d, col=counts.col3d)
-        if multiscale_variances is None:
-            tmp1 = ag_np.power(dis, alpha)
-        else:
-            tmp1 = ag_np.power(ag_np.square(dis) + var_per_dis, alpha / 2)
+        tmp1 = ag_np.power(dis, alpha)
         tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
         lambda_pois = lambda_pois + mix_coef * counts.bias_per_bin(
             bias) * counts.beta * tmp
@@ -137,8 +124,8 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
 
 
 def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
-                multiscale_factor=1, multiscale_variances=None, epsilon=None,
-                inferring_alpha=False, mixture_coefs=None, mods=[]):
+                multiscale_factor=1, epsilon=None, inferring_alpha=False,
+                mixture_coefs=None, mods=[]):
     """Computes the objective function for a given individual counts matrix.
     """
 
@@ -157,9 +144,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
     if epsilon is None or counts.multiscale_factor == 1 or np.all(epsilon == 0):
         obj = _poisson_obj(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
-            ploidy=ploidy, bias=bias,
-            multiscale_factor=counts.multiscale_factor,
-            multiscale_variances=multiscale_variances,
+            ploidy=ploidy, bias=bias, multiscale_factor=counts.multiscale_factor,
             mixture_coefs=mixture_coefs, mods=mods)
     else:
         obj = _multires_negbinom_obj(
@@ -167,24 +152,13 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
             lengths=lengths, ploidy=ploidy, bias=bias,
             multiscale_factor=multiscale_factor, inferring_alpha=inferring_alpha,
             mixture_coefs=mixture_coefs, mods=mods)
-        if 'msv' in mods:
-            multiscale_variances = 3 / 2 * ag_np.square(epsilon)
-            obj_msv = _poisson_obj(
-                structures=structures, counts=counts, alpha=alpha, lengths=lengths,
-                ploidy=ploidy, bias=bias,
-                multiscale_factor=counts.multiscale_factor,
-                multiscale_variances=multiscale_variances,
-                mixture_coefs=mixture_coefs, mods=mods)
-            # print('+++', obj, obj_msv)
-            obj = (obj + obj_msv) / 2
 
     return obj
 
 
 def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
-              reorienter=None, multiscale_factor=1, multiscale_variances=None,
-              multiscale_reform=False, mixture_coefs=None, return_extras=False,
-              inferring_alpha=False, mods=[]):
+              reorienter=None, multiscale_factor=1, multiscale_reform=False,
+              mixture_coefs=None, return_extras=False, inferring_alpha=False, mods=[]):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -209,10 +183,6 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    multiscale_variances : float or array of float, optional
-        For multiscale optimization at low resolution, the variances of each
-        group of full-resolution beads corresponding to a single low-resolution
-        bead.
 
     Returns
     -------
@@ -268,8 +238,7 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
             obj_counts = _obj_single(
                 structures=structures, counts=counts_bins, alpha=alpha,
                 lengths=lengths, ploidy=ploidy, bias=bias,
-                multiscale_factor=multiscale_factor,
-                multiscale_variances=multiscale_variances, epsilon=epsilon,
+                multiscale_factor=multiscale_factor, epsilon=epsilon,
                 inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
                 mods=mods)
             obj_poisson[f"obj_{counts_bins.name}"] = obj_counts
@@ -336,18 +305,15 @@ def _format_X(X, lengths=None, ploidy=None, multiscale_factor=1,
 
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
-                      multiscale_variances=None, multiscale_reform=False,
-                      callback=None, mixture_coefs=None, mods=[]):
+                      multiscale_reform=False, callback=None, mixture_coefs=None, mods=[]):
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
     new_obj, obj_logs, structures, alpha, epsilon = objective(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
-        multiscale_factor=multiscale_factor,
-        multiscale_variances=multiscale_variances,
-        multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
-        return_extras=True, mods=mods)
+        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+        mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
 
     if callback is not None:
         callback.on_iter_end(obj_logs=obj_logs, structures=structures,
@@ -361,8 +327,7 @@ gradient = grad(objective)
 
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    constraints=None, reorienter=None, multiscale_factor=1,
-                   multiscale_variances=None, multiscale_reform=False,
-                   callback=None, mixture_coefs=None, mods=[]):
+                   multiscale_reform=False, callback=None, mixture_coefs=None, mods=[]):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
@@ -373,17 +338,15 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         new_grad = np.array(gradient(
             X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
             bias=bias, constraints=constraints, reorienter=reorienter,
-            multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances,
-            multiscale_reform=multiscale_reform, mixture_coefs=mixture_coefs,
-            mods=mods)).flatten()
+            multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+            mixture_coefs=mixture_coefs, mods=mods)).flatten()
 
     return new_grad
 
 
 def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
-               constraints=None, multiscale_factor=1, multiscale_variances=None,
-               epsilon=None, epsilon_bounds=None, max_iter=30000, max_fun=None,
+               constraints=None, multiscale_factor=1, epsilon=None,
+               epsilon_bounds=None, max_iter=30000, max_fun=None,
                factr=1e7, pgtol=1e-05, callback=None, alpha_loop=0,
                reorienter=None, mixture_coefs=None, verbose=True, mods=[]):
     """Estimates a 3D structure, given current alpha.
@@ -412,10 +375,6 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    multiscale_variances : float or array_like of float, optional
-        For multiscale optimization at low resolution, the variances of each
-        group of full-resolution beads corresponding to a single low-resolution
-        bead.
     max_iter : int, optional
         Maximum number of iterations per optimization.
     max_fun : int, optional
@@ -471,10 +430,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         obj = objective_wrapper(
             x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
             bias=bias, constraints=constraints, reorienter=reorienter,
-            multiscale_factor=multiscale_factor,
-            multiscale_variances=multiscale_variances,
-            multiscale_reform=multiscale_reform, callback=callback,
-            mixture_coefs=mixture_coefs, mods=mods)
+            multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+            callback=callback, mixture_coefs=mixture_coefs, mods=mods)
     else:
         obj = np.nan
 
@@ -497,8 +454,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             maxiter=max_iter, maxfun=max_fun, pgtol=pgtol, factr=factr,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, bias, constraints,
-                  reorienter, multiscale_factor, multiscale_variances,
-                  multiscale_reform, callback, mixture_coefs, mods))
+                  reorienter, multiscale_factor, multiscale_reform, callback,
+                  mixture_coefs, mods))
         X, obj, d = results
         converged = d['warnflag'] == 0
         conv_desc = d['task']
@@ -569,10 +526,6 @@ class PastisPM(object):
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    multiscale_variances : float or array_like of float, optional
-        For multiscale optimization at low resolution, the variances of each
-        group of full-resolution beads corresponding to a single low-resolution
-        bead.
     alpha_init : float, optional
         For PM2, the initial value of alpha to use.
     max_alpha_loop : int, optional
@@ -607,11 +560,10 @@ class PastisPM(object):
 
     def __init__(self, counts, lengths, ploidy, alpha, init, bias=None,
                  constraints=None, callback=None, multiscale_factor=1,
-                 multiscale_variances=None, epsilon=None, epsilon_bounds=None,
-                 epsilon_coord_descent=False, alpha_init=None, max_alpha_loop=20, max_iter=30000,
-                 factr=1e7, pgtol=1e-05, alpha_factr=1e12,
-                 reorienter=None, null=False, mixture_coefs=None, verbose=True,
-                 mods=[]):
+                 epsilon=None, epsilon_bounds=None, alpha_init=None,
+                 max_alpha_loop=20, max_iter=30000, factr=1e7, pgtol=1e-05,
+                 alpha_factr=1e12, reorienter=None, null=False,
+                 mixture_coefs=None, verbose=True, mods=[]):
         from .callbacks import Callback
 
         lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
@@ -656,11 +608,9 @@ class PastisPM(object):
         self.constraints = constraints
         self.callback = callback
         self.multiscale_factor = multiscale_factor
-        self.multiscale_variances = multiscale_variances
         self.multiscale_reform = multiscale_factor > 1 and epsilon is not None
         self.epsilon = epsilon
         self.epsilon_bounds = epsilon_bounds
-        self.epsilon_coord_descent = epsilon_coord_descent
         self.alpha_init = alpha_init
         self.max_alpha_loop = max_alpha_loop
         self.max_iter = max_iter
@@ -730,7 +680,6 @@ class PastisPM(object):
             bias=self.bias,
             constraints=self.constraints,
             multiscale_factor=self.multiscale_factor,
-            multiscale_variances=self.multiscale_variances,
             epsilon=self.epsilon_,
             epsilon_bounds=self.epsilon_bounds,
             max_iter=self.max_iter,

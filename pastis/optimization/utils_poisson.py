@@ -106,9 +106,8 @@ def _load_infer_param(infer_param_file):
                 infer_param[key].strip('[]').split(), dtype=float)
     convert_type_fxns = {
         'alpha': [float], 'converged': [strtobool], 'seed': [float, int],
-        'multiscale_variances': [float], 'obj': [float], 'time': [float],
-        'alpha_converged': [strtobool], 'alpha_obj': [float],
-        'alpha_loop': [int], 'rescale_by': [float]}
+        'obj': [float], 'time': [float], 'alpha_converged': [strtobool],
+        'alpha_obj': [float], 'alpha_loop': [int], 'rescale_by': [float]}
     for key, type_fxns in convert_type_fxns.items():
         if key in infer_param:
             for type_fxn in type_fxns:

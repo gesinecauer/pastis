@@ -20,8 +20,6 @@ from .callbacks import Callback
 from .constraints import prep_constraints, distance_between_homologs
 from .constraints import get_counts_interchrom
 from .poisson import PastisPM, _convergence_criteria
-# from .multiscale_optimization import get_multiscale_variances_from_struct
-# from .multiscale_optimization import _get_stretch_of_fullres_beads
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_bias_res
@@ -196,24 +194,6 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if verbose and outfiles is not None:
         print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
 
-    # # MULTISCALE VARIANCES
-    # if multiscale_factor != 1 and use_multiscale_variance and struct_draft_fullres is not None and not multiscale_reform:
-    #     multiscale_variances = np.median(get_multiscale_variances_from_struct(
-    #         struct_draft_fullres, lengths=lengths,
-    #         multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
-    #         verbose=verbose))
-    #     if struct_true is not None and verbose:
-    #         multiscale_variances_true = np.median(
-    #             get_multiscale_variances_from_struct(
-    #                 struct_true, lengths=lengths,
-    #                 multiscale_factor=multiscale_factor,
-    #                 mixture_coefs=mixture_coefs, verbose=False))
-    #         print(f"True multiscale variance ({multiscale_factor}x):"
-    #               f" {multiscale_variances_true:.3g}", flush=True)
-    # else:
-    #     multiscale_variances = None
-    multiscale_variances = None
-
     # GET LOW-RES BIAS, IF NEEDED
     if multiscale_factor > 1 and not multiscale_reform:
         bias = decrease_bias_res(
@@ -298,12 +278,10 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_reform=multiscale_reform, frequency=callback_freq,
         directory=outdir, seed=seed, struct_true=struct_true_tmp,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
-        mixture_coefs=mixture_coefs, **callback_fxns,
-        multiscale_variances=multiscale_variances,
-        verbose=verbose, mods=mods)
+        mixture_coefs=mixture_coefs, **callback_fxns, verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
-            multiscale_variances, epsilon, ploidy)
+            epsilon, ploidy)
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -459,15 +437,14 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         exclude_zeros=exclude_zeros, null=null,
         chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
         outfiles=outfiles, verbose=verbose, mods=mods)
-    (counts, bias, struct_nan, struct_init, constraints, callback,
-        multiscale_variances, epsilon, ploidy) = prepped
+    (counts, bias, struct_nan, struct_init, constraints, callback, epsilon,
+        ploidy) = prepped
 
     # INFER STRUCTURE
     pm = PastisPM(
         counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
         init=struct_init, bias=bias, constraints=constraints,
-        callback=callback, multiscale_factor=multiscale_factor,
-        multiscale_variances=multiscale_variances, epsilon=epsilon,
+        callback=callback, multiscale_factor=multiscale_factor, epsilon=epsilon,
         epsilon_bounds=[epsilon_min, epsilon_max],
         epsilon_coord_descent=epsilon_coord_descent, alpha_init=alpha_init,
         max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
@@ -501,8 +478,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         'converged': pm.converged_, 'conv_desc': pm.conv_desc_,
         'time': pm.time_elapsed_, 'epsilon': pm.epsilon_,
         'alpha_obj': pm.alpha_obj_, 'alpha_converged': alpha_converged_,
-        'multiscale_variances': multiscale_variances, 'alpha_loop': alpha_loop,
-        'rescale_by': rescale_by}
+        'alpha_loop': alpha_loop, 'rescale_by': rescale_by}
     if constraints is not None:
         hsc19 = [x for x in constraints if (
             x.name == "Homolog separating (2019)" and x.lambda_val > 0)]

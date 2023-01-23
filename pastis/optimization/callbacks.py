@@ -131,9 +131,8 @@ class Callback(object):
                  history=None, analysis_function=None, frequency=None,
                  on_training_begin=None, on_training_end=None,
                  on_iter_end=None, directory=None, seed=None, struct_true=None,
-                 alpha_true=None, constraints=None, multiscale_variances=None,
-                 mixture_coefs=None, verbose=False,
-                 mods=[]):
+                 alpha_true=None, constraints=None, mixture_coefs=None,
+                 verbose=False, mods=[]):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.epsilon = None
@@ -151,7 +150,6 @@ class Callback(object):
                 multiscale_factor=multiscale_factor)
         self.constraints = constraints
         self.multiscale_reform = multiscale_reform
-        self.multiscale_variances = multiscale_variances
         self.mixture_coefs = mixture_coefs
         self.mods = mods
 
