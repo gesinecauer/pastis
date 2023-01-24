@@ -346,18 +346,11 @@ def jax_max(x1: Array, x2: Array) -> Array:
     return jnp.maximum(x1, x2)
 
 
-# jax_max.defjvps(
-#     lambda g1, ans, x1, x2: jnp.where(x1 > x2, g1, lax.full_like(g1, 0)),
-#     lambda g2, ans, x1, x2: jnp.where(x1 < x2, g2, lax.full_like(g2, 0)))
-
-
 @jax_max.defjvp
 def jax_max_jvp(primals, tangents):
     x, y = primals
     x_dot, y_dot = tangents
     primal_out = jax_max(x, y)
-    # tangent_out_x = lax.select(x > y, x_dot, lax.full_like(x_dot, 0))
-    # tangent_out_y = lax.select(x < y, y_dot, lax.full_like(y_dot, 0))
     tangent_out_x = jnp.where(x > y, x_dot, lax.full_like(x_dot, 0))
     tangent_out_y = jnp.where(x < y, y_dot, lax.full_like(y_dot, 0))
     tangent_out = tangent_out_x + tangent_out_y
@@ -397,18 +390,11 @@ def jax_min(x1: Array, x2: Array) -> Array:
     return jnp.minimum(x1, x2)
 
 
-# jax_min.defjvps(
-#     lambda g1, ans, x1, x2: jnp.where(x1 < x2, g1, lax.full_like(g1, 0)),
-#     lambda g2, ans, x1, x2: jnp.where(x1 > x2, g2, lax.full_like(g2, 0)))
-
-
 @jax_min.defjvp
 def jax_min_jvp(primals, tangents):
     x, y = primals
     x_dot, y_dot = tangents
     primal_out = jax_min(x, y)
-    # tangent_out_x = lax.select(x < y, x_dot, lax.full_like(x_dot, 0))
-    # tangent_out_y = lax.select(x > y, y_dot, lax.full_like(y_dot, 0))
     tangent_out_x = jnp.where(x < y, x_dot, lax.full_like(x_dot, 0))
     tangent_out_y = jnp.where(x > y, y_dot, lax.full_like(y_dot, 0))
     tangent_out = tangent_out_x + tangent_out_y
