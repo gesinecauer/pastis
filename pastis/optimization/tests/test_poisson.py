@@ -150,16 +150,16 @@ def test_objective_multires(ambiguity, multiscale_factor):
         epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
+        X = np.append(struct_true_lowres.ravel(), epsilon_true)
     else:
-        epsilon_true = None
+        X = struct_true_lowres
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
     obj = poisson.objective(
-        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, epsilon=epsilon_true,
-        bias=bias)._value
+        multiscale_reform=multiscale_reform, bias=bias)._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -196,15 +196,16 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
         epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
+        X = np.append(struct_true_lowres.ravel(), epsilon_true)
     else:
-        epsilon_true = None
+        X = struct_true_lowres
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
     obj = poisson.objective(
-        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, epsilon=epsilon_true)._value
+        multiscale_reform=multiscale_reform)._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
 
@@ -246,19 +247,20 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
         epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
+        X = np.append(struct_true_lowres.ravel(), epsilon_true)
     else:
-        epsilon_true = None
+        X = struct_true_lowres
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
     obj_unbiased = poisson.objective(
-        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=None, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, epsilon=epsilon_true)._value
+        multiscale_reform=multiscale_reform)._value
     obj_biased = poisson.objective(
-        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, epsilon=epsilon_true)._value
+        multiscale_reform=multiscale_reform)._value
 
     print(f"{obj_unbiased=:g}   {obj_biased=:g}")
     assert_array_almost_equal(obj_unbiased, obj_biased)
@@ -296,15 +298,16 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
         epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
+        X = np.append(struct_true_lowres.ravel(), epsilon_true)
     else:
-        epsilon_true = None
+        X = struct_true_lowres
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
     obj = poisson.objective(
-        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, epsilon=epsilon_true)._value
+        multiscale_reform=multiscale_reform)._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
 
@@ -341,14 +344,15 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         epsilon_true = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
+        X = np.append(struct_true_lowres.ravel(), epsilon_true)
     else:
-        epsilon_true = None
+        X = struct_true_lowres
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
     obj = poisson.objective(
-        X=struct_true_lowres, counts=counts, alpha=alpha, lengths=lengths,
+        X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, epsilon=epsilon_true)._value
+        multiscale_reform=multiscale_reform)._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))

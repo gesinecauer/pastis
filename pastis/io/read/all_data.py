@@ -178,7 +178,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
         chrom_subset = _get_chrom(chrom_subset)
     counts = _get_counts(counts, lengths=lengths_full, ploidy=ploidy)
     bias = _get_bias(bias, lengths=lengths_full)
-    struct_true = _get_struct(struct_true, lengths=lengths, ploidy=ploidy)
+    struct_true = _get_struct(struct_true, lengths=lengths_full, ploidy=ploidy)
 
     # Optionally limit the data to the specified chromosomes
     lengths_subset, chrom_subset, data_subset = subset_chrom_of_data(
