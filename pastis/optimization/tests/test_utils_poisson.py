@@ -21,7 +21,7 @@ def test_euclidean_distance():
     nbeads = 100
 
     random_state = np.random.RandomState(seed=seed)
-    struct = random_state.rand(nbeads, 3)
+    struct = random_state.uniform(size=(nbeads, 3))
     row, col = (x.ravel() for x in np.indices((nbeads, nbeads)))
 
     euc_dis_correct = paired_distances(struct[row], struct[col])
@@ -38,7 +38,7 @@ def test_find_beads_to_remove(ambiguity):
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
@@ -146,8 +146,8 @@ def test_subset_chrom_of_struct_and_bias():
 
     random_state = np.random.RandomState(seed=seed)
     n = lengths_full.sum()
-    struct_full = random_state.rand(n * ploidy, 3)
-    bias_full = 0.1 + random_state.rand(n)
+    struct_full = random_state.uniform(size=(n * ploidy, 3))
+    bias_full = 0.1 + random_state.uniform(size=n)
 
     lengths_subset_correct = []
     chrom_subset_correct = []

@@ -111,7 +111,7 @@ def test_haploid_biased(multiscale_factor, multiscale_reform):
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state)
-    bias = 0.1 + random_state.rand(lengths.sum())
+    bias = 0.1 + random_state.uniform(size=lengths.sum())
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity='ua', struct_nan=None, random_state=random_state,
@@ -238,7 +238,7 @@ def test_diploid_combo():
     init = 'true'  # For convenience/speed
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     ambig_counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
         beta=beta * ratio_ambig, ambiguity="ambig", struct_nan=None,
@@ -466,7 +466,7 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    bias = 0.1 + random_state.rand(lengths.sum())
+    bias = 0.1 + random_state.uniform(size=lengths.sum())
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
@@ -574,7 +574,7 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    bias = 0.1 + random_state.rand(lengths.sum())
+    bias = 0.1 + random_state.uniform(size=lengths.sum())
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,

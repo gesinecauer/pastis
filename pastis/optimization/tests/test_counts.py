@@ -107,12 +107,12 @@ def test_add_counts_haploid(multiscale_factor, beta):
     struct_nan2 = np.array([0, 1, 3, 12, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true1 = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true1 = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts1 = get_counts(
         struct_true1, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=None, struct_nan=struct_nan1, random_state=random_state,
         use_poisson=True).toarray()
-    struct_true2 = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true2 = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts2 = get_counts(
         struct_true2, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=None, struct_nan=struct_nan2, random_state=random_state,
@@ -158,7 +158,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta):
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
@@ -194,7 +194,7 @@ def test_3d_indices_haploid():
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
@@ -216,7 +216,7 @@ def test_3d_indices_diploid_unambig():
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
@@ -238,7 +238,7 @@ def test_3d_indices_diploid_ambig():
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ambig", struct_nan=struct_nan, random_state=random_state,
@@ -263,7 +263,7 @@ def test_3d_indices_diploid_partially_ambig():
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="pa", struct_nan=struct_nan, random_state=random_state,
@@ -291,9 +291,9 @@ def test_ambiguate_beta(ambiguity, use_bias):
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     if use_bias:
-        bias = 0.1 + random_state.rand(lengths.sum())
+        bias = 0.1 + random_state.uniform(size=lengths.sum())
     else:
         bias = None
     counts = get_counts(
@@ -341,7 +341,7 @@ def test_set_initial_beta(use_bias):
 
     random_state = np.random.RandomState(seed=seed)
     if use_bias:
-        bias = 0.1 + random_state.rand(lengths.sum())
+        bias = 0.1 + random_state.uniform(size=lengths.sum())
     else:
         bias = None
 

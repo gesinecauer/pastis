@@ -95,7 +95,7 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct_true = random_state.rand(lengths.sum() * ploidy, 3)
+    struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
@@ -134,7 +134,7 @@ def test_decrease_struct_res(multiscale_factor):
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    struct = random_state.rand(lengths.sum() * ploidy, 3)
+    struct = random_state.uniform(size=(lengths.sum() * ploidy, 3))
 
     # Set specified beads to NaN
     struct_nan = struct_nan[struct_nan < lengths.sum()]
@@ -160,7 +160,7 @@ def test_get_epsilon_from_struct(multiscale_factor):
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
-    coord0 = random_state.rand(lengths.sum() * ploidy, 1)
+    coord0 = random_state.uniform(size=(lengths.sum() * ploidy, 1))
     coord1 = coord2 = np.zeros_like(coord0)
     struct = np.concatenate([coord0, coord1, coord2], axis=1)
 
