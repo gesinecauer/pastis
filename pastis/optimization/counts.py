@@ -346,9 +346,6 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         Beads that should be removed (set to NaN) in the structure.
     """
 
-    # TODO switch the function names: preprocess_counts & _prep_counts...
-    # FIXME what about if betas are different?
-
     if simple_diploid:
         if ploidy != 2:
             raise ValueError("Ploidy is not 2, but simple_diploid specified.")
@@ -383,11 +380,11 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
             counts = [_intermol_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
         elif excluded_counts.lower() == 'inter':
-            counts = [_intramolecular_counts(
+            counts = [_intramol_counts(
                 c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
         else:
             raise ValueError(
-                "`excluded_counts` must be an integer, 'inter', 'intra' or None.")
+                "excluded_counts must be an integer, 'inter', 'intra' or None.")
 
     # Format counts as CountsMatrix objects
     counts = _format_counts(

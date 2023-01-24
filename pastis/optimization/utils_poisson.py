@@ -17,18 +17,9 @@ def _setup_jax(debug_nan_inf=False):
     from jax.config import config as jax_config
     jax_config.update("jax_platform_name", "cpu")
     jax_config.update("jax_enable_x64", True)
-    # os.environ.update(
-    #     XLA_FLAGS=(
-    #         '--xla_cpu_multi_thread_eigen=false '
-    #         'intra_op_parallelism_threads=1 '
-    #         'inter_op_parallelism_threads=1 '
-    #     ),
-    #     XLA_PYTHON_CLIENT_PREALLOCATE='false',
-    # )
     if debug_nan_inf:
         jax_config.update("jax_debug_nans", True)
         jax_config.update("jax_debug_infs", True)
-    # jax_config.update("jax_check_tracer_leaks", True)
 
 
 _setup_jax()
@@ -123,8 +114,6 @@ def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,
                    piecewise_step=None, lengths=None):
     """Returns subdirectory for inference output files."""
     from ..io.read import _get_chrom
-
-    # FIXME update me?
 
     if outdir is None:
         return None

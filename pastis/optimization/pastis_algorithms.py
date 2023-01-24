@@ -598,10 +598,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         return None, {'seed': seed, 'converged': draft_converged}
 
     # INFER FULL-RES STRUCTURE (with or without multires optimization)
-    if first_alpha_loop and False:  # FIXME FIXME FIXME ??????????????????????????????????
-        all_multiscale_factors = [1]
-    else:
-        all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))
+    all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))
     X_ = init
     epsilon_max_ = epsilon_max
     for multiscale_factor in all_multiscale_factors:
@@ -646,13 +643,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             X_ = infer_param['orient']
         else:
             X_ = struct_
-        if 'epsilon' in infer_param:  # FIXME??
-            if np.asarray(infer_param['epsilon']).size == 1:
-                epsilon_max_ = infer_param['epsilon']
-            elif np.asarray(infer_param['epsilon']).size == struct_.shape[0]:
-                epsilon_max_ = infer_param['epsilon'].max()
-            else:
-                epsilon_max_ = infer_param['epsilon'][0]
+        if 'epsilon' in infer_param:  # Adjust for lower resolutions
+            epsilon_max_ = infer_param['epsilon']
         if 'lowres_exit' in mods:
             exit(0)
 
