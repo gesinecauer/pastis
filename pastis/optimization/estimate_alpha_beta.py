@@ -1,11 +1,17 @@
+import sys
+
+if sys.version_info[0] < 3:
+    raise Exception("Must be using Python 3")
+
 import numpy as np
 from scipy import optimize
 import warnings
+from functools import partial
 
 from .utils_poisson import _setup_jax
 _setup_jax()
 import jax.numpy as jnp
-from jax import grad
+from jax import grad, jit
 
 from .poisson import _format_X, objective
 from .utils_poisson import _euclidean_distance

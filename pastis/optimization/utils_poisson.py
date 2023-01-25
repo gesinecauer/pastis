@@ -1,7 +1,10 @@
 from __future__ import print_function
+import sys
+
+if sys.version_info[0] < 3:
+    raise Exception("Must be using Python 3")
 
 import numpy as np
-import sys
 import os
 import textwrap
 import pandas as pd
@@ -26,10 +29,8 @@ _setup_jax()
 
 from typing import Any as Array
 import jax.numpy as jnp
-from jax import custom_jvp
-from jax import lax
+from jax import custom_jvp, lax, jit
 from jax.nn import relu
-import jax
 
 
 if sys.version_info[0] < 3:
@@ -303,7 +304,7 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
 
 
 @custom_jvp
-@jax.jit
+@jit
 def jax_max(x1: Array, x2: Array) -> Array:
     """Element-wise maximum of array elements.
 
@@ -347,7 +348,7 @@ def jax_max_jvp(primals, tangents):
 
 
 @custom_jvp
-@jax.jit
+@jit
 def jax_min(x1: Array, x2: Array) -> Array:
     """Element-wise minimum of array elements.
 

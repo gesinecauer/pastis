@@ -1,8 +1,9 @@
 import sys
-import numpy as np
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
+
+import numpy as np
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -49,12 +50,9 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None,
 
     if bias_per_bin is None:
         log1p_theta = jnp.log1p(theta)
-    else:
-        log1p_theta = jnp.log1p(theta * bias_per_bin)
-
-    if bias_per_bin is None:
         tmp1 = jnp.mean(-k * log1p_theta)
     else:
+        log1p_theta = jnp.log1p(theta * bias_per_bin)
         tmp1 = jnp.mean(
             _masksum(-k * log1p_theta, mask=mask, axis=0) / data_per_bin)
 

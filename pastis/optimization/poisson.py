@@ -1,17 +1,18 @@
 import sys
-import numpy as np
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
-from .utils_poisson import _setup_jax
-_setup_jax()
-import jax.numpy as jnp
-from jax import grad
-
+import numpy as np
 from scipy import optimize
 import warnings
 from timeit import default_timer as timer
+from functools import partial
+
+from .utils_poisson import _setup_jax
+_setup_jax()
+import jax.numpy as jnp
+from jax import grad, jit
 
 from .multiscale_optimization import decrease_lengths_res
 from .utils_poisson import _euclidean_distance
@@ -209,17 +210,6 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     else:
         structures = X
 
-    # Check format of structures and mixture_coefs
-    if not isinstance(structures, list):
-        structures = [structures]
-    if mixture_coefs is None:
-        mixture_coefs = [1.] * len(structures)
-    # nbeads = decrease_lengths_res(lengths, multiscale_factor).sum() * ploidy
-    # if structures[0].shape[0] != nbeads:  # TODO fix this
-    #     raise ValueError(
-    #         f"Expected {nbeads} beads in structure at multiscale_factor="
-    #         f"{multiscale_factor}, found {structures[0].shape[0]} beads")
-
     obj_constraints = {}
     if constraints is not None:
         for constraint in constraints:
@@ -301,6 +291,9 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
     return X, epsilon, mixture_coefs
 
 
+gradient = grad(objective)
+
+
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
                       multiscale_reform=False, callback=None, mixture_coefs=None, mods=[]):
@@ -318,9 +311,6 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                              alpha=alpha, Xi=X, epsilon=epsilon)
 
     return new_obj
-
-
-gradient = grad(objective)
 
 
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,

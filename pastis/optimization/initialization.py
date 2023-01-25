@@ -1,8 +1,14 @@
+import sys
+
+if sys.version_info[0] < 3:
+    raise Exception("Must be using Python 3")
+
 import numpy as np
+import os
+
 from .multiscale_optimization import increase_struct_res, decrease_struct_res
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_bias_res
-import os
 from .mds import estimate_X
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _struct_replace_nan, _format_structures

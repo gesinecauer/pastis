@@ -12,6 +12,7 @@ _setup_jax()
 import jax.numpy as jnp
 from jax.nn import relu
 from jax.scipy.stats.nbinom import logpmf as logpmf_negbinom
+
 from .multiscale_optimization import decrease_lengths_res, decrease_counts_res
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .multiscale_optimization import decrease_bias_res
@@ -539,7 +540,7 @@ class BeadChainConnectivity2022(Constraint):
                 struct=struct, epsilon=epsilon, alpha=alpha,
                 beta=var['beta'], multiscale_factor=self.multiscale_factor,
                 row3d=var['row_nghbr'], col3d=var['row_nghbr'] + 1,
-                mods=self.mods)
+                inferring_alpha=inferring_alpha, mods=self.mods)
             gamma_mean = gamma_mean * 2
             gamma_var = gamma_var * 4
 
@@ -681,11 +682,12 @@ class HomologSeparating2022(Constraint):
         # Get KL divergence
         obj = 0
         for row, col in idx:
-            n, p = _get_hsc_negbinom_params(
+            n, p = _get_hsc2022_negbinom(
                 struct, row=row, col=col, alpha=alpha, beta=var["beta"],
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
                 bias_lowres=var["bias_lowres"],
-                fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'], mods=self.mods)
+                fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'],
+                inferring_alpha=inferring_alpha, mods=self.mods)
             log_lambda_pmf = logpmf_negbinom(
                 self.hparams['data_interchrom'][self.multiscale_factor]['x'],
                 n=n, p=p)
@@ -696,11 +698,12 @@ class HomologSeparating2022(Constraint):
         if 'debug' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
             row_all = np.concatenate([row for row, col in idx])
             col_all = np.concatenate([col for row, col in idx])
-            n, p = _get_hsc_negbinom_params(
+            n, p = _get_hsc2022_negbinom(
                 struct, row=row_all, col=col_all, alpha=alpha, beta=var["beta"],
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
                 bias_lowres=var["bias_lowres"],
-                fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'], mods=self.mods)
+                fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'],
+                inferring_alpha=inferring_alpha, mods=self.mods)
             nb_mean = (1 - p) * n / p
             nb_var = nb_mean / p
 
@@ -724,16 +727,17 @@ class HomologSeparating2022(Constraint):
         return self.lambda_val * obj
 
 
-def _get_hsc_negbinom_params(struct, row, col, alpha, beta, multiscale_factor=1,
-                             epsilon=None, bias_lowres=None,
-                             fullres_per_lowres_bead=None, mods=[]):
+def _get_hsc2022_negbinom(struct, row, col, alpha, beta, multiscale_factor=1,
+                          epsilon=None, bias_lowres=None,
+                          fullres_per_lowres_bead=None,
+                          inferring_alpha=False, mods=[]):
     """TODO"""
 
     if multiscale_factor > 1 and epsilon is not None:
         lambda_mean, lambda_mixture_var = get_gamma_moments(
             struct=struct, epsilon=epsilon, alpha=alpha,
             beta=beta, multiscale_factor=multiscale_factor,
-            row3d=row, col3d=col, mods=mods)
+            row3d=row, col3d=col, inferring_alpha=inferring_alpha, mods=mods)
     else:
         lambda_mean = beta * jnp.power(
             _euclidean_distance(struct, row=row, col=col), alpha)

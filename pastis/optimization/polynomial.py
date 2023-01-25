@@ -1,8 +1,9 @@
 import sys
-import numpy as np
 
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
+
+import numpy as np
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -15,9 +16,9 @@ def _polyval(x, c, unroll=128):
 
 
 def _polygrid2d(c, *args):
-    """Analagous to np.polynomial.polynomial.polygrid2d (which is not
-    differentiable with jax)
-    Note: jax.numpy.polyval uses flipped coefs"""
+    """Jax-friendly version of np.polynomial.polynomial.polygrid2d.
+
+    Note: jax.numpy.polyval uses flipped coefs, as does this function."""
 
     for xi in args:
         if isinstance(xi, (tuple, list)):
@@ -28,24 +29,6 @@ def _polygrid2d(c, *args):
     return c
 
 
-def _approx_ln_f_mean(epsilon_over_dis, alpha, inferring_alpha=False):
-    """TODO"""
-    if alpha == -3 and not inferring_alpha:
-        ln_f_mean = _polyval(epsilon_over_dis, c=coefs_mean_alpha_minus3)
-    else:
-        ln_f_mean = _polygrid2d(coefs_mean, epsilon_over_dis, alpha)
-    return ln_f_mean
-
-
-def _approx_ln_f_var(epsilon_over_dis, alpha, inferring_alpha=False):
-    """TODO"""
-    if alpha == -3 and not inferring_alpha:
-        ln_f_var = _polyval(epsilon_over_dis, c=coefs_var_alpha_minus3)
-    else:
-        ln_f_var = _polygrid2d(coefs_var, epsilon_over_dis, alpha)
-    return ln_f_var
-
-
 def _approx_ln_f(dis, epsilon, alpha, inferring_alpha=False,
                  min_epsilon_over_dis=1e-3, max_epsilon_over_dis=25, mods=[]):
     """TODO"""
@@ -54,12 +37,14 @@ def _approx_ln_f(dis, epsilon, alpha, inferring_alpha=False,
     epsilon_over_dis = jax_max(epsilon_over_dis, min_epsilon_over_dis)
     epsilon_over_dis = jax_min(epsilon_over_dis, max_epsilon_over_dis)
 
-    epsilon_over_dis = jnp.log(epsilon_over_dis)
+    log_epsilon_over_dis = jnp.log(epsilon_over_dis)
 
-    ln_f_mean = _approx_ln_f_mean(
-        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
-    ln_f_var = _approx_ln_f_var(
-        epsilon_over_dis, alpha=alpha, inferring_alpha=inferring_alpha)
+    if (not inferring_alpha) and alpha == -3:
+        ln_f_mean = _polyval(log_epsilon_over_dis, c=coefs_mean_alpha_minus3)
+        ln_f_var = _polyval(log_epsilon_over_dis, c=coefs_var_alpha_minus3)
+    else:
+        ln_f_mean = _polygrid2d(coefs_mean, log_epsilon_over_dis, alpha)
+        ln_f_var = _polygrid2d(coefs_var, log_epsilon_over_dis, alpha)
 
     return ln_f_mean, ln_f_var
 

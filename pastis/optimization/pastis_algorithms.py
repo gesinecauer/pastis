@@ -1,7 +1,4 @@
 from __future__ import print_function
-
-#import jax; jax.config.update('jax_platform_name', 'cpu')
-
 import sys
 
 if sys.version_info[0] < 3:

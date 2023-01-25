@@ -1,3 +1,8 @@
+import sys
+
+if sys.version_info[0] < 3:
+    raise Exception("Must be using Python 3")
+
 import numpy as np
 from scipy import sparse
 from warnings import warn
@@ -10,7 +15,6 @@ from iced.normalization import ICE_normalization
 
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _intramol_counts, _intermol_counts, _counts_near_diag
-
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _group_counts_multiscale
 from .multiscale_optimization import _get_fullres_counts_index

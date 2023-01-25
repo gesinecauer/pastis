@@ -1,7 +1,13 @@
+import sys
+
+if sys.version_info[0] < 3:
+    raise Exception("Must be using Python 3")
+
 import numpy as np
 from timeit import default_timer as timer
 from datetime import timedelta
 import os
+
 from .utils_poisson import find_beads_to_remove
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from .multiscale_optimization import get_epsilon_from_struct

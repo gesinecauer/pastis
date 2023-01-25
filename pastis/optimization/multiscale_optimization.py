@@ -1,12 +1,14 @@
 import sys
+
+if sys.version_info[0] < 3:
+    raise Exception("Must be using Python 3")
+
 import numpy as np
 import warnings
 from scipy import sparse
 from scipy.interpolate import interp1d
-from iced.io import load_lengths
 
-if sys.version_info[0] < 3:
-    raise Exception("Must be using Python 3")
+from iced.io import load_lengths
 
 
 def decrease_lengths_res(lengths, multiscale_factor):
