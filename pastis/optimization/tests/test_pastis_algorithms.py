@@ -160,7 +160,7 @@ def test_haploid_run_pastis(multiscale_rounds, multiscale_reform):
 
 @pytest.mark.parametrize("multiscale_rounds,multiscale_reform", [
     (1, True), (2, True), (2, False)])
-def test_haploid_run_pastis_infer_alpha(multiscale_rounds, multiscale_reform):
+def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
     lengths = np.array([40])
     ploidy = 1
     seed = 0

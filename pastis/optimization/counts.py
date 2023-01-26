@@ -5,7 +5,7 @@ if sys.version_info[0] < 3:
 
 import numpy as np
 from scipy import sparse
-from warnings import warn
+import warnings
 import re
 from copy import deepcopy
 import pandas as pd
@@ -43,7 +43,7 @@ def _best_counts_dtype(counts):
         if np.array_equal(data, data.round()):
             max_val = int(max_val)
         else:
-            warn("Counts matrix should only contain integers.")
+            warnings.warn("Counts matrix should only contain integers.")
             max_val = data.sum()  # Otherwise, sum can cause overflow to inf
             return np.promote_types(np.min_scalar_type(max_val), np.float64)
 
@@ -540,6 +540,8 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
     num_dis_bins = _counts_indices_to_3d_indices(
         counts_ambig, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=exclude_zeros)[0].size
+    if num_dis_bins == 0:
+        raise ValueError("Cannot compute beta -- no count data is included.")
     if neighboring_beads_only:
         # Intentionally dividing num_dis_bins / 2 for diploid: we assume that
         # the contribution of inter-hmlg counts to nghbr counts is negligible
@@ -555,6 +557,8 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
 
     # Get universal/ambiguated beta
     beta_ambig = counts_ambig.sum() / num_dis_bins
+    if (not np.isfinite(beta_ambig)) or beta_ambig <= 0:
+        raise ValueError(f"Beta for ambiguated counts is {beta_ambig}.")
 
     # Assign separate betas to each counts matrix
     beta = _disambiguate_beta(
@@ -628,6 +632,9 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
             included = _get_included_counts_bins(
                 data, lengths=lengths_at_res, ploidy=ploidy)
             row3d, col3d = np.where(included)
+
+    if row3d.size == 0:
+        return np.array([]), np.array([])
 
     nbeads_lowres = int(lengths_at_res.sum() * ploidy)
     if shape[0] != nbeads_lowres or shape[1] != nbeads_lowres:
@@ -840,16 +847,24 @@ class CountsMatrix(object):
             filtered = self.copy()
         else:
             filtered = self
+
+        if self.bins_nonzero is None and self.bins_zero is None:
+            return filtered
         if self.bins_nonzero is not None:
             filtered.bins_nonzero = filtered.bins_nonzero.filter(
                 row=row, col=col, copy=False)
         if self.bins_zero is not None:
             filtered.bins_zero = filtered.bins_zero.filter(
                 row=row, col=col, copy=False)
+
+        if self.bins_nonzero is None and self.bins_zero is None:
+            raise ValueError("All counts bins have been filtered out.")
         return filtered
 
     def tocoo(self):
         """Convert counts matrix to scipy sparse COO format."""
+        if self.bins_nonzero is None:
+            return None
         data = self.bins_nonzero.data
         if len(data.shape) > 1:
             data = data.sum(axis=0)
@@ -860,6 +875,8 @@ class CountsMatrix(object):
 
     def sum(self, axis=None, dtype=None, out=None):
         """Sum of current counts matrix."""
+        if self.bins_nonzero is None:
+            return 0
         if (not isinstance(axis, int)) and (
                 axis is None or set(list(axis)) == {0, 1}):
             return self.bins_nonzero._sum
@@ -895,6 +912,10 @@ class CountsMatrix(object):
         return self
 
     def _create_bins_zero(self):
+        if self.bins_nonzero is None:
+            raise ValueError(
+                "Must create bins_nonzero before creating bins_zero.")
+
         _empty_idx_lowres = find_beads_to_remove(
             self, lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
@@ -962,6 +983,12 @@ class CountsMatrix(object):
             Ambiguated contact counts matrix.
         """
 
+        if self.bins_nonzero is None and self.bins_zero is None:
+            raise ValueError("Add data to CountsMatrix before ambiguating.")
+        elif self.bins_nonzero is None:
+            raise NotImplementedError(
+                "CountsMatrix with only zero bins is not currently supported.")
+
         if self.ploidy == 1 or self.ambiguity == 'ambig':
             if copy:
                 return self.copy()
@@ -998,7 +1025,6 @@ class CountsMatrix(object):
             data[swap] = data[swap].reshape(
                 swap.sum(), self.multiscale_factor,
                 self.multiscale_factor).reshape(swap.sum(), -1, order='f')
-            # data = np.ascontiguousarray(data)
         data = pd.DataFrame(data)
         data['row'] = row_ambig
         data['col'] = col_ambig
@@ -1055,6 +1081,21 @@ class CountsMatrix(object):
         if first.ambiguity != second.ambiguity:
             raise ValueError("Mismatch in ambiguity")
 
+        first_empty = first.bins_nonzero is None and first.bins_zero is None
+        second_empty = second.bins_nonzero is None and second.bins_zero is None
+        if first_empty and second_empty:
+            return self.copy()  # TODO should it (& stmts below) return a copy?
+        elif first_empty:
+            return second.copy()
+        elif second_empty:
+            return first.copy()
+        elif first.bins_nonzero is None:
+            raise NotImplementedError(
+                "CountsMatrix with only zero bins is not currently supported.")
+        elif second.bins_nonzero is None:
+            raise NotImplementedError(
+                "CountsMatrix with only zero bins is not currently supported.")
+
         combo = CountsMatrix(
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor,
@@ -1103,7 +1144,7 @@ class CountsMatrix(object):
 
     def __radd__(self, other):
         if other == 0:
-            return self
+            return self.copy()  # TODO should it return a copy?
         else:
             return self.__add__(other)
 
@@ -1116,6 +1157,35 @@ class CountsMatrix(object):
 
     def __hash__(self):
         return _dict_to_hash(self.__dict__)
+
+    # def __str__(self):
+
+    #     if all([x is None for x in (self.ambiguity, self.shape,
+    #                                 self.bins_nonzero, self.exclude_zeros)]):
+    #         pass
+    #     elif any([x is None for x in (self.ambiguity, self.shape,
+    #                                   self.bins_nonzero, self.exclude_zeros)]):
+    #         pass
+    #     else:
+    #         if self.ploidy == 2:
+    #             ambiguity = {"ambig": "ambiguous", "pa": "partially ambiguous",
+    #                          "ua": "unambiguous"}[self.ambiguity]
+    #         self.shape
+    #         self.bins_nonzero
+    #         self.bins_zero
+    #         self.exclude_zeros
+
+    #     ploidy = {1: "haploid", 2: "diploid"}[self.ploidy]
+    #     to_print = f""
+
+    #     to_print += f"at {self.multiscale_factor}x resolution"
+    #     if self.multires_naive:
+    #         to_print += " (formatted for naive multiresolution approach)"
+
+    #     self.lengths
+    #     self.null
+    #     self.beta
+    #     self.weight
 
 
 class CountsBins(object):
@@ -1223,6 +1293,10 @@ class CountsBins(object):
             filtered = self
 
         filter_mask = _idx_isin((self.row, self.col), (row, col))
+        if filter_mask.sum() == 0:  # All counts bins have been filtered out
+            filtered = None
+            return filtered
+
         filtered.row = self.row[filter_mask]
         filtered.col = self.col[filter_mask]
         if self.data is not None:
