@@ -72,10 +72,13 @@ def test_increase_struct_res():
 
     # Set specified beads to NaN
     lengths_lowres = multiscale_optimization.decrease_lengths_res(
-        lengths_fullres, multiscale_factor=multiscale_factor)
-    struct_nan = struct_nan[struct_nan < lengths_lowres.sum()]
-    struct_nan = np.append(struct_nan, struct_nan + lengths_lowres.sum())
-    struct_lowres[struct_nan[struct_nan < struct_lowres.shape[0]], :] = np.nan
+        lengths, multiscale_factor=multiscale_factor)
+    struct_nan_lowres = struct_nan_lowres[
+        struct_nan_lowres < lengths_lowres.sum()]
+    struct_nan_lowres = np.append(
+        struct_nan_lowres, struct_nan_lowres + lengths_lowres.sum())
+    struct_lowres[struct_nan_lowres[
+        struct_nan_lowres < struct_lowres.shape[0]], :] = np.nan
 
     struct_highres_test = multiscale_optimization.increase_struct_res(
         struct_lowres, multiscale_factor=multiscale_factor, lengths=lengths,
