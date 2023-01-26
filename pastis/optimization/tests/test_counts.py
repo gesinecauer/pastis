@@ -69,7 +69,7 @@ def compare_counts_bins_objects(bins, bins_correct):
             assert bins.mask is None
 
     # Compare other attributes
-    assert _dict_is_equal(bins_correct, bins, verbose=True)
+    assert _dict_is_equal(bins_correct.__dict__, bins.__dict__, verbose=True)
     assert bins_correct == bins
 
 
@@ -92,7 +92,8 @@ def compare_counts_objects(counts, counts_correct):
         counts.bins_zero, bins_correct=counts_correct.bins_zero)
 
     # Compare other attributes
-    assert _dict_is_equal(counts_correct, counts, verbose=True)
+    assert _dict_is_equal(
+        counts_correct.__dict__, counts.__dict__, verbose=True)
     assert counts_correct == counts
 
 
@@ -312,7 +313,7 @@ def test_ambiguate_beta(ambiguity, use_bias):
         verbose=False)
     beta_mle = _estimate_beta(
         struct_true, counts=counts_objects, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)[ambiguity]._value
+        ploidy=ploidy, bias=bias)[0]._value
     assert_array_almost_equal(beta, beta_mle)
 
     # Test _ambiguate_beta
@@ -323,7 +324,7 @@ def test_ambiguate_beta(ambiguity, use_bias):
         verbose=False)
     beta_ambig_correct = _estimate_beta(
         struct_true, counts=counts_ambig_objects, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)["ambig"]._value
+        ploidy=ploidy, bias=bias)[0]._value
     beta_ambig_test = counts_py._ambiguate_beta(
         beta, counts=counts, lengths=lengths, ploidy=ploidy)
     assert_array_almost_equal(beta_ambig_correct, beta_ambig_test)

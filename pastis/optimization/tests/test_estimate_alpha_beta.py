@@ -36,9 +36,9 @@ def test_estimate_alpha_beta_haploid():
         X=struct_true, counts=counts, alpha_init=alpha_correct, lengths=lengths,
         ploidy=ploidy)
 
-    beta = list(estimate_alpha_beta._estimate_beta(
+    beta = estimate_alpha_beta._estimate_beta(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, verbose=False).values())[0]
+        ploidy=ploidy, verbose=False)[0]._value
 
     assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
@@ -68,9 +68,9 @@ def test_estimate_alpha_beta_haploid_biased():
         X=struct_true, counts=counts, alpha_init=alpha_correct, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
-    beta = list(estimate_alpha_beta._estimate_beta(
+    beta = estimate_alpha_beta._estimate_beta(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias, verbose=False).values())[0]
+        ploidy=ploidy, bias=bias, verbose=False)[0]._value
 
     assert converged
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
@@ -99,9 +99,9 @@ def test_estimate_alpha_beta_diploid(ambiguity):
         X=struct_true, counts=counts, alpha_init=alpha_correct, lengths=lengths,
         ploidy=ploidy)
 
-    beta = list(estimate_alpha_beta._estimate_beta(
+    beta = estimate_alpha_beta._estimate_beta(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, verbose=False).values())[0]
+        ploidy=ploidy, verbose=False)[0]._value
 
     assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
@@ -132,9 +132,9 @@ def test_estimate_alpha_beta_diploid_biased(ambiguity):
         X=struct_true, counts=counts, alpha_init=alpha_correct, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
-    beta = list(estimate_alpha_beta._estimate_beta(
+    beta = estimate_alpha_beta._estimate_beta(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias, verbose=False).values())[0]
+        ploidy=ploidy, bias=bias, verbose=False)[0]._value
 
     assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
@@ -175,9 +175,9 @@ def test_estimate_alpha_beta_diploid_combo():
         X=struct_true, counts=counts, alpha_init=alpha_correct, lengths=lengths,
         ploidy=ploidy, bias=bias)
 
-    beta = list(estimate_alpha_beta._estimate_beta(
-        X=struct_true, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, verbose=False).values())[0]
+    beta = estimate_alpha_beta._estimate_beta(
+        X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias, verbose=False)[0]._value
 
     assert converged
     assert obj < (-1e4 / sum([c.nbins for c in counts]))

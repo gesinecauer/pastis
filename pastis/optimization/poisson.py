@@ -259,9 +259,9 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
     return obj, (obj_logs, structures, alpha, epsilon)
 
 
-@partial(jax.jit, static_argnames=[
-    'counts', 'alpha', 'lengths', 'ploidy', 'beta', 'bias', 'constraints',
-    'reorienter', 'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
+# @partial(jit, static_argnames=[
+#     'counts', 'alpha', 'lengths', 'ploidy', 'beta', 'bias', 'constraints',
+#     'reorienter', 'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
 def objective_struct(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
                      constraints=None, reorienter=None, multiscale_factor=1,
                      multiscale_reform=False, mixture_coefs=None, mods=[]):

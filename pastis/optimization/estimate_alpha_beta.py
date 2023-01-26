@@ -51,8 +51,8 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
     return beta
 
 
-@partial(jax.jit, static_argnames=[
-    'X', 'counts', 'lengths', 'ploidy', 'bias', 'reorienter', 'mixture_coefs'])
+# @partial(jit, static_argnames=[
+#     'X', 'counts', 'lengths', 'ploidy', 'bias', 'reorienter', 'mixture_coefs'])
 def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
                    reorienter=None, mixture_coefs=None):
     """Estimates betas for all counts matrices."""
@@ -88,9 +88,9 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     return betas
 
 
-@partial(jax.jit, static_argnames=[
-    'counts', 'X', 'lengths', 'ploidy', 'bias', 'constraints', 'reorienter',
-    'mixture_coefs', 'mods'])
+# @partial(jit, static_argnames=[
+#     'counts', 'X', 'lengths', 'ploidy', 'bias', 'constraints', 'reorienter',
+#     'mixture_coefs', 'mods'])
 def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
                     constraints=None, reorienter=None, mixture_coefs=None, mods=[]):
     """Computes the objective function.

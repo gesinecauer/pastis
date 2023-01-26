@@ -648,6 +648,9 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
             y, int(nnz * map_factor / y.shape[0])) * min(shape) + np.tile(
             col3d, map_factor)
 
+    row3d = row3d.astype(np.min_scalar_type(row3d.max()))
+    col3d = col3d.astype(np.min_scalar_type(col3d.max()))
+
     return row3d, col3d
 
 
@@ -995,6 +998,7 @@ class CountsMatrix(object):
             data[swap] = data[swap].reshape(
                 swap.sum(), self.multiscale_factor,
                 self.multiscale_factor).reshape(swap.sum(), -1, order='f')
+            # data = np.ascontiguousarray(data)
         data = pd.DataFrame(data)
         data['row'] = row_ambig
         data['col'] = col_ambig
@@ -1179,19 +1183,21 @@ class CountsBins(object):
             self.ambiguity = meta.ambiguity
         self._empty_idx_fullres = meta._empty_idx_fullres
 
-        self.row = row
-        self.col = col
-        self.mask = mask
-        if mask is not None and np.all(mask):
+        self.row = row.astype(np.min_scalar_type(row.max()))
+        self.col = col.astype(np.min_scalar_type(col.max()))
+        if mask is not None or np.all(mask):
             self.mask = None
+        else:
+            self.mask = np.asarray(mask, order='C')  # C-contiguous for hashing
         if data is None:
             self._sum = 0
             self.name = f"{self.ambiguity}0"
+            self.data = None
         else:
             data = data.astype(_best_counts_dtype(data))
             self._sum = data.sum()
             self.name = self.ambiguity
-        self.data = data
+            self.data = np.asarray(data, order='C')  # C-contiguous for hashing
 
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)

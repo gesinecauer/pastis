@@ -319,7 +319,7 @@ def jax_max(x1: Array, x2: Array) -> Array:
     Under differentiation, we take:
 
     .. math::
-        \nabla \mathrm{max}(x, x) = 0
+        \nabla \\mathrm{max}(x, x) = 0
 
     Parameters
     ----------
@@ -363,7 +363,7 @@ def jax_min(x1: Array, x2: Array) -> Array:
     Under differentiation, we take:
 
     .. math::
-        \nabla \mathrm{min}(x, x) = 0
+        \nabla \\mathrm{min}(x, x) = 0
 
     Parameters
     ----------
@@ -681,18 +681,23 @@ def _dict_is_equal(d1, d2, verbose=False):
                       f" {type(d2[key])}", flush=True)
             return False
         if isinstance(d1[key], (np.ndarray, list)):
-            key_d1 = np.asarray(d1[key])
-            key_d2 = np.asarray(d2[key])
+            key_d1 = np.asarray(d1[key], order='C')
+            key_d2 = np.asarray(d2[key], order='C')
             if key_d1.shape != key_d2.shape:
                 if verbose:
                     print(f"Mismatch in shape for {key}: {d1[key].shape} VS."
                           f" {d2[key].shape}", flush=True)
                 return False
-            if hashlib.sha256(key_d1).hexdigest() != hashlib.sha256(
-                    key_d2).hexdigest():
+            hash_key_d1 = hashlib.sha256(key_d1).hexdigest()
+            hash_key_d2 = hashlib.sha256(key_d2).hexdigest()
+            if hash_key_d1 != hash_key_d2:
                 if verbose:
-                    print(f"Mismatch in {key}:\n{d1[key]}\nVS.\n{d2[key]}",
-                          flush=True)
+                    if np.array_equal(key_d1, key_d2):
+                        print(f"Mismatch in dtype for {key}: {d1[key].dtype}"
+                          f" VS. {d2[key].dtype}", flush=True)
+                    else:
+                        print(f"Mismatch in {key}:\n{d1[key]}\nVS.\n{d2[key]}",
+                              flush=True)
                 return False
         elif isinstance(d1[key], dict):
             if not _dict_is_equal(d1[key], d2[key]):
@@ -710,7 +715,7 @@ def _dict_to_hash(d):
     tmp = []
     for k, v in d.items():
         if isinstance(v, (np.ndarray, list)):
-            v = np.asarray(v)
+            v = np.asarray(v, order='C')
             v = (v.shape, hashlib.sha256(v).hexdigest())
         elif isinstance(v, dict):
             v = _dict_to_hash(v)
