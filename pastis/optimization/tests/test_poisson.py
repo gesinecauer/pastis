@@ -37,9 +37,9 @@ def test_poisson_objective_haploid():
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)._value
+        ploidy=ploidy, bias=bias)[0]._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -61,9 +61,9 @@ def test_poisson_objective_haploid_biased():
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)._value
+        ploidy=ploidy, bias=bias)[0]._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -86,9 +86,9 @@ def test_poisson_objective_diploid(ambiguity):
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)._value
+        ploidy=ploidy, bias=bias)[0]._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -111,9 +111,9 @@ def test_poisson_objective_diploid_biased(ambiguity):
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)._value
+        ploidy=ploidy, bias=bias)[0]._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -156,10 +156,10 @@ def test_objective_multires(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, bias=bias)._value
+        multiscale_reform=multiscale_reform, bias=bias)[0]._value
 
     assert obj < (-1e4 / sum([c.nbins for c in counts]))
 
@@ -202,10 +202,10 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform)._value
+        multiscale_reform=multiscale_reform)[0]._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
 
@@ -253,14 +253,14 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj_unbiased, _ = poisson.objective(
+    obj_unbiased = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=None, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform)._value
-    obj_biased, _ = poisson.objective(
+        multiscale_reform=multiscale_reform)[0]._value
+    obj_biased = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform)._value
+        multiscale_reform=multiscale_reform)[0]._value
 
     print(f"{obj_unbiased=:g}   {obj_biased=:g}")
     assert_array_almost_equal(obj_unbiased, obj_biased)
@@ -304,10 +304,10 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform)._value
+        multiscale_reform=multiscale_reform)[0]._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
 
@@ -350,9 +350,9 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj, _ = poisson.objective(
+    obj = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform)._value
+        multiscale_reform=multiscale_reform)[0]._value
 
     assert obj < (-1e3 / sum([c.nbins for c in counts]))
