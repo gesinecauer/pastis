@@ -9,13 +9,13 @@ from warnings import warn
 import re
 from copy import deepcopy
 import pandas as pd
-import hashlib
 
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
 
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _intramol_counts, _intermol_counts, _counts_near_diag
+from .utils_poisson import _dict_is_equal, _dict_to_hash
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _group_counts_multiscale
 from .multiscale_optimization import _get_fullres_counts_index
@@ -44,7 +44,7 @@ def _best_counts_dtype(counts):
             max_val = int(max_val)
         else:
             warn("Counts matrix should only contain integers.")
-            max_val = data.sum()  # Otherwise, can cause overflow to inf
+            max_val = data.sum()  # Otherwise, sum can cause overflow to inf
             return np.promote_types(np.min_scalar_type(max_val), np.float64)
 
     return np.min_scalar_type(max_val)
@@ -1103,43 +1103,15 @@ class CountsMatrix(object):
         else:
             return self.__add__(other)
 
-    def __eq__(self, other):  # TODO remove print statements
+    def __eq__(self, other):
         if type(other) is type(self):
-            if self.__dict__.keys() != other.__dict__.keys():
-                print('~~~~~~ __dict__ keys mismatch')
+            if not _dict_is_equal(self.__dict__, other.__dict__):
                 return False
-            for key in self.__dict__.keys():
-                self_val = self.__dict__[key]
-                other_val = other.__dict__[key]
-                if type(self_val) is not type(other_val):
-                    print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')
-                    print(f"{type(self_val)=}\n{type(other_val)=}")
-                    return False
-                if isinstance(self_val, np.ndarray):
-                    if np.issubdtype(
-                            self_val.dtype, np.floating) or np.issubdtype(
-                            other_val.dtype, np.floating):
-                        if not np.allclose(self_val, other_val):
-                            print(f'~~~~~~ __dict__ array not equal: {key}')
-                            return False
-                    else:  # Arrays with non-float dtypes must be exactly equal
-                        if not np.array_equal(self_val, other_val):
-                            print(f'~~~~~~ __dict__ array not equal int: {key}')
-                            return False
-                elif self_val != other_val:
-                    print(f'~~~~~~ __dict__ value not equal: {key}')
-                    return False
             return True
         return NotImplemented
 
     def __hash__(self):
-        tmp = []
-        for k, v in self.__dict__.items():
-            if isinstance(v, np.ndarray):
-                v = np.asarray(v)
-                v = (v.shape, hashlib.sha256(v).hexdigest())
-            tmp.append((k, v))
-        return hash(tuple(sorted(tmp)))
+        return _dict_to_hash(self.__dict__)
 
 
 class CountsBins(object):
@@ -1321,40 +1293,12 @@ class CountsBins(object):
         else:
             return self.data.shape[0]
 
-    def __eq__(self, other):  # TODO remove print statements
+    def __eq__(self, other):
         if type(other) is type(self):
-            if self.__dict__.keys() != other.__dict__.keys():
-                print('~~~~~~ __dict__ keys mismatch')
+            if not _dict_is_equal(self.__dict__, other.__dict__):
                 return False
-            for key in self.__dict__.keys():
-                self_val = self.__dict__[key]
-                other_val = other.__dict__[key]
-                if type(self_val) is not type(other_val):
-                    print(f'~~~~~~ type(__dict__[key]) mismatch: {key}')
-                    print(f"{type(self_val)=}\n{type(other_val)=}")
-                    return False
-                if isinstance(self_val, np.ndarray):
-                    if np.issubdtype(
-                            self_val.dtype, np.floating) or np.issubdtype(
-                            other_val.dtype, np.floating):
-                        if not np.allclose(self_val, other_val):
-                            print(f'~~~~~~ __dict__ array not equal: {key}')
-                            return False
-                    else:  # Arrays with non-float dtypes must be exactly equal
-                        if not np.array_equal(self_val, other_val):
-                            print(f'~~~~~~ __dict__ array not equal int: {key}')
-                            return False
-                elif self_val != other_val:
-                    print(f'~~~~~~ __dict__ value not equal: {key}')
-                    return False
             return True
         return NotImplemented
 
     def __hash__(self):
-        tmp = []
-        for k, v in self.__dict__.items():
-            if isinstance(v, np.ndarray):
-                v = np.asarray(v)
-                v = (v.shape, hashlib.sha256(v).hexdigest())
-            tmp.append((k, v))
-        return hash(tuple(sorted(tmp)))
+        return _dict_to_hash(self.__dict__)

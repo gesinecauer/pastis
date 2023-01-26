@@ -6,7 +6,6 @@ if sys.version_info[0] < 3:
 import numpy as np
 from scipy import sparse
 import warnings
-import hashlib
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -19,6 +18,7 @@ from .multiscale_optimization import _count_fullres_per_lowres_bead
 from .multiscale_optimization import decrease_bias_res
 from .utils_poisson import find_beads_to_remove, _euclidean_distance
 from .utils_poisson import _intermol_counts, _intramol_mask
+from .utils_poisson import _dict_is_equal, _dict_to_hash
 from .counts import ambiguate_counts, _ambiguate_beta, _get_nonzero_mask
 from .counts import _get_included_counts_bins, _idx_isin, _get_bias_per_bin
 from .likelihoods import poisson_nll, gamma_poisson_nll
@@ -103,22 +103,6 @@ class Constraint(object):
         return f"CONSTRAINT: {self.name:.<40s} LAMBDA={self.lambda_val:g}"
 
     def __eq__(self, other):
-        def _dict_is_equal(d1, d2):
-            if d1.keys() != d2.keys():
-                return False
-            for key in d1.keys():
-                if type(d1[key]) is not type(d2[key]):
-                    return False
-                if isinstance(d1[key], (np.ndarray, list)):
-                    if not np.array_equal(d1[key], d2[key]):
-                        return False
-                elif isinstance(d1[key], dict):
-                    if not _dict_is_equal(d1[key], d2[key]):
-                        return False
-                elif d1[key] != d2[key]:
-                    return False
-            return True
-
         if type(other) is type(self):
             if not _dict_is_equal(self.__dict__, other.__dict__):
                 return False
@@ -126,17 +110,6 @@ class Constraint(object):
         return NotImplemented
 
     def __hash__(self):
-        def _dict_to_hash(d):
-            tmp = []
-            for k, v in d.items():
-                if isinstance(v, (np.ndarray, list)):
-                    v = np.asarray(v)
-                    v = (v.shape, hashlib.sha256(v).hexdigest())
-                elif isinstance(v, dict):
-                    v = _dict_to_hash(v)
-                tmp.append((k, v))
-            return hash(tuple(sorted(tmp)))
-
         return _dict_to_hash(self.__dict__)
 
     def check(self):

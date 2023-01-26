@@ -11,6 +11,7 @@ if sys.version_info[0] >= 3:
     from utils import get_counts, ambiguate_counts_correct, get_struct_randwalk
     import pastis.optimization.counts as counts_py
     from pastis.optimization.estimate_alpha_beta import _estimate_beta
+    from pastis.optimization.utils_poisson import _dict_is_equal
 
     from topsy.utils.debug import print_array_non0  # TODO remove
 
@@ -67,6 +68,8 @@ def compare_counts_bins_objects(bins, bins_correct):
             assert bins_correct.mask is None
             assert bins.mask is None
 
+    # Compare other attributes
+    assert _dict_is_equal(bins_correct, bins, verbose=True)
     assert bins_correct == bins
 
 
@@ -89,6 +92,7 @@ def compare_counts_objects(counts, counts_correct):
         counts.bins_zero, bins_correct=counts_correct.bins_zero)
 
     # Compare other attributes
+    assert _dict_is_equal(counts_correct, counts, verbose=True)
     assert counts_correct == counts
 
 
@@ -198,7 +202,7 @@ def test_3d_indices_haploid():
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=False)
+        use_poisson=True)
 
     row3d, col3d = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
@@ -220,7 +224,7 @@ def test_3d_indices_diploid_unambig():
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=False)
+        use_poisson=True)
 
     row3d, col3d = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
@@ -242,14 +246,15 @@ def test_3d_indices_diploid_ambig():
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="ambig", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=False)
+        use_poisson=True)
 
     row3d_test, col3d_test = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=True)
 
     n = lengths.sum()
-    row3d_correct = np.concatenate([np.tile(counts.row, 2), np.tile(counts.row, 2) + n])
+    row3d_correct = np.concatenate(
+        [np.tile(counts.row, 2), np.tile(counts.row, 2) + n])
     col3d_correct = np.tile(np.concatenate([counts.col, counts.col + n]), 2)
     assert_array_equal(row3d_correct, row3d_test)
     assert_array_equal(col3d_correct, col3d_test)
@@ -267,7 +272,7 @@ def test_3d_indices_diploid_partially_ambig():
     counts = get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
         ambiguity="pa", struct_nan=struct_nan, random_state=random_state,
-        use_poisson=False)
+        use_poisson=True)
 
     row3d_test, col3d_test = counts_py._counts_indices_to_3d_indices(
         counts, lengths_at_res=lengths, ploidy=ploidy,

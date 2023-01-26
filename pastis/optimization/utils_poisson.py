@@ -12,6 +12,7 @@ from scipy import sparse
 from distutils.util import strtobool
 from scipy.interpolate import interp1d
 import warnings
+import hashlib
 
 
 def _setup_jax(debug_nan_inf=False):
@@ -665,3 +666,53 @@ def _counts_near_diag(counts, lengths_at_res, ploidy, nbins):
     return _get_counts_sections(
         counts=counts, sections='near diag', lengths_at_res=lengths_at_res,
         ploidy=ploidy, nbins=nbins)
+
+
+def _dict_is_equal(d1, d2, verbose=False):
+    """TODO"""
+    if d1.keys() != d2.keys():
+        if verbose:
+            print(f"Key mismatch:\n{d1.keys()}\nVS.\n{d2.keys()}", flush=True)
+        return False
+    for key in d1.keys():
+        if type(d1[key]) is not type(d2[key]):
+            if verbose:
+                print(f"Mismatch in object type for {key}: {type(d1[key])} VS."
+                      f" {type(d2[key])}", flush=True)
+            return False
+        if isinstance(d1[key], (np.ndarray, list)):
+            key_d1 = np.asarray(d1[key])
+            key_d2 = np.asarray(d2[key])
+            if key_d1.shape != key_d2.shape:
+                if verbose:
+                    print(f"Mismatch in shape for {key}: {d1[key].shape} VS."
+                          f" {d2[key].shape}", flush=True)
+                return False
+            if hashlib.sha256(key_d1).hexdigest() != hashlib.sha256(
+                    key_d2).hexdigest():
+                if verbose:
+                    print(f"Mismatch in {key}:\n{d1[key]}\nVS.\n{d2[key]}",
+                          flush=True)
+                return False
+        elif isinstance(d1[key], dict):
+            if not _dict_is_equal(d1[key], d2[key]):
+                return False
+        elif d1[key] != d2[key]:
+            if verbose:
+                print(f"Mismatch in {key}:\n{d1[key]}\nVS.\n{d2[key]}",
+                      flush=True)
+            return False
+    return True
+
+
+def _dict_to_hash(d):
+    """TODO"""
+    tmp = []
+    for k, v in d.items():
+        if isinstance(v, (np.ndarray, list)):
+            v = np.asarray(v)
+            v = (v.shape, hashlib.sha256(v).hexdigest())
+        elif isinstance(v, dict):
+            v = _dict_to_hash(v)
+        tmp.append((k, v))
+    return hash(tuple(sorted(tmp)))
