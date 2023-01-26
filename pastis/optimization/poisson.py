@@ -319,7 +319,7 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
     return X, epsilon, mixture_coefs
 
 
-gradient = grad(objective_struct)
+gradient = grad(objective_struct, has_aux=True)
 
 
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
@@ -351,11 +351,11 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         warnings.filterwarnings(
             "ignore", message="Using a non-tuple sequence for multidimensional"
             " indexing is deprecated", category=FutureWarning)
-        new_grad, _ = np.array(gradient(
+        new_grad = np.array(gradient(
             X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-            mixture_coefs=mixture_coefs, mods=mods)).flatten()
+            mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
 
     return new_grad
 

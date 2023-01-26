@@ -132,7 +132,7 @@ def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs, inferring_alpha=True, mods=mods)
 
 
-gradient_alpha = grad(objective_alpha)
+gradient_alpha = grad(objective_alpha, has_aux=True)
 
 
 def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
@@ -173,10 +173,12 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         warnings.filterwarnings(
             "ignore", message='Using a non-tuple sequence for multidimensional'
                               ' indexing is deprecated', category=FutureWarning)
-        new_grad, _ = np.array(gradient_alpha(
+        new_grad = np.array(gradient_alpha(
             alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
             ploidy=ploidy, bias=bias, constraints=constraints,
-            reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)).flatten()
+            reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
+
+        print("*** new_grad", new_grad)
 
     return np.asarray(new_grad, dtype=np.float64)
 
@@ -304,7 +306,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         print('INITIAL BETA:  ' + ', '.join(
               [f'{k}={v:.3g}' for k, v in beta_init.items()]), flush=True)
         print('INFERRED BETA: ' + ', '.join(
-              [f'{k}={v:.3g}' for k, v in beta_new.items()]), flush=True)
+              [f'{c.ambiguity}={c.beta:.3g}' for c in counts]), flush=True)
         if converged:
             print('CONVERGED\n', flush=True)
         else:
