@@ -1185,7 +1185,7 @@ class CountsBins(object):
 
         self.row = row.astype(np.min_scalar_type(row.max()))
         self.col = col.astype(np.min_scalar_type(col.max()))
-        if mask is not None or np.all(mask):
+        if mask is None or np.all(mask):
             self.mask = None
         else:
             self.mask = np.asarray(mask, order='C')  # C-contiguous for hashing
