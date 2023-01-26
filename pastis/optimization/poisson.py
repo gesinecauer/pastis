@@ -76,18 +76,17 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
 
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
-                           bias=None, multiscale_factor=1,
-                           inferring_alpha=False, mixture_coefs=None, mods=[]):
+                           beta, bias=None, multiscale_factor=1,
+                           mixture_coefs=None, mods=[]):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
     obj = 0
     for struct in structures:
         k, theta = get_gamma_params(
-            struct, epsilon=epsilon, alpha=alpha, beta=counts.beta,
-            row3d=counts.row3d, col3d=counts.col3d,
-            multiscale_factor=multiscale_factor, ambiguity=counts.ambiguity,
-            inferring_alpha=inferring_alpha, mods=mods)
+            struct, epsilon=epsilon, alpha=alpha, beta=beta, row3d=counts.row3d,
+            col3d=counts.col3d, multiscale_factor=multiscale_factor,
+            ambiguity=counts.ambiguity, mods=mods)
         obj = obj + gamma_poisson_nll(
             theta=theta, k=k, data=counts.data,
             bias_per_bin=counts.bias_per_bin(bias), mask=counts.mask, mods=mods)
@@ -100,7 +99,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
     return counts.weight * obj
 
 
-def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
+def _poisson_obj(structures, counts, alpha, lengths, ploidy, beta, bias=None,
                  multiscale_factor=1, mixture_coefs=None, mods=[]):
     """Computes the Poisson objective function for a given counts matrix.
     """
@@ -111,7 +110,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
         tmp1 = jnp.power(dis, alpha)
         tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
         lambda_pois = lambda_pois + mix_coef * counts.bias_per_bin(
-            bias) * counts.beta * tmp
+            bias) * beta * tmp
 
     obj = poisson_nll(counts.data, lambda_pois=lambda_pois, mask=counts.mask,
                       data_per_bin=counts.fullres_per_lowres_dis)
@@ -124,14 +123,13 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, bias=None,
     return counts.weight * obj
 
 
-def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
-                multiscale_factor=1, epsilon=None, inferring_alpha=False,
-                mixture_coefs=None, mods=[]):
+def _obj_single(structures, counts, alpha, lengths, ploidy, beta, bias=None,
+                multiscale_factor=1, epsilon=None, mixture_coefs=None, mods=[]):
     """Computes the objective function for a given individual counts matrix.
     """
 
     if counts.nbins == 0 or counts.null or (bias is not None and bias.sum() == 0):
-        return 0.
+        return 0
     if np.isnan(counts.weight) or np.isinf(counts.weight) or counts.weight == 0:
         raise ValueError(f"Counts weight may not be {counts.weight}.")
 
@@ -140,26 +138,28 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, bias=None,
             f"The number of structures ({len(structures)}) and of mixture"
             f" coefficents ({len(mixture_coefs)}) should be identical.")
     elif mixture_coefs is None:
-        mixture_coefs = [1.]
+        mixture_coefs = [1]
 
-    if epsilon is None or counts.multiscale_factor == 1 or np.all(epsilon == 0):
+    if epsilon is None or multiscale_factor == 1 or jnp.all(epsilon == 0):
         obj = _poisson_obj(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
-            ploidy=ploidy, bias=bias, multiscale_factor=counts.multiscale_factor,
-            mixture_coefs=mixture_coefs, mods=mods)
+            ploidy=ploidy, beta=beta, bias=bias,
+            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
+            mods=mods)
     else:
         obj = _multires_negbinom_obj(
             structures=structures, epsilon=epsilon, counts=counts, alpha=alpha,
-            lengths=lengths, ploidy=ploidy, bias=bias,
-            multiscale_factor=multiscale_factor, inferring_alpha=inferring_alpha,
-            mixture_coefs=mixture_coefs, mods=mods)
+            lengths=lengths, ploidy=ploidy, beta=beta, bias=bias,
+            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
+            mods=mods)
 
     return obj
 
 
-def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
-              reorienter=None, multiscale_factor=1, multiscale_reform=False,
-              mixture_coefs=None, return_extras=False, inferring_alpha=False, mods=[]):
+def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
+              constraints=None, reorienter=None, multiscale_factor=1,
+              multiscale_reform=False, mixture_coefs=None,
+              inferring_alpha=False, mods=[]):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -193,9 +193,23 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
 
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
-    if lengths is None:
-        lengths = np.array([min([min(c.shape) for c in counts])])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+
+    # Get beta
+    if beta is None:
+        if inferring_alpha:
+            raise ValueError("Must supply beta when inferring alpha.")
+        beta = [c.beta for c in counts]
+    else:
+        beta = jnp.array(beta, copy=False, ndmin=1).ravel()
+        if beta.size != len(counts):
+            raise ValueError(
+                "Beta needs to contain as many values as there are counts"
+                f" matrices ({len(counts)}). It is of size {beta.size}.")
+        stored_betas = np.array([c.beta for c in counts])
+        if (not inferring_alpha) and (not np.all(stored_betas == None)) and (
+                not jnp.array_equal(beta, stored_betas)):
+            warnings.warn("Overriding betas stored in counts matrices...")
 
     # Format X
     if reorienter is None or (not reorienter.reorient):
@@ -210,41 +224,54 @@ def objective(X, counts, alpha, lengths, ploidy, bias=None, constraints=None,
     else:
         structures = X
 
+    # Get the constraint terms
     obj_constraints = {}
     if constraints is not None:
         for constraint in constraints:
-            constraint_obj = 0.
+            constraint_obj = 0
             for struct, mix_coef in zip(structures, mixture_coefs):
                 constraint_obj = constraint_obj + mix_coef * constraint.apply(
                     struct=struct, alpha=alpha, epsilon=epsilon,
                     counts=counts, bias=bias, inferring_alpha=inferring_alpha)
             obj_constraints[f"obj_{constraint.abbrev}"] = constraint_obj
 
-    obj_poisson = {}
-    obj_poisson_sum = 0.
-
+    # Get main objective (Poisson/NegBinom of all eligible counts bins)
+    obj_main = {}
+    obj_main_sum = 0
     for i in range(len(counts)):
         for counts_bins in counts[i].bins:
             obj_counts = _obj_single(
                 structures=structures, counts=counts_bins, alpha=alpha,
-                lengths=lengths, ploidy=ploidy, bias=bias,
+                lengths=lengths, ploidy=ploidy, beta=beta[i], bias=bias,
                 multiscale_factor=multiscale_factor, epsilon=epsilon,
-                inferring_alpha=inferring_alpha, mixture_coefs=mixture_coefs,
-                mods=mods)
-            obj_poisson[f"obj_{counts_bins.name}"] = obj_counts
-            obj_poisson_sum = obj_poisson_sum + obj_counts * counts_bins.nbins
+                mixture_coefs=mixture_coefs, mods=mods)
+            obj_main[f"obj_{counts_bins.name}"] = obj_counts
+            obj_main_sum = obj_main_sum + obj_counts * counts_bins.nbins
 
-    # Take weighted mean of poisson/negbinom obj terms
-    obj_poisson_mean = obj_poisson_sum / sum([c.nbins for c in counts])
+    # Take mean of main objective terms, weighted by total number of bins
+    obj_main_mean = obj_main_sum / sum([c.nbins for c in counts])
 
-    obj = obj_poisson_mean + sum(obj_constraints.values())
+    # Total objective
+    obj = obj_main_mean + sum(obj_constraints.values())
 
-    if return_extras:
-        obj_logs = {**obj_poisson, **obj_constraints,
-                    **{'obj': obj, 'obj_poisson': obj_poisson_mean}}
-        return obj, obj_logs, structures, alpha, epsilon
-    else:
-        return obj
+    obj_logs = {**obj_main, **obj_constraints,
+                **{'obj': obj, 'obj_main': obj_main_mean}}
+    return obj, (obj_logs, structures, alpha, epsilon)
+
+
+@partial(jax.jit, static_argnames=[
+    'counts', 'alpha', 'lengths', 'ploidy', 'beta', 'bias', 'constraints',
+    'reorienter', 'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
+def objective_struct(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
+                     constraints=None, reorienter=None, multiscale_factor=1,
+                     multiscale_reform=False, mixture_coefs=None, mods=[]):
+    """TODO"""
+
+    return objective(
+        X=X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        beta=beta, bias=bias, constraints=constraints, reorienter=reorienter,
+        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+        mixture_coefs=mixture_coefs, inferring_alpha=False, mods=mods)
 
 
 def _format_X(X, lengths, ploidy, multiscale_factor=1,
@@ -269,11 +296,12 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
     else:
         epsilon = None
 
-    # Reshape
+    # Reshape into 3D coordinates
     try:
         X = X.reshape(-1, 3)
     except ValueError:
-        raise ValueError(f"X should contain 3D structures, {X.shape=}.")
+        raise ValueError("Structures should be composed of 3D bead coordinates,"
+                         f" {X.shape=}.")
 
     # Get list of structures, one per mix_coef
     num_mix = len(mixture_coefs)
@@ -291,7 +319,7 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
     return X, epsilon, mixture_coefs
 
 
-gradient = grad(objective)
+gradient = grad(objective_struct)
 
 
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
@@ -300,11 +328,11 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
-    new_obj, obj_logs, structures, alpha, epsilon = objective(
+    new_obj, (obj_logs, structures, alpha, epsilon) = objective_struct(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
+        mixture_coefs=mixture_coefs, mods=mods)
 
     if callback is not None:
         callback.on_iter_end(obj_logs=obj_logs, structures=structures,
@@ -323,7 +351,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         warnings.filterwarnings(
             "ignore", message="Using a non-tuple sequence for multidimensional"
             " indexing is deprecated", category=FutureWarning)
-        new_grad = np.array(gradient(
+        new_grad, _ = np.array(gradient(
             X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
             bias=bias, constraints=constraints, reorienter=reorienter,
             multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
@@ -390,8 +418,6 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         History generated by the callback, containing information about the
         objective function during optimization.
     """
-
-    # from jax import random; x = random.uniform(random.PRNGKey(0), (1000,), dtype=jnp.float64); print(x.dtype); exit(0)
 
     multiscale_reform = (epsilon is not None)
 
@@ -558,14 +584,14 @@ class PastisPM(object):
 
         if constraints is None:
             constraints = []
+        [x.setup(counts=counts, bias=bias) for x in constraints]  # For jax jit
+
         if callback is None:
             callback = Callback(
                 lengths=lengths, ploidy=ploidy, counts=counts,
                 multiscale_factor=multiscale_factor,
                 multiscale_reform=(epsilon is not None),
                 frequency={'print': 100, 'history': 100, 'save': None})
-        # if reorienter is None:
-        #     reorienter = ChromReorienter(lengths=lengths, ploidy=ploidy)
         if reorienter is not None:
             reorienter.set_multiscale_factor(multiscale_factor)
 
@@ -648,8 +674,7 @@ class PastisPM(object):
         beta_new = _estimate_beta(
             self.X_.ravel(), self.counts, alpha=self.alpha_,
             lengths=self.lengths, ploidy=self.ploidy, bias=self.bias,
-            mixture_coefs=self.mixture_coefs,
-            reorienter=self.reorienter, verbose=self.verbose)
+            mixture_coefs=self.mixture_coefs, reorienter=self.reorienter)
         if update_counts:
             self.counts = [c.update_beta(beta_new) for c in self.counts]
         return list(beta_new.values())

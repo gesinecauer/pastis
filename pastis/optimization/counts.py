@@ -9,6 +9,7 @@ from warnings import warn
 import re
 from copy import deepcopy
 import pandas as pd
+import hashlib
 
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
@@ -580,18 +581,18 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
             beta = [beta]
         if len(beta) != len(counts):
             raise ValueError(
-                "Beta needs to contain as many scaling factors as there are "
-                f"datasets ({len(counts)}). It is of length ({len(beta)}).")
+                "Beta needs to contain as many values as there are counts"
+                f" matrices ({len(counts)}). It is of size {len(beta)}.")
 
     if input_weight is None:
-        input_weight = [1.] * len(counts)
+        input_weight = [1] * len(counts)
     else:
         if not isinstance(input_weight, (list, np.ndarray)):
             input_weight = [input_weight]
         if len(input_weight) != len(counts):
-            raise ValueError("input_weights needs to contain as many weighting"
-                             f" factors as there are datasets ({len(counts)})."
-                             f" It is of length ({len(input_weight)}).")
+            raise ValueError("input_weights needs to contain as many values"
+                             f" as there are counts matrices ({len(counts)})."
+                             f" It is of size {len(input_weight)}.")
         input_weight = np.array(input_weight)
         if input_weight.sum() not in (0, 1):
             input_weight *= len(input_weight) / input_weight.sum()
@@ -1131,15 +1132,14 @@ class CountsMatrix(object):
             return True
         return NotImplemented
 
-    def __hash__(self):  # XXX
-        __dict__ = []
-        for x in self.__dict__.items():
-            if isinstance(x, np.ndarray):
-                x = x.tolist()
-            if isinstance(x, list):
-                x = tuple(x)
-            __dict__.append(x)
-        return hash(tuple(sorted(__dict__)))
+    def __hash__(self):
+        tmp = []
+        for k, v in self.__dict__.items():
+            if isinstance(v, np.ndarray):
+                v = np.asarray(v)
+                v = (v.shape, hashlib.sha256(v).hexdigest())
+            tmp.append((k, v))
+        return hash(tuple(sorted(tmp)))
 
 
 class CountsBins(object):
@@ -1351,11 +1351,10 @@ class CountsBins(object):
         return NotImplemented
 
     def __hash__(self):
-        __dict__ = []
-        for x in self.__dict__.items():
-            if isinstance(x, np.ndarray):
-                x = x.tolist()
-            if isinstance(x, list):
-                x = tuple(x)
-            __dict__.append(x)
-        return hash(tuple(sorted(__dict__)))
+        tmp = []
+        for k, v in self.__dict__.items():
+            if isinstance(v, np.ndarray):
+                v = np.asarray(v)
+                v = (v.shape, hashlib.sha256(v).hexdigest())
+            tmp.append((k, v))
+        return hash(tuple(sorted(tmp)))

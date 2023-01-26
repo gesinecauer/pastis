@@ -19,14 +19,11 @@ from .utils_poisson import _euclidean_distance
 
 def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                           mixture_coefs=None):
-    """Facilitates estimation of beta for a single counts object.
+    """Estimate beta for a single counts matrix."""
 
-    Computes the sum of lambda_ij corresponding to a given counts matrix.
-    """
-
-    if isinstance(alpha, np.ndarray):
-        if len(alpha) > 1:
-            raise ValueError("Alpha should be of length 1.")
+    if isinstance(alpha, (np.ndarray, jnp.ndarray)):
+        if alpha.size > 1:
+            raise ValueError("Alpha must be a float or array of size 1.")
         alpha = alpha[0]
 
     if mixture_coefs is not None and len(structures) != len(mixture_coefs):
@@ -34,27 +31,35 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
             f"The number of structures ({len(structures)}) and of mixture"
             f" coefficents ({len(mixture_coefs)}) should be identical.")
     elif mixture_coefs is None:
-        mixture_coefs = [1.]
+        mixture_coefs = [1]
 
-    lambda_pois_sum = 0.
-    for struct, mix_coef in zip(structures, mixture_coefs):
-        dis = _euclidean_distance(struct, row=counts.row3d, col=counts.col3d)
-        tmp1 = jnp.power(dis, alpha)
-        tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
-        lambda_pois_sum += jnp.sum(mix_coef * counts.bias_per_bin(
-            bias) * tmp)
+    lambda_pois_sum = 0
+    for counts_bins in counts.bins:
+        for struct, mix_coef in zip(structures, mixture_coefs):
+            dis = _euclidean_distance(
+                struct, row=counts_bins.row3d, col=counts_bins.col3d)
+            tmp = jnp.power(dis, alpha).reshape(
+                -1, counts_bins.nbins).sum(axis=0)
+            lambda_pois_sum = lambda_pois_sum + jnp.sum(
+                mix_coef * counts_bins.bias_per_bin(bias) * tmp)
 
-    return lambda_pois_sum
+    beta = counts.sum() / lambda_pois_sum
+
+    if (not jnp.isfinite(beta)) or beta <= 0:
+        raise ValueError(f"Beta for {counts.ambiguity} counts is {beta}.")
+
+    return beta
 
 
+@partial(jax.jit, static_argnames=[
+    'X', 'counts', 'lengths', 'ploidy', 'bias', 'reorienter', 'mixture_coefs'])
 def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
-                   reorienter=None, mixture_coefs=None, verbose=False):
-    """Estimates beta for all counts matrices.
-    """
+                   reorienter=None, mixture_coefs=None):
+    """Estimates betas for all counts matrices."""
 
     if isinstance(alpha, (np.ndarray, jnp.ndarray)):
         if alpha.size > 1:
-            raise ValueError("Alpha should be of length 1.")
+            raise ValueError("Alpha must be a float or array of size 1.")
         alpha = alpha[0]
 
     structures, _, mixture_coefs = _format_X(
@@ -66,39 +71,28 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
 
     # Check format of input
     counts = (counts if isinstance(counts, list) else [counts])
-    if lengths is None:
-        lengths = np.array([min([min(c.shape) for c in counts])])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     if not isinstance(structures, list):
         structures = [structures]
     if mixture_coefs is None:
-        mixture_coefs = [1.] * len(structures)
+        mixture_coefs = [1] * len(structures)
 
-    # Estimate beta for each type of counts (ambig, pa, ua)
-    counts_sum = {c.ambiguity: c.sum() for c in counts}
-    lambda_sum = {c.ambiguity: 0. for c in counts}
-
+    # Estimate beta for each counts matrix
+    betas = jnp.zeros(len(counts))
     for i in range(len(counts)):
-        for counts_bins in counts[i].bins:
-            lambda_sum[counts[i].ambiguity] += _estimate_beta_single(
-                structures, counts_bins, alpha=alpha, lengths=lengths,
-                ploidy=ploidy, bias=bias, mixture_coefs=mixture_coefs)
+        beta_i = _estimate_beta_single(
+            structures, counts=counts[i], alpha=alpha, lengths=lengths,
+            ploidy=ploidy, bias=bias, mixture_coefs=mixture_coefs)
+        betas = betas.at[i].set(beta_i)
 
-    beta = {x: counts_sum[x] / lambda_sum[x] for x in counts_sum.keys()}
-    for ambiguity, beta_maps in beta.items():
-        if not jnp.isfinite(beta_maps) or beta_maps == 0:
-            raise ValueError(f"Beta for {ambiguity} counts is {beta_maps}.")
-
-    if verbose:
-        print('INFERRED BETA: ' + ', '.join(
-              [f'{k}={v:.3g}' for k, v in beta.items()]), flush=True)
-
-    return beta
+    return betas
 
 
-def objective_alpha(alpha, counts, X, lengths, ploidy, bias=None,
-                    constraints=None, reorienter=None, mixture_coefs=None,
-                    return_extras=False, mods=[]):
+@partial(jax.jit, static_argnames=[
+    'counts', 'X', 'lengths', 'ploidy', 'bias', 'constraints', 'reorienter',
+    'mixture_coefs', 'mods'])
+def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
+                    constraints=None, reorienter=None, mixture_coefs=None, mods=[]):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -129,14 +123,13 @@ def objective_alpha(alpha, counts, X, lengths, ploidy, bias=None,
 
     if isinstance(alpha, (np.ndarray, jnp.ndarray)):
         if alpha.size > 1:
-            raise ValueError("Alpha should be of length 1.")
+            raise ValueError("Alpha must be a float or array of size 1.")
         alpha = alpha[0]
 
     return objective(
-        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
-        constraints=constraints, reorienter=reorienter,
-        mixture_coefs=mixture_coefs, return_extras=return_extras,
-        inferring_alpha=True, mods=mods)
+        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, beta=beta,
+        bias=bias, constraints=constraints, reorienter=reorienter,
+        mixture_coefs=mixture_coefs, inferring_alpha=True, mods=mods)
 
 
 gradient_alpha = grad(objective_alpha)
@@ -151,12 +144,12 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         reorienter=reorienter, mixture_coefs=mixture_coefs)
-    counts = [c.update_beta(beta_new) for c in counts]
+    # counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 
-    new_obj, obj_logs, structures, alpha, _ = objective_alpha(
-        alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy, bias=bias,
-        constraints=constraints, reorienter=reorienter,
-        mixture_coefs=mixture_coefs, return_extras=True, mods=mods)
+    new_obj, (obj_logs, structures, alpha, _) = objective_alpha(
+        alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
+        ploidy=ploidy, bias=bias, constraints=constraints,
+        reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)
 
     if callback is not None:
         callback.on_iter_end(
@@ -174,16 +167,16 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         reorienter=reorienter, mixture_coefs=mixture_coefs)
-    counts = [c.update_beta(beta_new) for c in counts]
+    # counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore", message='Using a non-tuple sequence for multidimensional'
                               ' indexing is deprecated', category=FutureWarning)
-        new_grad = np.array(gradient_alpha(
-            alpha, counts=counts, X=X, lengths=lengths, ploidy=ploidy,
-            bias=bias, constraints=constraints, reorienter=reorienter,
-            mixture_coefs=mixture_coefs, mods=mods)).flatten()
+        new_grad, _ = np.array(gradient_alpha(
+            alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
+            ploidy=ploidy, bias=bias, constraints=constraints,
+            reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)).flatten()
 
     return np.asarray(new_grad, dtype=np.float64)
 
@@ -303,7 +296,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         reorienter=reorienter, mixture_coefs=mixture_coefs)
-    counts = [c.update_beta(beta_new) for c in counts]
+    counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 
     if verbose:
         print(f'INITIAL ALPHA: {alpha_init:.3g},  INFERRED ALPHA:'

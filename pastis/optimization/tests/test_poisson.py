@@ -37,7 +37,7 @@ def test_poisson_objective_haploid():
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias)._value
 
@@ -61,7 +61,7 @@ def test_poisson_objective_haploid_biased():
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias)._value
 
@@ -86,7 +86,7 @@ def test_poisson_objective_diploid(ambiguity):
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias)._value
 
@@ -111,7 +111,7 @@ def test_poisson_objective_diploid_biased(ambiguity):
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=struct_true, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias)._value
 
@@ -156,7 +156,7 @@ def test_objective_multires(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform, bias=bias)._value
@@ -202,7 +202,7 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform)._value
@@ -253,11 +253,11 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj_unbiased = poisson.objective(
+    obj_unbiased, _ = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=None, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform)._value
-    obj_biased = poisson.objective(
+    obj_biased, _ = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform)._value
@@ -304,7 +304,7 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform)._value
@@ -350,7 +350,7 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
 
-    obj = poisson.objective(
+    obj, _ = poisson.objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform)._value
