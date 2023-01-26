@@ -5,7 +5,6 @@ if sys.version_info[0] < 3:
 
 import numpy as np
 from scipy import optimize
-import warnings
 from functools import partial
 
 from .utils_poisson import _setup_jax
@@ -169,16 +168,10 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         reorienter=reorienter, mixture_coefs=mixture_coefs)
     # counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", message='Using a non-tuple sequence for multidimensional'
-                              ' indexing is deprecated', category=FutureWarning)
-        new_grad = np.array(gradient_alpha(
-            alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
-            ploidy=ploidy, bias=bias, constraints=constraints,
-            reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
-
-        print("*** new_grad", new_grad)
+    new_grad = np.array(gradient_alpha(
+        alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
+        ploidy=ploidy, bias=bias, constraints=constraints,
+        reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
 
     return np.asarray(new_grad, dtype=np.float64)
 

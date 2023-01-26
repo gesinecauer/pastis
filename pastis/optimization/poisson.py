@@ -347,15 +347,11 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", message="Using a non-tuple sequence for multidimensional"
-            " indexing is deprecated", category=FutureWarning)
-        new_grad = np.array(gradient(
-            X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-            bias=bias, constraints=constraints, reorienter=reorienter,
-            multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-            mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
+    new_grad = np.array(gradient(
+        X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, constraints=constraints, reorienter=reorienter,
+        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+        mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
 
     return new_grad
 
