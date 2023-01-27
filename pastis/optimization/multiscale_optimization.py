@@ -8,7 +8,7 @@ import warnings
 from scipy import sparse
 from scipy.interpolate import interp1d
 
-from iced.io import load_lengths
+from ..io.read import _get_lengths, _get_struct
 
 
 def decrease_lengths_res(lengths, multiscale_factor):
@@ -71,16 +71,12 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
     if int(multiscale_factor) != multiscale_factor:
         raise ValueError('The multiscale_factor must be an integer')
     multiscale_factor = int(multiscale_factor)
-    if multiscale_factor == 1:
-        return struct
-    if isinstance(struct, str):
-        struct = np.loadtxt(struct)
-    struct = struct.reshape(-1, 3)
-    if isinstance(lengths, str):
-        lengths = load_lengths(lengths)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = _get_lengths(lengths)
+    struct = _get_struct(struct, lengths=lengths, ploidy=ploidy)
     lengths_lowres = decrease_lengths_res(
         lengths=lengths, multiscale_factor=multiscale_factor)
+    if multiscale_factor == 1:
+        return struct
 
     # Get highres idx
     idx, bad_idx = _get_struct_index(
