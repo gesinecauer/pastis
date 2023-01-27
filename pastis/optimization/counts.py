@@ -72,7 +72,7 @@ def ambiguate_counts(counts, lengths, ploidy):
 
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple)):
         counts = [counts]
 
     if all([isinstance(c, CountsMatrix) for c in counts]):
@@ -112,12 +112,12 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
     if beta is None:
         return None
 
-    if not isinstance(beta, list):
+    if not isinstance(beta, (list, tuple)):
         beta = [beta]
     if ploidy == 1:
         return beta[0]
 
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple)):
         counts = [counts]
     if len(counts) != len(beta):
         raise ValueError(f"Inconsistent number of betas ({len(beta)}) and"
@@ -145,7 +145,7 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
                          f"lengths ({lengths.sum()}). It is of size"
                          f" {bias.size}.")
 
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple)):
         counts = [counts]
 
     # Get sum of each (normalized) counts matrix
@@ -299,7 +299,7 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
     """
 
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple)):
         counts = [counts]
 
     # Check that there aren't multiple counts matrices of the same type
@@ -581,7 +581,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
             counts, lengths=lengths, ploidy=ploidy, bias=bias,
             exclude_zeros=exclude_zeros)
     else:
-        if not isinstance(beta, (list, np.ndarray)):
+        if not isinstance(beta, (list, tuple, np.ndarray)):
             beta = [beta]
         if len(beta) != len(counts):
             raise ValueError(
@@ -591,7 +591,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
     if input_weight is None:
         input_weight = [1] * len(counts)
     else:
-        if not isinstance(input_weight, (list, np.ndarray)):
+        if not isinstance(input_weight, (list, tuple, np.ndarray)):
             input_weight = [input_weight]
         if len(input_weight) != len(counts):
             raise ValueError("input_weights needs to contain as many values"

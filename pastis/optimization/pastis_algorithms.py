@@ -783,7 +783,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
     else:
         mods = [x.lower() for x in mods]
 
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple)):
         counts = [counts]
     if verbose:
         print(f"\nRANDOM SEED = {seed:03d}", flush=True)

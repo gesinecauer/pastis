@@ -71,7 +71,9 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     # Check format of input
     if not isinstance(counts, (list, tuple)):
         counts = [counts]
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    if constraints is not None and not isinstance(constraints, (list, tuple)):
+        constraints = [constraints]
+    # lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()  # FIXME uncomment
 
     # Estimate beta for each counts matrix
     betas = jnp.zeros(len(counts))

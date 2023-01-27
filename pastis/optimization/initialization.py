@@ -25,6 +25,8 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     if alpha is None:
         raise ValueError("Must supply alpha for MDS initialization.")
 
+    if not isinstance(counts, (list, tuple)):
+        counts = [counts]
     ua_counts = [c for c in counts if c.ambiguity == 'ua' and (
         c.multiscale_factor == multiscale_factor)]
     if len(ua_counts) == 1:
@@ -75,7 +77,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     if mixture_coefs is None:
         mixture_coefs = [1.]
 
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple)):
         counts = [counts]
     have_unambig = len([c for c in counts if c.ambiguity == 'ua']) > 0
 

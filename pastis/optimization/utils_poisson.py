@@ -211,7 +211,7 @@ def find_beads_to_remove(counts, lengths, ploidy, multiscale_factor=1,
     n = lengths_lowres.sum()
     nbeads = n * ploidy
 
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple)):
         counts = [counts]
     if len(counts) == 0:
         raise ValueError("Counts is an empty list.")
