@@ -199,8 +199,12 @@ class BeadChainConnectivity2019(Constraint):
         row_nghbr = _neighboring_bead_indices(
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor)
+
         var = {'row_nghbr': row_nghbr}
         if not self._lowmem:
+            for k in var.keys():  # Make all arrays C-contiguous for hashing
+                if isinstance(var[k], np.ndarray):
+                    var[k] = np.asarray(var[k], order='C')
             self._var = var
         return var
 
@@ -253,6 +257,7 @@ class HomologSeparating2019(Constraint):
                              " haploid genomes.")
         if self.lambda_val < 0:
             raise ValueError("Constraint lambda may not be < 0.")
+
         # Hyperparam: perc_diff
         if self.hparams is None:
             self.hparams = {'perc_diff': None}
@@ -261,6 +266,7 @@ class HomologSeparating2019(Constraint):
         if self.hparams['perc_diff'] is not None and (
                 self.hparams['perc_diff'] < 0 or self.hparams['perc_diff'] > 1):
             raise ValueError("'perc_diff' must be between 0 and 1.")
+
         # Hyperparam: est_hmlg_sep
         if 'est_hmlg_sep' not in self.hparams or self.hparams[
                 'est_hmlg_sep'] is None:
@@ -277,6 +283,12 @@ class HomologSeparating2019(Constraint):
             if self.hparams['est_hmlg_sep'].size not in (1, self.lengths.size):
                 raise ValueError(f"{self.name} constraint hyperparam"
                                  " 'est_hmlg_sep' is not the correct size.")
+
+        # Make all arrays C-contiguous for hashing
+        for k in self.hparams.keys():
+            if isinstance(self.hparams[k], np.ndarray):
+                self.hparams[k] = np.asarray(self.hparams[k], order='C')
+
 
     def setup(self, counts=None, bias=None):
         if self.lambda_val <= 0:
@@ -304,6 +316,9 @@ class HomologSeparating2019(Constraint):
 
         var = {'bead_weights': bead_weights}
         if not self._lowmem:
+            for k in var.keys():  # Make all arrays C-contiguous for hashing
+                if isinstance(var[k], np.ndarray):
+                    var[k] = np.asarray(var[k], order='C')
             self._var = var
         return var
 
@@ -380,11 +395,13 @@ class BeadChainConnectivity2022(Constraint):
                              " haploid genomes.")
         if self.lambda_val < 0:
             raise ValueError("Constraint lambda may not be < 0.")
+
         if 'bcc22_c_inter' in self.mods:
             if self.hparams is None or 'data_interchrom' not in self.hparams or (
                     self.hparams['data_interchrom'] is None):
                 raise ValueError(f"{self.name} constraint is missing neccessary"
                                  f" hyperparam: 'data_interchrom'")
+
         # Hyperparam: fullres_per_lowres_bead
         if (self.multiscale_factor > 1 and self.multires_naive) and ((
                 self.hparams is None) or (
@@ -392,6 +409,11 @@ class BeadChainConnectivity2022(Constraint):
                 self.hparams['fullres_per_lowres_bead'] is None)):
             raise ValueError(f"{self.name} constraint is missing neccessary"
                              f" hyperparam: 'fullres_per_lowres_bead'")
+
+        # Make all arrays C-contiguous for hashing
+        for k in self.hparams.keys():
+            if isinstance(self.hparams[k], np.ndarray):
+                self.hparams[k] = np.asarray(self.hparams[k], order='C')
 
     def setup(self, counts=None, bias=None):
         if self.lambda_val <= 0:
@@ -497,6 +519,9 @@ class BeadChainConnectivity2022(Constraint):
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr, 'beta': beta,
             'counts_nghbr_mask': counts_nghbr_mask}
         if not self._lowmem:
+            for k in var.keys():  # Make all arrays C-contiguous for hashing
+                if isinstance(var[k], np.ndarray):
+                    var[k] = np.asarray(var[k], order='C')
             self._var = var
         return var
 
@@ -509,13 +534,10 @@ class BeadChainConnectivity2022(Constraint):
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self.setup(counts=counts, bias=bias)
 
-        if bias is None:
-            bias_per_bin = None
-        else:
-            bias_per_bin = _get_bias_per_bin(
-                ploidy=self.ploidy, bias=bias, row=var['row_nghbr'],
-                col=var['row_nghbr'] + 1, multiscale_factor=self.multiscale_factor,
-                lengths=self.lengths, multires_naive=self.multires_naive)
+        bias_per_bin = _get_bias_per_bin(
+            ploidy=self.ploidy, bias=bias, row=var['row_nghbr'],
+            col=var['row_nghbr'] + 1, multiscale_factor=self.multiscale_factor,
+            lengths=self.lengths, multires_naive=self.multires_naive)
         if var['counts_nghbr_mask'] is None:
             counts_nghbr_mask = None
         else:
@@ -607,11 +629,13 @@ class HomologSeparating2022(Constraint):
                              " haploid genomes.")
         if self.lambda_val < 0:
             raise ValueError("Constraint lambda may not be < 0.")
+
         # Hyperparam: data_interchrom
         if self.hparams is None or 'data_interchrom' not in self.hparams or (
                 self.hparams['data_interchrom'] is None):
             raise ValueError(f"{self.name} constraint is missing neccessary"
                              f" hyperparam: 'data_interchrom'")
+
         # Hyperparam: fullres_per_lowres_bead
         if (self.multiscale_factor > 1 and self.multires_naive) and ((
                 self.hparams is None) or (
@@ -619,6 +643,11 @@ class HomologSeparating2022(Constraint):
                 self.hparams['fullres_per_lowres_bead'] is None)):
             raise ValueError(f"{self.name} constraint is missing neccessary"
                              f" hyperparam: 'fullres_per_lowres_bead'")
+
+        # Make all arrays C-contiguous for hashing
+        for k in self.hparams.keys():
+            if isinstance(self.hparams[k], np.ndarray):
+                self.hparams[k] = np.asarray(self.hparams[k], order='C')
 
     def setup(self, counts=None, bias=None):
         if self.lambda_val <= 0:
@@ -644,6 +673,9 @@ class HomologSeparating2022(Constraint):
                'bias_lowres': bias_lowres}
 
         if not self._lowmem:
+            for k in var.keys():  # Make all arrays C-contiguous for hashing
+                if isinstance(var[k], np.ndarray):
+                    var[k] = np.asarray(var[k], order='C')
             self._var = var
         return var
 
@@ -989,6 +1021,9 @@ def _neighboring_bead_indices(lengths, ploidy, multiscale_factor=1,
     same_bin = np.digitize(row_nghbr, bins) == np.digitize(row_nghbr + 1, bins)
 
     row_nghbr = row_nghbr[same_bin]
+
+    row_nghbr = np.asarray(
+        row_nghbr, dtype=np.min_scalar_type(row_nghbr.max()), order='C')
 
     return row_nghbr
 

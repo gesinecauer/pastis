@@ -236,7 +236,7 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
     # Bias should be as close as possible to 1 without being exactly 1
     # (If bias is exactly 1, it gets set to None in the objective)
     bias = np.ones(lengths.sum()) + random_state.choice(
-        [-1, 1], size=lengths.sum()) * np.finfo(np.float64).resolution / 9
+        [-1, 1], size=lengths.sum()) * np.finfo(np.float64).resolution / 8
     assert not np.all(bias == 1)  # Make sure we aren't exactly at 1
 
     counts, struct_nan, _ = preprocess_counts(

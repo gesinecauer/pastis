@@ -8,6 +8,10 @@ from timeit import default_timer as timer
 from datetime import timedelta
 import os
 
+from .utils_poisson import _setup_jax
+_setup_jax()
+import jax.numpy as jnp
+
 from .utils_poisson import find_beads_to_remove
 from .multiscale_optimization import decrease_lengths_res, decrease_struct_res
 from .multiscale_optimization import get_epsilon_from_struct
@@ -404,6 +408,8 @@ class Callback(object):
         self._save_X()
         if self.on_iter_end_ is not None:
             self.on_iter_end_(self, **kwargs)
+
+        self.structures = None
 
     def on_training_end(self, **kwargs):
         """Functionality to add to the end of optimization.

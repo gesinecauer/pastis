@@ -45,8 +45,9 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None,
             data_per_bin = data.shape[0]
         else:
             raise ValueError("Must input data_per_bin")
-    # if bias_per_bin is not None and np.all(bias_per_bin == 1):
-    #     bias_per_bin = None
+    if bias_per_bin is not None and isinstance(
+            bias_per_bin, np.ndarray) and np.all(bias_per_bin == 1):
+        bias_per_bin = None
 
     if bias_per_bin is None:
         log1p_theta = jnp.log1p(theta)

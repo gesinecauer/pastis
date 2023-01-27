@@ -39,8 +39,9 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                 struct, row=counts_bins.row3d, col=counts_bins.col3d)
             tmp = jnp.power(dis, alpha).reshape(
                 -1, counts_bins.nbins).sum(axis=0)
-            lambda_pois_sum = lambda_pois_sum + jnp.sum(
-                mix_coef * counts_bins.bias_per_bin(bias) * tmp)
+            if bias is not None:
+                tmp = tmp * counts_bins.bias_per_bin(bias)
+            lambda_pois_sum = lambda_pois_sum + jnp.sum(mix_coef * tmp)
 
     beta = counts.sum() / lambda_pois_sum
 
@@ -51,8 +52,6 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
     return beta
 
 
-@partial(jit, static_argnames=[
-    'counts', 'lengths', 'ploidy', 'reorienter', 'mixture_coefs'])
 def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
                    reorienter=None, mixture_coefs=None):
     """Estimates betas for all counts matrices."""
@@ -80,12 +79,9 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
             structures, counts=counts[i], alpha=alpha, lengths=lengths,
             ploidy=ploidy, bias=bias, mixture_coefs=mixture_coefs)
         betas = betas.at[i].set(beta_i)
-
     return betas
 
 
-@partial(jit, static_argnames=[
-    'counts', 'lengths', 'ploidy', 'constraints', 'reorienter', 'mixture_coefs', 'mods'])
 def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
                     constraints=None, reorienter=None, mixture_coefs=None, mods=()):
     """Computes the objective function.
@@ -126,7 +122,11 @@ def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs, inferring_alpha=True, mods=mods)
 
 
-gradient_alpha = grad(objective_alpha, has_aux=True)
+_estimate_beta_jit = jit(_estimate_beta, static_argnames=[
+    'counts', 'lengths', 'ploidy', 'reorienter', 'mixture_coefs'])
+objective_alpha_jit = jit(objective_alpha, static_argnames=[
+    'counts', 'lengths', 'ploidy', 'constraints', 'reorienter', 'mixture_coefs', 'mods'])
+gradient_alpha = grad(objective_alpha_jit, has_aux=True)
 
 
 def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
@@ -146,7 +146,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         if not isinstance(constraints, (list, tuple)):
             constraints = [constraints]
         if not all([x.setup_completed for x in constraints]):
-            # Setup may modify Constraint attributes, so it must be
+            # Constraint setup may modify object attributes, so it must be
             # completed before inputting constraints into a jitted function
             if isinstance(constraints, tuple):
                 constraints = list(constraints)
@@ -166,12 +166,11 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         elif not isinstance(mods, tuple):
             mods = (mods,)
 
-    beta_new = _estimate_beta(
+    beta_new = _estimate_beta_jit(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         reorienter=reorienter, mixture_coefs=mixture_coefs)
-    # counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 
-    new_obj, (obj_logs, structures, alpha, _) = objective_alpha(
+    new_obj, (obj_logs, structures, alpha, _) = objective_alpha_jit(
         alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
         ploidy=ploidy, bias=bias, constraints=constraints,
         reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)
@@ -200,7 +199,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         if not isinstance(constraints, (list, tuple)):
             constraints = [constraints]
         if not all([x.setup_completed for x in constraints]):
-            # Setup may modify Constraint attributes, so it must be
+            # Constraint setup may modify object attributes, so it must be
             # completed before inputting constraints into a jitted function
             if isinstance(constraints, tuple):
                 constraints = list(constraints)
@@ -220,10 +219,9 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         elif not isinstance(mods, tuple):
             mods = (mods,)
 
-    beta_new = _estimate_beta(
+    beta_new = _estimate_beta_jit(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
         reorienter=reorienter, mixture_coefs=mixture_coefs)
-    # counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 
     new_grad = np.array(gradient_alpha(
         alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
@@ -303,7 +301,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         if not isinstance(constraints, (list, tuple)):
             constraints = [constraints]
         if not all([x.setup_completed for x in constraints]):
-            # Setup may modify Constraint attributes, so it must be
+            # Constraint setup may modify object attributes, so it must be
             # completed before inputting constraints into a jitted function
             if isinstance(constraints, tuple):
                 constraints = list(constraints)
@@ -375,7 +373,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         conv_desc = conv_desc.decode('utf8')
 
     beta_new = _estimate_beta(
-        X, counts, alpha=alpha, lengths=tuple(lengths), ploidy=ploidy,
+        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, reorienter=reorienter, mixture_coefs=mixture_coefs)
     counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 

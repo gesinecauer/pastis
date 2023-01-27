@@ -462,7 +462,9 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
             raise ValueError("Inconsistent number of beads.")
         bad_idx[np.isin(fullres_idx, fullres_struct_nan)] = True
 
-    return (~bad_idx).sum(axis=0)
+    fullres_per_lowres_bead = (~bad_idx).sum(axis=0)
+    fullres_per_lowres_bead = np.asarray(fullres_per_lowres_bead, order='C')
+    return fullres_per_lowres_bead
 
 
 def decrease_bias_res(bias, multiscale_factor, lengths):

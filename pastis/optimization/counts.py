@@ -659,8 +659,8 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
             y, int(nnz * map_factor / y.shape[0])) * min(shape) + np.tile(
             col3d, map_factor)
 
-    row3d = row3d.astype(np.min_scalar_type(row3d.max()))
-    col3d = col3d.astype(np.min_scalar_type(col3d.max()))
+    row3d = np.asarray(row3d, dtype=np.min_scalar_type(row3d.max()), order='C')
+    col3d = np.asarray(col3d, dtype=np.min_scalar_type(col3d.max()), order='C')
 
     return row3d, col3d
 
@@ -668,8 +668,8 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
 def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
                       multires_naive=False):
     """Determines bias corresponding to each bin of the distance matrix."""
-    if bias is None:
-        return 1
+    if bias is None or (isinstance(bias, np.ndarray) and np.all(bias == 1)):
+        return None
 
     if lengths is not None:
         if multiscale_factor > 1 and multires_naive:
@@ -1269,21 +1269,23 @@ class CountsBins(object):
             self.ambiguity = meta.ambiguity
         self._empty_idx_fullres = meta._empty_idx_fullres
 
-        self.row = row.astype(np.min_scalar_type(row.max()))
-        self.col = col.astype(np.min_scalar_type(col.max()))
+        self.row = np.asarray(  # C-contiguous for hashing
+            row, dtype=np.min_scalar_type(row.max()), order='C')
+        self.col = np.asarray(  # C-contiguous for hashing
+            col, dtype=np.min_scalar_type(col.max()), order='C')
         if mask is None or np.all(mask):
             self.mask = None
         else:
             self.mask = np.asarray(mask, order='C')  # C-contiguous for hashing
         if data is None:
-            self._sum = 0
             self.name = f"{self.ambiguity}0"
             self.data = None
+            self._sum = 0
         else:
-            data = data.astype(_best_counts_dtype(data))
-            self._sum = data.sum()
             self.name = self.ambiguity
-            self.data = np.asarray(data, order='C')  # C-contiguous for hashing
+            self.data = np.asarray(  # C-contiguous for hashing
+                data, dtype=_best_counts_dtype(data), order='C')
+            self._sum = self.data.sum()
 
         lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=self.multiscale_factor)

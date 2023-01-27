@@ -106,10 +106,10 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, beta, bias=None,
     lambda_pois = jnp.zeros(counts.nbins)
     for struct, mix_coef in zip(structures, mixture_coefs):
         dis = _euclidean_distance(struct, row=counts.row3d, col=counts.col3d)
-        tmp1 = jnp.power(dis, alpha)
-        tmp = tmp1.reshape(-1, counts.nbins).sum(axis=0)
-        lambda_pois = lambda_pois + mix_coef * counts.bias_per_bin(
-            bias) * beta * tmp
+        tmp = beta * jnp.power(dis, alpha).reshape(-1, counts.nbins).sum(axis=0)
+        if bias is not None:
+            tmp = tmp * counts.bias_per_bin(bias)
+        lambda_pois = lambda_pois + mix_coef * tmp
 
     obj = poisson_nll(counts.data, lambda_pois=lambda_pois, mask=counts.mask,
                       data_per_bin=counts.fullres_per_lowres_dis)
@@ -127,7 +127,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, beta, bias=None,
     """Computes the objective function for a given individual counts matrix.
     """
 
-    if counts.nbins == 0 or counts.null or (bias is not None and bias.sum() == 0):
+    if counts.nbins == 0 or counts.null:
         return 0
     if (not np.isfinite(counts.weight)) or counts.weight <= 0:
         raise ValueError(f"Counts weight may not be {counts.weight}.")
@@ -262,21 +262,6 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
     return obj, (obj_logs, structures, alpha, epsilon)
 
 
-@partial(jit, static_argnames=[
-    'counts', 'alpha', 'lengths', 'ploidy', 'constraints', 'reorienter',
-    'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
-def objective_struct(X, counts, alpha, lengths, ploidy, bias=None,
-                     constraints=None, reorienter=None, multiscale_factor=1,
-                     multiscale_reform=False, mixture_coefs=None, mods=()):
-    """TODO"""
-
-    return objective(
-        X=X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, constraints=constraints, reorienter=reorienter,
-        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, inferring_alpha=False, mods=mods)
-
-
 def _format_X(X, lengths, ploidy, multiscale_factor=1,
               multiscale_reform=False, mixture_coefs=None, mods=()):
     """Reformat and check X."""
@@ -322,7 +307,10 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
     return X, epsilon, mixture_coefs
 
 
-gradient = grad(objective_struct, has_aux=True)
+objective_jit = jit(objective, static_argnames=[
+    'counts', 'alpha', 'lengths', 'ploidy', 'constraints', 'reorienter',
+    'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
+gradient = grad(objective_jit, has_aux=True)
 
 
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
@@ -343,7 +331,7 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         if not isinstance(constraints, (list, tuple)):
             constraints = [constraints]
         if not all([x.setup_completed for x in constraints]):
-            # Setup may modify Constraint attributes, so it must be
+            # Constraint setup may modify object attributes, so it must be
             # completed before inputting constraints into a jitted function
             if isinstance(constraints, tuple):
                 constraints = list(constraints)
@@ -363,7 +351,7 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         elif not isinstance(mods, tuple):
             mods = (mods,)
 
-    new_obj, (obj_logs, structures, alpha, epsilon) = objective_struct(
+    new_obj, (obj_logs, structures, alpha, epsilon) = objective_jit(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
@@ -394,7 +382,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         if not isinstance(constraints, (list, tuple)):
             constraints = [constraints]
         if not all([x.setup_completed for x in constraints]):
-            # Setup may modify Constraint attributes, so it must be
+            # Constraint setup may modify object attributes, so it must be
             # completed before inputting constraints into a jitted function
             if isinstance(constraints, tuple):
                 constraints = list(constraints)
@@ -496,7 +484,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         if not isinstance(constraints, (list, tuple)):
             constraints = [constraints]
         if not all([x.setup_completed for x in constraints]):
-            # Setup may modify Constraint attributes, so it must be
+            # Constraint setup may modify object attributes, so it must be
             # completed before inputting constraints into a jitted function
             if isinstance(constraints, tuple):
                 constraints = list(constraints)
@@ -681,7 +669,7 @@ class PastisPM(object):
             if not isinstance(constraints, (list, tuple)):
                 constraints = [constraints]
             if not all([x.setup_completed for x in constraints]):
-                # Setup may modify Constraint attributes, so it must be
+                # Constraint setup may modify object attributes, so it must be
                 # completed before inputting constraints into a jitted function
                 if isinstance(constraints, tuple):
                     constraints = list(constraints)
