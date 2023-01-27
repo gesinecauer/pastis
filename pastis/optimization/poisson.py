@@ -90,7 +90,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
             theta=theta, k=k, data=counts.data,
             bias_per_bin=counts.bias_per_bin(bias), mask=counts.mask, mods=mods)
 
-    if not jnp.isfinite(obj):
+    if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
         raise ValueError(
             "Multires (negative binomial) component of objective function for"
             f" {counts.name} is {obj} at {multiscale_factor}x resolution.")
@@ -114,7 +114,7 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, beta, bias=None,
     obj = poisson_nll(counts.data, lambda_pois=lambda_pois, mask=counts.mask,
                       data_per_bin=counts.fullres_per_lowres_dis)
 
-    if not jnp.isfinite(obj):
+    if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
         raise ValueError(
             f"Poisson component of objective function for {counts.name}"
             f" is {obj} at {multiscale_factor}x resolution.")
@@ -139,7 +139,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, beta, bias=None,
     elif mixture_coefs is None:
         mixture_coefs = [1]
 
-    if epsilon is None or multiscale_factor == 1 or jnp.all(epsilon == 0):
+    if epsilon is None or multiscale_factor == 1:
         obj = _poisson_obj(
             structures=structures, counts=counts, alpha=alpha, lengths=lengths,
             ploidy=ploidy, beta=beta, bias=bias,
@@ -195,7 +195,8 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
         counts = [counts]
     if constraints is not None and not isinstance(constraints, (list, tuple)):
         constraints = [constraints]
-    # lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()  # FIXME uncomment
+    if not isinstance(lengths, (tuple, np.ndarray, jnp.ndarray)):
+        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     # Get beta
     if beta is None:
@@ -261,12 +262,8 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
     return obj, (obj_logs, structures, alpha, epsilon)
 
 
-# @partial(jit, static_argnames=[
-#     'counts', 'alpha', 'lengths', 'ploidy', 'bias', 'constraints',
-#     'reorienter', 'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
-
 @partial(jit, static_argnames=[
-    'counts', 'alpha', 'ploidy', 'constraints', 'reorienter',
+    'counts', 'alpha', 'lengths', 'ploidy', 'constraints', 'reorienter',
     'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
 def objective_struct(X, counts, alpha, lengths, ploidy, bias=None,
                      constraints=None, reorienter=None, multiscale_factor=1,
@@ -335,6 +332,9 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     """
 
     # Check format of input; convert lists to tuples for jax jit
+    if not isinstance(lengths, tuple):
+        lengths = tuple(
+            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
     if isinstance(counts, list):
         counts = tuple(counts)
     elif not isinstance(counts, tuple):
@@ -350,6 +350,8 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             [x.setup(counts=counts, bias=bias) for x in constraints]
         if not isinstance(constraints, tuple):
             constraints = tuple(constraints)
+    if bias is not None and np.all(bias == 1):
+        bias = None
     if mixture_coefs is not None:
         if isinstance(mixture_coefs, (list, np.ndarray)):
             mixture_coefs = tuple(mixture_coefs)
@@ -381,6 +383,9 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     """
 
     # Check format of input; convert lists to tuples for jax jit
+    if not isinstance(lengths, tuple):
+        lengths = tuple(
+            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
     if isinstance(counts, list):
         counts = tuple(counts)
     elif not isinstance(counts, tuple):
@@ -396,6 +401,8 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             [x.setup(counts=counts, bias=bias) for x in constraints]
         if not isinstance(constraints, tuple):
             constraints = tuple(constraints)
+    if bias is not None and np.all(bias == 1):
+        bias = None
     if mixture_coefs is not None:
         if isinstance(mixture_coefs, (list, np.ndarray)):
             mixture_coefs = tuple(mixture_coefs)
@@ -478,6 +485,9 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
     multiscale_reform = (epsilon is not None)
 
     # Check format of input; convert lists to tuples for jax jit
+    if not isinstance(lengths, tuple):
+        lengths = tuple(
+            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
     if isinstance(counts, list):
         counts = tuple(counts)
     elif not isinstance(counts, tuple):
@@ -493,6 +503,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             [x.setup(counts=counts, bias=bias) for x in constraints]
         if not isinstance(constraints, tuple):
             constraints = tuple(constraints)
+    if bias is not None and np.all(bias == 1):
+        bias = None
     if mixture_coefs is not None:
         if isinstance(mixture_coefs, (list, np.ndarray)):
             mixture_coefs = tuple(mixture_coefs)
@@ -503,7 +515,6 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             mods = tuple(mods)
         elif not isinstance(mods, tuple):
             mods = (mods,)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     if (multiscale_factor != 1 and multiscale_reform):
         x0 = np.append(init_X.flatten(), epsilon)
@@ -661,6 +672,7 @@ class PastisPM(object):
         from .callbacks import Callback
 
         # Check format of input; convert lists to tuples for jax jit
+        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         if isinstance(counts, list):
             counts = tuple(counts)
         elif not isinstance(counts, tuple):
@@ -676,6 +688,8 @@ class PastisPM(object):
                 [x.setup(counts=counts, bias=bias) for x in constraints]
             if not isinstance(constraints, tuple):
                 constraints = tuple(constraints)
+        if bias is not None and np.all(bias == 1):
+            bias = None
         if mixture_coefs is not None:
             if isinstance(mixture_coefs, (list, np.ndarray)):
                 mixture_coefs = tuple(mixture_coefs)
@@ -688,7 +702,6 @@ class PastisPM(object):
                 mods = (mods,)
         else:
             mods = ()
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
         if callback is None:
             callback = Callback(
@@ -700,8 +713,6 @@ class PastisPM(object):
             reorienter.set_multiscale_factor(multiscale_factor)
 
         # Check bias
-        if np.all(bias == 1):
-            bias = None
         lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
         if bias is not None:

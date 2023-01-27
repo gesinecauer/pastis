@@ -142,7 +142,7 @@ class Callback(object):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.epsilon = None
-        self.lengths = lengths
+        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
         self.bias = bias
@@ -222,12 +222,13 @@ class Callback(object):
         self.time_start = None
 
     def _set_structures(self, structures):
-        self.structures = [struct.copy().reshape(-1, 3)
-                           for struct in structures]
-        for i in range(len(structures)):
-            if type(self.structures[i]).__name__ == 'DeviceArray':
-                self.structures[i] = self.structures[i]._value
-            self.structures[i][self.struct_nan] = np.nan
+        self.structures = []
+        for struct in structures:
+            if type(struct).__name__ == 'DeviceArray':
+                struct = struct._value
+            struct = np.array(struct, copy=True).reshape(-1, 3)
+            struct[self.struct_nan] = np.nan
+            self.structures.append(struct)
 
     def _check_frequency(self, frequency, last_iter=False):
         output = False
@@ -381,8 +382,16 @@ class Callback(object):
         else:
             self.X = Xi
         if self.opt_type != 'alpha' or self.iter == 0:
-            self._set_structures(structures)
+            self._set_structures(structures)  # FIXME only do this if necessary!! >:(
+
+        if isinstance(alpha, jnp.ndarray):
+            alpha = alpha._value
+        if isinstance(alpha, np.ndarray):
+            if alpha.size > 1:
+                raise ValueError("Alpha must be a float.")
+            alpha = float(alpha)
         self.alpha = alpha
+
         if self.opt_type == 'chrom_reorient':
             self.orientation = Xi
         if type(epsilon).__name__ == 'DeviceArray':

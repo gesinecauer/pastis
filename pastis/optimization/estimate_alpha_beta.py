@@ -20,10 +20,10 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
                           mixture_coefs=None):
     """Estimate beta for a single counts matrix."""
 
+    # Check format of input
     if isinstance(alpha, (np.ndarray, jnp.ndarray)):
         if alpha.size > 1:
             raise ValueError("Alpha must be a float or array of size 1.")
-        alpha = alpha[0]
 
     if mixture_coefs is not None and len(structures) != len(mixture_coefs):
         raise ValueError(
@@ -44,22 +44,27 @@ def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
 
     beta = counts.sum() / lambda_pois_sum
 
-    if (not jnp.isfinite(beta)) or beta <= 0:
+    if type(beta).__name__ in ('DeviceArray', 'ndarray') and (
+            (not jnp.isfinite(beta)) or beta <= 0):
         raise ValueError(f"Beta for {counts.ambiguity} counts is {beta}.")
 
     return beta
 
 
-# @partial(jit, static_argnames=[
-#     'X', 'counts', 'lengths', 'ploidy', 'bias', 'reorienter', 'mixture_coefs'])
+@partial(jit, static_argnames=[
+    'counts', 'lengths', 'ploidy', 'reorienter', 'mixture_coefs'])
 def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
                    reorienter=None, mixture_coefs=None):
     """Estimates betas for all counts matrices."""
 
+    # Check format of input
     if isinstance(alpha, (np.ndarray, jnp.ndarray)):
         if alpha.size > 1:
             raise ValueError("Alpha must be a float or array of size 1.")
-        alpha = alpha[0]
+    if not isinstance(counts, (list, tuple)):
+        counts = [counts]
+    if not isinstance(lengths, (tuple, np.ndarray, jnp.ndarray)):
+        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     structures, _, mixture_coefs = _format_X(
         X, lengths=lengths, ploidy=ploidy, multiscale_factor=1,
@@ -67,13 +72,6 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
 
     if reorienter is not None and reorienter.reorient:
         structures = reorienter.translate_and_rotate(X)
-
-    # Check format of input
-    if not isinstance(counts, (list, tuple)):
-        counts = [counts]
-    if constraints is not None and not isinstance(constraints, (list, tuple)):
-        constraints = [constraints]
-    # lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()  # FIXME uncomment
 
     # Estimate beta for each counts matrix
     betas = jnp.zeros(len(counts))
@@ -86,9 +84,8 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     return betas
 
 
-# @partial(jit, static_argnames=[
-#     'counts', 'X', 'lengths', 'ploidy', 'bias', 'constraints', 'reorienter',
-#     'mixture_coefs', 'mods'])
+@partial(jit, static_argnames=[
+    'counts', 'lengths', 'ploidy', 'constraints', 'reorienter', 'mixture_coefs', 'mods'])
 def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
                     constraints=None, reorienter=None, mixture_coefs=None, mods=()):
     """Computes the objective function.
@@ -122,7 +119,6 @@ def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
     if isinstance(alpha, (np.ndarray, jnp.ndarray)):
         if alpha.size > 1:
             raise ValueError("Alpha must be a float or array of size 1.")
-        alpha = alpha[0]
 
     return objective(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, beta=beta,
@@ -139,6 +135,9 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     """Objective function wrapper to match scipy.optimize's interface."""
 
     # Check format of input; convert lists to tuples for jax jit
+    if not isinstance(lengths, tuple):
+        lengths = tuple(
+            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
     if isinstance(counts, list):
         counts = tuple(counts)
     elif not isinstance(counts, tuple):
@@ -154,6 +153,8 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
             [x.setup(counts=counts, bias=bias) for x in constraints]
         if not isinstance(constraints, tuple):
             constraints = tuple(constraints)
+    if bias is not None and np.all(bias == 1):
+        bias = None
     if mixture_coefs is not None:
         if isinstance(mixture_coefs, (list, np.ndarray)):
             mixture_coefs = tuple(mixture_coefs)
@@ -188,6 +189,9 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     """Gradient function wrapper to match scipy.optimize's interface."""
 
     # Check format of input; convert lists to tuples for jax jit
+    if not isinstance(lengths, tuple):
+        lengths = tuple(
+            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
     if isinstance(counts, list):
         counts = tuple(counts)
     elif not isinstance(counts, tuple):
@@ -203,6 +207,8 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
             [x.setup(counts=counts, bias=bias) for x in constraints]
         if not isinstance(constraints, tuple):
             constraints = tuple(constraints)
+    if bias is not None and np.all(bias == 1):
+        bias = None
     if mixture_coefs is not None:
         if isinstance(mixture_coefs, (list, np.ndarray)):
             mixture_coefs = tuple(mixture_coefs)
@@ -286,6 +292,9 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     """
 
     # Check format of input; convert lists to tuples for jax jit
+    if not isinstance(lengths, tuple):
+        lengths = tuple(
+            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
     if isinstance(counts, list):
         counts = tuple(counts)
     elif not isinstance(counts, tuple):
@@ -301,6 +310,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
             [x.setup(counts=counts, bias=bias) for x in constraints]
         if not isinstance(constraints, tuple):
             constraints = tuple(constraints)
+    if bias is not None and np.all(bias == 1):
+        bias = None
     if mixture_coefs is not None:
         if isinstance(mixture_coefs, (list, np.ndarray)):
             mixture_coefs = tuple(mixture_coefs)
@@ -364,8 +375,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         conv_desc = conv_desc.decode('utf8')
 
     beta_new = _estimate_beta(
-        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
-        reorienter=reorienter, mixture_coefs=mixture_coefs)
+        X, counts, alpha=alpha, lengths=tuple(lengths), ploidy=ploidy,
+        bias=bias, reorienter=reorienter, mixture_coefs=mixture_coefs)
     counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
 
     if verbose:

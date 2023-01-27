@@ -13,6 +13,10 @@ import pandas as pd
 from iced.filter import filter_low_counts
 from iced.normalization import ICE_normalization
 
+from .utils_poisson import _setup_jax
+_setup_jax()
+import jax.numpy as jnp
+
 from .utils_poisson import find_beads_to_remove
 from .utils_poisson import _intramol_counts, _intermol_counts, _counts_near_diag
 from .utils_poisson import _dict_is_equal, _dict_to_hash
@@ -664,7 +668,7 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
 def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
                       multires_naive=False):
     """Determines bias corresponding to each bin of the distance matrix."""
-    if bias is None or np.all(bias == 1):
+    if bias is None:
         return 1
 
     if lengths is not None:
@@ -680,7 +684,13 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
                              f" chromosome lengths ({lengths.sum()}). It is of"
                              f" size {bias.size}.")
 
-    bias = np.tile(bias.ravel(), ploidy)
+    # Output type should be the same as type(bias)
+    if isinstance(bias, jnp.ndarray):
+        tmp_np = jnp
+    else:
+        tmp_np = np
+
+    bias = tmp_np.tile(bias.ravel(), ploidy)
     if multiscale_factor == 1 or multires_naive:
         return bias[row] * bias[col]
     else:
@@ -688,7 +698,7 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
             multiscale_factor=multiscale_factor, lengths=lengths,
             ploidy=ploidy, lowres_idx=(row, col))
         bias_per_bin = bias[row] * bias[col]
-        bias_per_bin[bad_idx] = 0
+        bias_per_bin = tmp_np.where(bad_idx, 0, bias_per_bin)
         return bias_per_bin.reshape(multiscale_factor ** 2, -1)
 
 
@@ -890,6 +900,12 @@ class CountsMatrix(object):
         """Update beta."""
         if isinstance(beta, dict):
             beta = beta[self.ambiguity]
+        if isinstance(beta, jnp.ndarray):
+            beta = beta._value
+        if isinstance(beta, np.ndarray):
+            if beta.size > 1:
+                raise ValueError("Beta must be a float.")
+            beta = float(beta)
         self.beta = beta
         if self.bins_nonzero is not None:
             self.bins_nonzero.beta = self.beta

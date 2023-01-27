@@ -218,7 +218,7 @@ class BeadChainConnectivity2019(Constraint):
             nghbr_dis).sum() / jnp.square(nghbr_dis.sum())
         obj = nghbr_dis_var - 1.
 
-        if not jnp.isfinite(obj):
+        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
@@ -345,7 +345,7 @@ class HomologSeparating2019(Constraint):
         hmlg_sep_diff_sq = jnp.square(hmlg_sep_diff)
         obj = jnp.mean(hmlg_sep_diff_sq)
 
-        if not jnp.isfinite(obj):
+        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
@@ -509,7 +509,7 @@ class BeadChainConnectivity2022(Constraint):
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self.setup(counts=counts, bias=bias)
 
-        if bias is None or np.all(bias == 1):
+        if bias is None:
             bias_per_bin = None
         else:
             bias_per_bin = _get_bias_per_bin(
@@ -572,7 +572,7 @@ class BeadChainConnectivity2022(Constraint):
             import jax.debug as jax_debug
             jax_debug.print(to_print)
 
-        if not jnp.isfinite(obj):
+        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 
@@ -731,7 +731,7 @@ class HomologSeparating2022(Constraint):
             import jax.debug as jax_debug
             print(to_print)
 
-        if not jnp.isfinite(obj):
+        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
             raise ValueError(f"{self.name} constraint is {obj}.")
         return self.lambda_val * obj
 

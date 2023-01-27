@@ -8,7 +8,9 @@ import warnings
 from scipy import sparse
 from scipy.interpolate import interp1d
 
-from ..io.read import _get_lengths, _get_struct
+from .utils_poisson import _setup_jax
+_setup_jax()
+import jax.numpy as jnp
 
 
 def decrease_lengths_res(lengths, multiscale_factor):
@@ -32,11 +34,18 @@ def decrease_lengths_res(lengths, multiscale_factor):
         `multiscale_factor`.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    # Output type should be the same as type(lengths)
+    if isinstance(lengths, jnp.ndarray):
+        tmp_np = jnp
+    else:
+        tmp_np = np
+
+    lengths = tmp_np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+
     if multiscale_factor == 1:
         return lengths
     else:
-        return np.ceil(lengths / multiscale_factor).astype(int)
+        return tmp_np.ceil(lengths / multiscale_factor).astype(int)
 
 
 def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
@@ -65,6 +74,8 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
         specified high resolution.
     """
 
+    from ..io.read import _get_lengths, _get_struct
+
     # Setup
     if random_state is None:
         random_state = np.random.RandomState(seed=0)
@@ -72,9 +83,9 @@ def increase_struct_res(struct, multiscale_factor, lengths, ploidy,
         raise ValueError('The multiscale_factor must be an integer')
     multiscale_factor = int(multiscale_factor)
     lengths = _get_lengths(lengths)
-    struct = _get_struct(struct, lengths=lengths, ploidy=ploidy)
     lengths_lowres = decrease_lengths_res(
         lengths=lengths, multiscale_factor=multiscale_factor)
+    struct = _get_struct(struct, lengths=lengths_lowres, ploidy=ploidy)
     if multiscale_factor == 1:
         return struct
 
