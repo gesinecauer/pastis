@@ -611,7 +611,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
             multires_naive=not multiscale_reform)
         counts_reformatted.append(counts_matrix)
 
-    return counts_reformatted
+    return tuple(counts_reformatted)
 
 
 def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
@@ -828,7 +828,7 @@ class CountsMatrix(object):
 
     @property
     def bins(self):
-        """TODO"""
+        """List containing all available CountsBins instances."""
         bins = []
         if self.bins_nonzero is not None:
             bins.append(self.bins_nonzero)

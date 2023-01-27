@@ -69,12 +69,9 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
         structures = reorienter.translate_and_rotate(X)
 
     # Check format of input
-    counts = (counts if isinstance(counts, list) else [counts])
+    if not isinstance(counts, (list, tuple)):
+        counts = [counts]
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
-    if not isinstance(structures, list):
-        structures = [structures]
-    if mixture_coefs is None:
-        mixture_coefs = [1] * len(structures)
 
     # Estimate beta for each counts matrix
     betas = jnp.zeros(len(counts))
@@ -91,7 +88,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
 #     'counts', 'X', 'lengths', 'ploidy', 'bias', 'constraints', 'reorienter',
 #     'mixture_coefs', 'mods'])
 def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
-                    constraints=None, reorienter=None, mixture_coefs=None, mods=[]):
+                    constraints=None, reorienter=None, mixture_coefs=None, mods=()):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -136,9 +133,35 @@ gradient_alpha = grad(objective_alpha, has_aux=True)
 
 def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
                             constraints=None, reorienter=None,
-                            mixture_coefs=None, callback=None, mods=[]):
-    """Objective function wrapper to match scipy.optimize's interface.
-    """
+                            mixture_coefs=None, callback=None, mods=()):
+    """Objective function wrapper to match scipy.optimize's interface."""
+
+    # Check format of input; convert lists to tuples for jax jit
+    if isinstance(counts, list):
+        counts = tuple(counts)
+    elif not isinstance(counts, tuple):
+        counts = (counts,)
+    if constraints is not None:
+        if not isinstance(constraints, (list, tuple)):
+            constraints = [constraints]
+        if not all([x.setup_completed for x in constraints]):
+            # Setup may modify Constraint attributes, so it must be
+            # completed before inputting constraints into a jitted function
+            if isinstance(constraints, tuple):
+                constraints = list(constraints)
+            [x.setup(counts=counts, bias=bias) for x in constraints]
+        if not isinstance(constraints, tuple):
+            constraints = tuple(constraints)
+    if mixture_coefs is not None:
+        if isinstance(mixture_coefs, (list, np.ndarray)):
+            mixture_coefs = tuple(mixture_coefs)
+        elif not isinstance(mixture_coefs, tuple):
+            mixture_coefs = (mixture_coefs,)
+    if mods is not None:
+        if isinstance(mods, (list, np.ndarray)):
+            mods = tuple(mods)
+        elif not isinstance(mods, tuple):
+            mods = (mods,)
 
     beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
@@ -159,9 +182,35 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
 
 def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
                          constraints=None, reorienter=None,
-                         mixture_coefs=None, callback=None, mods=[]):
-    """Gradient function wrapper to match scipy.optimize's interface.
-    """
+                         mixture_coefs=None, callback=None, mods=()):
+    """Gradient function wrapper to match scipy.optimize's interface."""
+
+    # Check format of input; convert lists to tuples for jax jit
+    if isinstance(counts, list):
+        counts = tuple(counts)
+    elif not isinstance(counts, tuple):
+        counts = (counts,)
+    if constraints is not None:
+        if not isinstance(constraints, (list, tuple)):
+            constraints = [constraints]
+        if not all([x.setup_completed for x in constraints]):
+            # Setup may modify Constraint attributes, so it must be
+            # completed before inputting constraints into a jitted function
+            if isinstance(constraints, tuple):
+                constraints = list(constraints)
+            [x.setup(counts=counts, bias=bias) for x in constraints]
+        if not isinstance(constraints, tuple):
+            constraints = tuple(constraints)
+    if mixture_coefs is not None:
+        if isinstance(mixture_coefs, (list, np.ndarray)):
+            mixture_coefs = tuple(mixture_coefs)
+        elif not isinstance(mixture_coefs, tuple):
+            mixture_coefs = (mixture_coefs,)
+    if mods is not None:
+        if isinstance(mods, (list, np.ndarray)):
+            mods = tuple(mods)
+        elif not isinstance(mods, tuple):
+            mods = (mods,)
 
     beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
@@ -180,7 +229,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
                    constraints=None,
                    random_state=None, max_iter=30000, max_fun=None,
                    factr=1e7, pgtol=1e-05, callback=None, alpha_loop=None,
-                   reorienter=None, mixture_coefs=None, verbose=True, mods=[]):
+                   reorienter=None, mixture_coefs=None, verbose=True, mods=()):
     """Estimates alpha, given current structure.
 
     Parameters
@@ -234,8 +283,32 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         objective function during optimization.
     """
 
-    # Check format of input
-    counts = (counts if isinstance(counts, list) else [counts])
+    # Check format of input; convert lists to tuples for jax jit
+    if isinstance(counts, list):
+        counts = tuple(counts)
+    elif not isinstance(counts, tuple):
+        counts = (counts,)
+    if constraints is not None:
+        if not isinstance(constraints, (list, tuple)):
+            constraints = [constraints]
+        if not all([x.setup_completed for x in constraints]):
+            # Setup may modify Constraint attributes, so it must be
+            # completed before inputting constraints into a jitted function
+            if isinstance(constraints, tuple):
+                constraints = list(constraints)
+            [x.setup(counts=counts, bias=bias) for x in constraints]
+        if not isinstance(constraints, tuple):
+            constraints = tuple(constraints)
+    if mixture_coefs is not None:
+        if isinstance(mixture_coefs, (list, np.ndarray)):
+            mixture_coefs = tuple(mixture_coefs)
+        elif not isinstance(mixture_coefs, tuple):
+            mixture_coefs = (mixture_coefs,)
+    if mods is not None:
+        if isinstance(mods, (list, np.ndarray)):
+            mods = tuple(mods)
+        elif not isinstance(mods, tuple):
+            mods = (mods,)
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     # Initialize alpha if necessary

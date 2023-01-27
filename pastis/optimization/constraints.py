@@ -81,7 +81,7 @@ class Constraint(object):
 
     def __init__(self, lambda_val, lengths, ploidy, multiscale_factor=1,
                  multires_naive=False, hparams=None, fullres_struct_nan=None,
-                 lowmem=False, mods=[]):
+                 lowmem=False, mods=()):
         self.abbrev = None
         self.name = None
         self.during_alpha_infer = None
@@ -98,6 +98,11 @@ class Constraint(object):
         self._var = None
 
         self.check()
+
+    @property
+    def setup_completed(self):
+        """TODO"""
+        return self._lowmem or (self._var is not None)
 
     def __str__(self):
         return f"CONSTRAINT: {self.name:.<40s} LAMBDA={self.lambda_val:g}"
@@ -161,7 +166,7 @@ class BeadChainConnectivity2019(Constraint):
 
     def __init__(self, lambda_val, lengths, ploidy, multiscale_factor=1,
                  multires_naive=False, hparams=None, fullres_struct_nan=None,
-                 lowmem=False, mods=[]):
+                 lowmem=False, mods=()):
         self.abbrev = "bcc"
         self.name = "Bead-chain connectivity (2019)"
         self.during_alpha_infer = False
@@ -223,7 +228,7 @@ class HomologSeparating2019(Constraint):
 
     def __init__(self, lambda_val, lengths, ploidy, multiscale_factor=1,
                  multires_naive=False, hparams=None, fullres_struct_nan=None,
-                 lowmem=False, mods=[]):
+                 lowmem=False, mods=()):
         self.abbrev = "hsc"
         self.name = "Homolog separating (2019)"
         self.during_alpha_infer = False
@@ -350,7 +355,7 @@ class BeadChainConnectivity2022(Constraint):
 
     def __init__(self, lambda_val, lengths, ploidy, multiscale_factor=1,
                  multires_naive=False, hparams=None, fullres_struct_nan=None,
-                 lowmem=False, mods=[]):
+                 lowmem=False, mods=()):
         self.abbrev = "bcc"
         self.name = "Bead-chain connectivity (2022)"
         self.during_alpha_infer = True
@@ -540,9 +545,8 @@ class BeadChainConnectivity2022(Constraint):
         else:
             gamma_mean, gamma_var = get_gamma_moments(
                 struct=struct, epsilon=epsilon, alpha=alpha,
-                beta=var['beta'], multiscale_factor=self.multiscale_factor,
-                row3d=var['row_nghbr'], col3d=var['row_nghbr'] + 1,
-                inferring_alpha=inferring_alpha, mods=self.mods)
+                beta=var['beta'], row3d=var['row_nghbr'],
+                col3d=var['row_nghbr'] + 1, inferring_alpha=inferring_alpha, mods=self.mods)
             gamma_mean = gamma_mean * 2
             gamma_var = gamma_var * 4
 
@@ -578,7 +582,7 @@ class HomologSeparating2022(Constraint):
 
     def __init__(self, lambda_val, lengths, ploidy, multiscale_factor=1,
                  multires_naive=False, hparams=None, fullres_struct_nan=None,
-                 lowmem=False, mods=[]):
+                 lowmem=False, mods=()):
         self.abbrev = "hsc"
         self.name = "Homolog separating (2022)"
         self.during_alpha_infer = True
@@ -735,14 +739,13 @@ class HomologSeparating2022(Constraint):
 def _get_hsc2022_negbinom(struct, row, col, alpha, beta, multiscale_factor=1,
                           epsilon=None, bias_lowres=None,
                           fullres_per_lowres_bead=None,
-                          inferring_alpha=False, mods=[]):
+                          inferring_alpha=False, mods=()):
     """TODO"""
 
     if multiscale_factor > 1 and epsilon is not None:
         lambda_mean, lambda_mixture_var = get_gamma_moments(
             struct=struct, epsilon=epsilon, alpha=alpha,
-            beta=beta, multiscale_factor=multiscale_factor,
-            row3d=row, col3d=col, inferring_alpha=inferring_alpha, mods=mods)
+            beta=beta, row3d=row, col3d=col, inferring_alpha=inferring_alpha, mods=mods)
     else:
         lambda_mean = beta * jnp.power(
             _euclidean_distance(struct, row=row, col=col), alpha)
@@ -802,7 +805,7 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
                      bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
                      hsc_version='2019', data_interchrom=None,
                      est_hmlg_sep=None, hsc_perc_diff=None,
-                     fullres_struct_nan=None, verbose=True, mods=[]):
+                     fullres_struct_nan=None, verbose=True, mods=()):
     """TODO"""
 
     # TODO remove
@@ -859,12 +862,12 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
         for x in constraints:
             print(x, flush=True)
 
-    return constraints
+    return constraints  # List of Constraint objects
 
 
 def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
                        normalize=True, bias=None, multiscale_reform=True,
-                       multiscale_factor=1, verbose=True, mods=[]):
+                       multiscale_factor=1, verbose=True, mods=()):
     """TODO"""
 
     counts, bias, lengths, _, _, _, _ = load_data(
@@ -933,7 +936,7 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
 
 def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
                           normalize=True, bias=None, multiscale_reform=True,
-                          multiscale_rounds=1, verbose=True, mods=[]):
+                          multiscale_rounds=1, verbose=True, mods=()):
     """TODO"""
 
     all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))

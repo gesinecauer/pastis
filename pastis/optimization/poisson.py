@@ -21,7 +21,7 @@ from .likelihoods import gamma_poisson_nll, poisson_nll
 
 
 def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
-                      multiscale_factor, ambiguity='ua', inferring_alpha=False, mods=[]):
+                      ambiguity='ua', inferring_alpha=False, mods=()):
 
     dis = _euclidean_distance(struct, row=row3d, col=col3d)
     dis_alpha = jnp.power(dis, alpha)
@@ -44,8 +44,8 @@ def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
     return gamma_mean, gamma_var
 
 
-def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
-                     multiscale_factor, ambiguity='ua', inferring_alpha=False, mods=[]):
+def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d, ambiguity='ua',
+                     inferring_alpha=False, mods=()):
 
     dis = _euclidean_distance(struct, row=row3d, col=col3d)
     dis_alpha = jnp.power(dis, alpha)
@@ -77,17 +77,16 @@ def get_gamma_params(struct, epsilon, alpha, beta, row3d, col3d,
 
 def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
                            beta, bias=None, multiscale_factor=1,
-                           mixture_coefs=None, mods=[]):
+                           mixture_coefs=None, mods=()):
     """Computes the multiscale objective function for a given counts matrix.
     """
 
     obj = 0
-    for struct in structures:
+    for struct, mix_coef in zip(structures, mixture_coefs):
         k, theta = get_gamma_params(
             struct, epsilon=epsilon, alpha=alpha, beta=beta, row3d=counts.row3d,
-            col3d=counts.col3d, multiscale_factor=multiscale_factor,
-            ambiguity=counts.ambiguity, mods=mods)
-        obj = obj + gamma_poisson_nll(
+            col3d=counts.col3d, ambiguity=counts.ambiguity, mods=mods)
+        obj = obj + mix_coef * gamma_poisson_nll(
             theta=theta, k=k, data=counts.data,
             bias_per_bin=counts.bias_per_bin(bias), mask=counts.mask, mods=mods)
 
@@ -100,7 +99,7 @@ def _multires_negbinom_obj(structures, epsilon, counts, alpha, lengths, ploidy,
 
 
 def _poisson_obj(structures, counts, alpha, lengths, ploidy, beta, bias=None,
-                 multiscale_factor=1, mixture_coefs=None, mods=[]):
+                 multiscale_factor=1, mixture_coefs=None, mods=()):
     """Computes the Poisson objective function for a given counts matrix.
     """
 
@@ -124,13 +123,13 @@ def _poisson_obj(structures, counts, alpha, lengths, ploidy, beta, bias=None,
 
 
 def _obj_single(structures, counts, alpha, lengths, ploidy, beta, bias=None,
-                multiscale_factor=1, epsilon=None, mixture_coefs=None, mods=[]):
+                multiscale_factor=1, epsilon=None, mixture_coefs=None, mods=()):
     """Computes the objective function for a given individual counts matrix.
     """
 
     if counts.nbins == 0 or counts.null or (bias is not None and bias.sum() == 0):
         return 0
-    if np.isnan(counts.weight) or np.isinf(counts.weight) or counts.weight == 0:
+    if (not np.isfinite(counts.weight)) or counts.weight <= 0:
         raise ValueError(f"Counts weight may not be {counts.weight}.")
 
     if mixture_coefs is not None and len(structures) != len(mixture_coefs):
@@ -159,7 +158,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, beta, bias=None,
 def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
               constraints=None, reorienter=None, multiscale_factor=1,
               multiscale_reform=False, mixture_coefs=None,
-              inferring_alpha=False, mods=[]):
+              inferring_alpha=False, mods=()):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -192,8 +191,11 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
     """
 
     # Check format of input
-    counts = (counts if isinstance(counts, list) else [counts])
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    if not isinstance(counts, (list, tuple)):
+        counts = [counts]
+    if constraints is not None and not isinstance(constraints, (list, tuple)):
+        constraints = [constraints]
+    # lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()  # FIXME uncomment
 
     # Get beta
     if beta is None:
@@ -260,22 +262,26 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
 
 
 # @partial(jit, static_argnames=[
-#     'counts', 'alpha', 'lengths', 'ploidy', 'beta', 'bias', 'constraints',
+#     'counts', 'alpha', 'lengths', 'ploidy', 'bias', 'constraints',
 #     'reorienter', 'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
-def objective_struct(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
+
+@partial(jit, static_argnames=[
+    'counts', 'alpha', 'ploidy', 'constraints', 'reorienter',
+    'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
+def objective_struct(X, counts, alpha, lengths, ploidy, bias=None,
                      constraints=None, reorienter=None, multiscale_factor=1,
-                     multiscale_reform=False, mixture_coefs=None, mods=[]):
+                     multiscale_reform=False, mixture_coefs=None, mods=()):
     """TODO"""
 
     return objective(
         X=X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        beta=beta, bias=bias, constraints=constraints, reorienter=reorienter,
+        bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
         mixture_coefs=mixture_coefs, inferring_alpha=False, mods=mods)
 
 
 def _format_X(X, lengths, ploidy, multiscale_factor=1,
-              multiscale_reform=False, mixture_coefs=None, mods=[]):
+              multiscale_reform=False, mixture_coefs=None, mods=()):
     """Reformat and check X."""
 
     if mixture_coefs is None:
@@ -324,9 +330,36 @@ gradient = grad(objective_struct, has_aux=True)
 
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
-                      multiscale_reform=False, callback=None, mixture_coefs=None, mods=[]):
+                      multiscale_reform=False, callback=None, mixture_coefs=None, mods=()):
     """Objective function wrapper to match scipy.optimize's interface.
     """
+
+    # Check format of input; convert lists to tuples for jax jit
+    if isinstance(counts, list):
+        counts = tuple(counts)
+    elif not isinstance(counts, tuple):
+        counts = (counts,)
+    if constraints is not None:
+        if not isinstance(constraints, (list, tuple)):
+            constraints = [constraints]
+        if not all([x.setup_completed for x in constraints]):
+            # Setup may modify Constraint attributes, so it must be
+            # completed before inputting constraints into a jitted function
+            if isinstance(constraints, tuple):
+                constraints = list(constraints)
+            [x.setup(counts=counts, bias=bias) for x in constraints]
+        if not isinstance(constraints, tuple):
+            constraints = tuple(constraints)
+    if mixture_coefs is not None:
+        if isinstance(mixture_coefs, (list, np.ndarray)):
+            mixture_coefs = tuple(mixture_coefs)
+        elif not isinstance(mixture_coefs, tuple):
+            mixture_coefs = (mixture_coefs,)
+    if mods is not None:
+        if isinstance(mods, (list, np.ndarray)):
+            mods = tuple(mods)
+        elif not isinstance(mods, tuple):
+            mods = (mods,)
 
     new_obj, (obj_logs, structures, alpha, epsilon) = objective_struct(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
@@ -343,9 +376,36 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
 
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    constraints=None, reorienter=None, multiscale_factor=1,
-                   multiscale_reform=False, callback=None, mixture_coefs=None, mods=[]):
+                   multiscale_reform=False, callback=None, mixture_coefs=None, mods=()):
     """Gradient function wrapper to match scipy.optimize's interface.
     """
+
+    # Check format of input; convert lists to tuples for jax jit
+    if isinstance(counts, list):
+        counts = tuple(counts)
+    elif not isinstance(counts, tuple):
+        counts = (counts,)
+    if constraints is not None:
+        if not isinstance(constraints, (list, tuple)):
+            constraints = [constraints]
+        if not all([x.setup_completed for x in constraints]):
+            # Setup may modify Constraint attributes, so it must be
+            # completed before inputting constraints into a jitted function
+            if isinstance(constraints, tuple):
+                constraints = list(constraints)
+            [x.setup(counts=counts, bias=bias) for x in constraints]
+        if not isinstance(constraints, tuple):
+            constraints = tuple(constraints)
+    if mixture_coefs is not None:
+        if isinstance(mixture_coefs, (list, np.ndarray)):
+            mixture_coefs = tuple(mixture_coefs)
+        elif not isinstance(mixture_coefs, tuple):
+            mixture_coefs = (mixture_coefs,)
+    if mods is not None:
+        if isinstance(mods, (list, np.ndarray)):
+            mods = tuple(mods)
+        elif not isinstance(mods, tuple):
+            mods = (mods,)
 
     new_grad = np.array(gradient(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
@@ -360,7 +420,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                constraints=None, multiscale_factor=1, epsilon=None,
                epsilon_bounds=None, max_iter=30000, max_fun=None,
                factr=1e7, pgtol=1e-05, callback=None, alpha_loop=0,
-               reorienter=None, mixture_coefs=None, verbose=True, mods=[]):
+               reorienter=None, mixture_coefs=None, verbose=True, mods=()):
     """Estimates a 3D structure, given current alpha.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -417,8 +477,32 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
 
     multiscale_reform = (epsilon is not None)
 
-    # Check format of input
-    counts = (counts if isinstance(counts, list) else [counts])
+    # Check format of input; convert lists to tuples for jax jit
+    if isinstance(counts, list):
+        counts = tuple(counts)
+    elif not isinstance(counts, tuple):
+        counts = (counts,)
+    if constraints is not None:
+        if not isinstance(constraints, (list, tuple)):
+            constraints = [constraints]
+        if not all([x.setup_completed for x in constraints]):
+            # Setup may modify Constraint attributes, so it must be
+            # completed before inputting constraints into a jitted function
+            if isinstance(constraints, tuple):
+                constraints = list(constraints)
+            [x.setup(counts=counts, bias=bias) for x in constraints]
+        if not isinstance(constraints, tuple):
+            constraints = tuple(constraints)
+    if mixture_coefs is not None:
+        if isinstance(mixture_coefs, (list, np.ndarray)):
+            mixture_coefs = tuple(mixture_coefs)
+        elif not isinstance(mixture_coefs, tuple):
+            mixture_coefs = (mixture_coefs,)
+    if mods is not None:
+        if isinstance(mods, (list, np.ndarray)):
+            mods = tuple(mods)
+        elif not isinstance(mods, tuple):
+            mods = (mods,)
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
     if (multiscale_factor != 1 and multiscale_reform):
@@ -573,14 +657,38 @@ class PastisPM(object):
                  epsilon=None, epsilon_bounds=None, alpha_init=None,
                  max_alpha_loop=20, max_iter=30000, factr=1e7, pgtol=1e-05,
                  alpha_factr=1e12, reorienter=None, null=False,
-                 mixture_coefs=None, verbose=True, mods=[]):
+                 mixture_coefs=None, verbose=True, mods=()):
         from .callbacks import Callback
 
+        # Check format of input; convert lists to tuples for jax jit
+        if isinstance(counts, list):
+            counts = tuple(counts)
+        elif not isinstance(counts, tuple):
+            counts = (counts,)
+        if constraints is not None:
+            if not isinstance(constraints, (list, tuple)):
+                constraints = [constraints]
+            if not all([x.setup_completed for x in constraints]):
+                # Setup may modify Constraint attributes, so it must be
+                # completed before inputting constraints into a jitted function
+                if isinstance(constraints, tuple):
+                    constraints = list(constraints)
+                [x.setup(counts=counts, bias=bias) for x in constraints]
+            if not isinstance(constraints, tuple):
+                constraints = tuple(constraints)
+        if mixture_coefs is not None:
+            if isinstance(mixture_coefs, (list, np.ndarray)):
+                mixture_coefs = tuple(mixture_coefs)
+            elif not isinstance(mixture_coefs, tuple):
+                mixture_coefs = (mixture_coefs,)
+        if mods is not None:
+            if isinstance(mods, (list, np.ndarray)):
+                mods = tuple(mods)
+            elif not isinstance(mods, tuple):
+                mods = (mods,)
+        else:
+            mods = ()
         lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
-
-        if constraints is None:
-            constraints = []
-        [x.setup(counts=counts, bias=bias) for x in constraints]  # For jax jit
 
         if callback is None:
             callback = Callback(
@@ -631,7 +739,6 @@ class PastisPM(object):
         self.null = null
         self.mixture_coefs = mixture_coefs
         self.verbose = verbose
-
         self.mods = mods
 
         if self.null:
@@ -639,7 +746,7 @@ class PastisPM(object):
                 print('GENERATING NULL STRUCTURE', flush=True)
             # Exclude the counts data from the primary objective function.
             # Counts are still used in the calculation of the constraints.
-            self.counts = [sum(self.counts).as_null()]
+            self.counts = (sum(self.counts).as_null(),)
 
         self._clear()
 

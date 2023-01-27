@@ -23,7 +23,7 @@ def _polygrid2d(c, *args):
     for xi in args:
         if isinstance(xi, (tuple, list)):
             xi = jnp.asarray(xi)
-        if isinstance(xi, jnp.ndarray):
+        if isinstance(xi, (jnp.ndarray, np.ndarray)):
             c = c.reshape(c.shape + (1,) * xi.ndim)
         c = _polyval(xi, c)
     return c

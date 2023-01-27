@@ -216,6 +216,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=hsc_perc_diff,
         fullres_struct_nan=fullres_struct_nan, verbose=verbose, mods=mods)
     [x.setup(counts=counts, bias=bias) for x in constraints]  # For jax jit
+    constraints = tuple(constraints)
 
     # SETUP CALLBACKS
     if simple_diploid and struct_true is not None:
