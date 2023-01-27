@@ -315,7 +315,7 @@ class HomologSeparating2019(Constraint):
         hmlg_sep = jnp.zeros(self.lengths_lowres.shape)
         begin = end = 0
         for i in range(self.lengths_lowres.size):
-            end = end + jnp.int32(self.lengths_lowres[i])
+            end = end + self.lengths_lowres[i]
             chrom1_mean = jnp.sum(struct_bw[begin:end], axis=0)
             chrom2_mean = jnp.sum(struct_bw[(n + begin):(n + end)], axis=0)
             hmlg_sep_i = jnp.sqrt(jnp.sum(jnp.square(
@@ -330,7 +330,7 @@ class HomologSeparating2019(Constraint):
             hmlg_sep_diff = relu(hmlg_sep_diff)
             # raise ValueError("I thought we weren't doing RELU for HSC anymore")
         else:
-            hsc_cutoff = jnp.array(self.hparams['perc_diff'] * self.hparams[
+            hsc_cutoff = np.array(self.hparams['perc_diff'] * self.hparams[
                 "est_hmlg_sep"])
             gt0 = hmlg_sep_diff > 0
             hmlg_sep_diff = hmlg_sep_diff.at[gt0].set(relu(
@@ -791,9 +791,9 @@ def _kl_divergence(p, log_q):
     """
     mask = (p != 0)
     if mask.sum() == mask.size:
-        tmp = p * (jnp.log(p) - log_q)
+        tmp = p * (np.log(p) - log_q)
     else:
-        tmp = p[mask] * (jnp.log(p[mask]) - log_q[mask])
+        tmp = p[mask] * (np.log(p[mask]) - log_q[mask])
 
     return jnp.sum(tmp)
 
