@@ -359,8 +359,14 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         if ploidy != 2:
             raise ValueError("Ploidy is not 2, but simple_diploid specified.")
         counts = check_counts(counts, lengths=lengths, ploidy=2)
-        beta = 2 * _ambiguate_beta(
-            beta, counts=counts, lengths=lengths, ploidy=2)
+        if beta is None:
+            beta_ambig, _ = _set_initial_beta(
+                counts, lengths=lengths, ploidy=ploidy, bias=bias,
+                exclude_zeros=exclude_zeros)
+        else:
+            beta_ambig = _ambiguate_beta(
+                beta, counts=counts, lengths=lengths, ploidy=2)
+        beta = 2 * beta_ambig
         counts = [ambiguate_counts(
             counts=counts, lengths=lengths, ploidy=2)]
         ploidy = 1
