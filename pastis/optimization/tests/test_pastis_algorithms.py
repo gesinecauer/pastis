@@ -89,7 +89,7 @@ def test_haploid(multiscale_factor, multiscale_reform):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform, verbose=False, init=init)
 
@@ -121,7 +121,7 @@ def test_haploid_biased(multiscale_factor, multiscale_reform):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform, verbose=False, init=init, bias=bias)
 
@@ -151,7 +151,7 @@ def test_haploid_run_pastis(multiscale_rounds, multiscale_reform):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        print_freq=None, history_freq=None, save_freq=None,
+        print_freq=None, log_freq=None, save_freq=None,
         struct_true=struct_true, multiscale_rounds=multiscale_rounds,
         multiscale_reform=multiscale_reform, verbose=False, init=init)
 
@@ -181,7 +181,7 @@ def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=None,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        print_freq=None, history_freq=None, save_freq=None,
+        print_freq=None, log_freq=None, save_freq=None,
         struct_true=struct_true, multiscale_rounds=multiscale_rounds,
         multiscale_reform=multiscale_reform, verbose=False, init=init)
 
@@ -220,7 +220,7 @@ def test_diploid(ambiguity, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         multiscale_reform=True, verbose=False, init=init)
 
@@ -257,7 +257,7 @@ def test_diploid_combo():
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=None,
-        print_freq=None, history_freq=None, save_freq=None, verbose=False,
+        print_freq=None, log_freq=None, save_freq=None, verbose=False,
         struct_true=struct_true, init=init, beta=None)  # Test _set_initial_beta
 
     assert infer_param['converged']
@@ -296,7 +296,7 @@ def test_constraint_bcc2019():
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
-        print_freq=None, history_freq=None, save_freq=None,
+        print_freq=None, log_freq=None, save_freq=None,
         bcc_version="2019", hsc_version="2019", verbose=False, init=init,
         null=null, struct_true=struct_true, beta=beta)
 
@@ -334,7 +334,7 @@ def test_constraint_hsc2019_infer_hmlg_sep():
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
-        print_freq=None, history_freq=None, save_freq=None,
+        print_freq=None, log_freq=None, save_freq=None,
         struct_true=struct_true, bcc_version="2019", hsc_version="2019",
         multiscale_reform=True, verbose=False, init=init, null=null)
 
@@ -381,7 +381,7 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, est_hmlg_sep=est_hmlg_sep,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2019", hsc_version="2019", multiscale_reform=True,
         verbose=False, init=init, null=null)
@@ -433,7 +433,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
         multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)
@@ -484,7 +484,7 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
         multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)
@@ -535,7 +535,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
         multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)
@@ -592,7 +592,7 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
         seed=seed, normalize=False, filter_threshold=0, beta=beta,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
-        callback_freq={'print': 0, 'history': 0, 'save': 0},
+        callback_freq={'print_freq': 0, 'log_freq': 0, 'save_freq': 0},
         struct_true=struct_true, multiscale_factor=multiscale_factor,
         bcc_version="2022", hsc_version="2022", data_interchrom=data_interchrom,
         multiscale_reform=True, verbose=False, init=init, null=null, bias=bias)

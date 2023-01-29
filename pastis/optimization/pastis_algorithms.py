@@ -88,6 +88,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         counts_for_lowres = counts
         simple_diploid_for_lowres = True
         beta_for_lowres = beta
+
     struct_draft_lowres, infer_param_lowres = infer_at_alpha(
         counts=counts_for_lowres, outdir=lowres_outdir,
         lengths=lengths, ploidy=ploidy, alpha=alpha, seed=seed,
@@ -104,6 +105,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     if not infer_param_lowres['converged']:
         return None, False
+
     est_hmlg_sep = distance_between_homologs(
         structures=struct_draft_lowres,
         lengths=decrease_lengths_res(
@@ -147,11 +149,6 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if verbose and outfiles is not None:
         print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
 
-    # GET LOW-RES BIAS, IF NEEDED  # FIXME move below "prepare counts object"
-    if multiscale_factor > 1 and not multiscale_reform:
-        bias = decrease_bias_res(
-            bias, multiscale_factor=multiscale_factor, lengths=lengths)
-
     # PREPARE COUNTS OBJECTS
     counts, struct_nan, fullres_struct_nan = preprocess_counts(
         counts=counts, lengths=lengths, ploidy=ploidy,
@@ -173,38 +170,30 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             print(f'ALPHA: {alpha:.3g}', flush=True)
 
+    # REDUCE RESOLUTION OF BIAS, IF NEEDED
+    if multiscale_factor > 1 and not multiscale_reform:
+        bias = decrease_bias_res(
+            bias, multiscale_factor=multiscale_factor, lengths=lengths)
+
     # INITIALIZATION
     random_state = np.random.RandomState(seed)
-    if isinstance(init, str) and init.lower() == 'true':
-        if struct_true is None:
-            raise ValueError("Attempting to initialize with struct_true but"
-                             " struct_true is None")
-        if verbose:
-            print('INITIALIZATION: initializing with true structure',
-                  flush=True)
-        init = struct_true
     struct_init = initialize(
         counts=counts, lengths=lengths, init=init, ploidy=ploidy,
         random_state=random_state,
-        alpha=alpha_init if alpha is None else alpha,
+        alpha=(alpha_init if alpha is None else alpha),
         bias=bias, multiscale_factor=multiscale_factor,
-        reorienter=reorienter, mixture_coefs=mixture_coefs, verbose=verbose,
-        mods=mods)
+        reorienter=reorienter, mixture_coefs=mixture_coefs,
+        struct_true=struct_true, verbose=verbose, mods=mods)
     if multiscale_reform and multiscale_factor != 1:
         epsilon = random_state.uniform()
     else:
         epsilon = None
 
     # HOMOLOG-SEPARATING CONSTRAINT
-    if hsc_lambda > 0:
-        if est_hmlg_sep is not None:
-            est_hmlg_sep = np.array(est_hmlg_sep, dtype=float, ndmin=1).ravel()
-            if est_hmlg_sep.size == 1 and lengths.size != 1:
-                est_hmlg_sep = np.tile(est_hmlg_sep, lengths.size)
-        elif reorienter is not None and reorienter.reorient:
-            est_hmlg_sep = distance_between_homologs(
-                structures=reorienter.struct_init, lengths=lengths,
-                mixture_coefs=mixture_coefs)
+    if hsc_lambda > 0 and reorienter is not None and reorienter.reorient:
+        est_hmlg_sep = distance_between_homologs(
+            structures=reorienter.struct_init, lengths=lengths,
+            mixture_coefs=mixture_coefs)
 
     # SETUP CONSTRAINTS
     constraints = prep_constraints(
@@ -220,14 +209,16 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # SETUP CALLBACKS
     if callback_fxns is None:
         callback_fxns = {}
+    if callback_freq is None:
+        callback_freq = {}
     callback = Callback(
         lengths=lengths, ploidy=ploidy, counts=counts, bias=bias,
         multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform, frequency=callback_freq,
+        multiscale_reform=multiscale_reform,
         directory=outdir, seed=seed, struct_true=struct_true,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
         simple_diploid=simple_diploid, mixture_coefs=mixture_coefs,
-        **callback_fxns, verbose=verbose, mods=mods)
+        **callback_freq, **callback_fxns, verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
             epsilon, ploidy)
@@ -340,14 +331,14 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     if outdir is not None:
         outfiles = _get_output_files(outdir, seed=seed)
-        if os.path.exists(outfiles['struct_infer']) or os.path.exists(
+        if os.path.isfile(outfiles['struct_infer']) or os.path.isfile(
                 outfiles['struct_nonconv']):
             infer_param = _load_infer_param(outfiles['infer_param'])
             if verbose:
-                if os.path.exists(outfiles['struct_infer']):
+                if os.path.isfile(outfiles['struct_infer']):
                     print('CONVERGED\n', flush=True)
                     struct_ = np.loadtxt(outfiles['struct_infer'])
-                elif os.path.exists(outfiles['struct_nonconv']):
+                elif os.path.isfile(outfiles['struct_nonconv']):
                     print('OPTIMIZATION DID NOT CONVERGE\n', flush=True)
                     struct_ = None
             return struct_, infer_param
@@ -440,9 +431,9 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             np.savetxt(outfiles['reorient'], pm.orientation_)
         if pm.converged_:
             np.savetxt(outfiles['struct_infer'], struct_)
-            if pm.history_ is not None and len(pm.history_) > 0:
-                pd.DataFrame(pm.history_).to_csv(
-                    outfiles['history'], sep='\t', index=False)
+            if pm.log_ is not None and len(pm.log_) > 0:
+                pd.DataFrame(pm.log_).to_csv(
+                    outfiles['log'], sep='\t', index=False)
         else:
             np.savetxt(outfiles['struct_nonconv'], struct_)
 
@@ -680,7 +671,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    bcc_version='2019', hsc_version='2019',
                    data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
                    hsc_perc_diff=None,
-                   callback_fxns=None, print_freq=100, history_freq=100,
+                   callback_fxns=None, print_freq=100, log_freq=100,
                    save_freq=None, piecewise=False, piecewise_step=None,
                    piecewise_chrom=None, piecewise_min_beads=5,
                    piecewise_fix_homo=False, piecewise_opt_orient=True,
@@ -784,8 +775,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         if all([isinstance(c, str) for c in counts]):
             print("COUNTS: " + '        \n'.join(counts) + "\n", flush=True)
 
-    callback_freq = {'print': print_freq, 'history': history_freq,
-                     'save': save_freq}
+    callback_freq = {'print_freq': print_freq, 'log_freq': log_freq,
+                     'save_freq': save_freq}
     outdir = _output_subdir(
         outdir=outdir, chrom_full=chromosomes, chrom_subset=chrom_subset,
         null=null, lengths=lengths)

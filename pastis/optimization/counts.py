@@ -322,9 +322,9 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
                       beta=None, bias=None, excluded_counts=None,
                       exclude_zeros=False, multiscale_reform=True,
                       input_weight=None, verbose=True, simple_diploid=False, mods=[]):
-    """Check counts, reformat, reduce resolution, filter, and compute bias.
+    """Check counts, reformat.
 
-    Optionally reduce resolution. Counts are also checked and reformatted
+    Counts are also checked and reformatted
     for inference. Final matrices are stored as CountsMatrix subclass instances.
 
     Parameters
@@ -350,7 +350,7 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
     counts : list of CountsMatrix subclass instances
         Preprocessed counts data.
     bias : array of float
-        Biases computed by ICE normalization.
+        Hi-C biases
     struct_nan : array of int
         Beads that should be removed (set to NaN) in the structure.
     """

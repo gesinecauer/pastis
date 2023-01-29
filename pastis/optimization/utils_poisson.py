@@ -48,7 +48,7 @@ def _get_output_files(outdir, seed=None):
     out_fail = os.path.join(
         outdir, f'struct_nonconverged{seed_str}.coords')
     init_file = os.path.join(outdir, f'struct_init{seed_str}.coords')
-    history_file = os.path.join(outdir, f'history{seed_str}')
+    log_file = os.path.join(outdir, f'log{seed_str}')
     infer_param_file = os.path.join(
         outdir, f'inference_params{seed_str}')
     reorient_file = os.path.join(
@@ -57,7 +57,7 @@ def _get_output_files(outdir, seed=None):
         outdir, f'reorient_init{seed_str}.coords')
     outfiles = {
         'struct_infer': out_file, 'struct_nonconv': out_fail,
-        'history': history_file, 'infer_param': infer_param_file,
+        'log': log_file, 'infer_param': infer_param_file,
         'init': init_file, 'dir': outdir, 'reorient': reorient_file,
         'reorient_init': reorient_init_file}
     return outfiles

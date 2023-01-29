@@ -69,8 +69,8 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
 
 
 def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
-                       init='mds', multiscale_factor=1,
-                       mixture_coefs=None, verbose=True):
+                       init='mds', multiscale_factor=1, mixture_coefs=None,
+                       struct_true=None, verbose=True):
     """Initialize structure, randomly or via MDS of unambig counts.
     """
 
@@ -87,6 +87,16 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     if init is None:
         init = 'mds'
 
+    # If initializing with true structure
+    if isinstance(init, str) and init.lower() == 'true':
+        if struct_true is None:
+            raise ValueError("Attempting to initialize with struct_true but"
+                             " struct_true is None")
+        if verbose:
+            print('INITIALIZATION: initializing with true structure',
+                  flush=True)
+        init = struct_true
+
     if isinstance(init, np.ndarray) or isinstance(init, list):
         if verbose:
             print('INITIALIZATION: 3D structure', flush=True)
@@ -101,11 +111,11 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         if verbose:
             print('INITIALIZATION: random points', flush=True)
         structures = [random_state.uniform(
-            low=-1, high=1, size=(int(
-                lengths_lowres.sum() * ploidy), 3)) for coef in mixture_coefs]
-    elif isinstance(init, str) and os.path.exists(init):
+            low=-1, high=1, size=(
+                lengths_lowres.sum() * ploidy, 3)) for coef in mixture_coefs]
+    elif isinstance(init, str) and os.path.isfile(init):
         if verbose:
-            print('INITIALIZATION: 3D structure, %s' % init, flush=True)
+            print(f'INITIALIZATION: 3D structure, {init}', flush=True)
         structures = _format_structures(
             np.loadtxt(init), mixture_coefs=mixture_coefs)
     else:
@@ -116,10 +126,6 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         raise ValueError("Initial structures are of different shapes")
     else:
         struct_length = struct_length.pop()
-    # multiscale_factor_init = int(np.ceil(
-    #     lengths.sum() * ploidy / struct_length)) # TODO remove junk
-    # multiscale_factor_init = int(np.ceil(
-    #     np.tile(lengths, ploidy) / struct_length).sum())
     multiscale_factor_init = 1
     while ploidy * decrease_lengths_res(
             lengths, multiscale_factor_init * 2).sum() >= struct_length:
@@ -165,7 +171,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 
 def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
                bias=None, multiscale_factor=1, reorienter=None,
-               mixture_coefs=None, verbose=False, mods=[]):
+               mixture_coefs=None, struct_true=None, verbose=False, mods=[]):
     """Initialize optimization.
 
     Create initialization for optimization. Structures can be initialized
@@ -202,16 +208,12 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
     -------
     array of float
         Initialization for inference.
-
     """
 
     if random_state is None:
         random_state = np.random.RandomState()
     elif isinstance(random_state, int):
         random_state = np.random.RandomState(random_state)
-
-    lengths_lowres = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor)
 
     if reorienter is not None and reorienter.reorient:
         if isinstance(init, np.ndarray):
@@ -221,6 +223,8 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
             reorienter.check_X(init_reorient)
         else:
             print('INITIALIZATION: random', flush=True)
+            lengths_lowres = decrease_lengths_res(
+                lengths, multiscale_factor=multiscale_factor)
             init_reorient = []
             if reorienter.translate:
                 init_reorient.append(random_state.uniform(
@@ -237,5 +241,5 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state, init=init,
             multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
-            verbose=verbose)
+            struct_true=struct_true, verbose=verbose)
         return struct_init

@@ -181,7 +181,7 @@ class BeadChainConnectivity2019(Constraint):
         self._fullres_struct_nan = None  # Not necessary for this constraint
         self._lowmem = lowmem
         self._var = None
-        self.mods = mods  # TODO remove
+        self.mods = mods
 
         self.check()
 
@@ -247,11 +247,11 @@ class HomologSeparating2019(Constraint):
         self._fullres_struct_nan = None  # Not necessary for this constraint
         self._lowmem = lowmem
         self._var = None
-        self.mods = mods  # TODO remove
+        self.mods = mods
 
         self.check()
 
-    def check(self):
+    def check(self):  # TODO flesh out check() for all constraints
         if self.ploidy == 1 and self.lambda_val > 0:
             raise ValueError(f"{self.name} constraint can not be applied to"
                              " haploid genomes.")
@@ -274,7 +274,7 @@ class HomologSeparating2019(Constraint):
                              " hyperparams: 'est_hmlg_sep'")
         if isinstance(self.hparams['est_hmlg_sep'], list):
             self.hparams['est_hmlg_sep'] = np.array(
-                self.hparams['est_hmlg_sep'])
+                self.hparams['est_hmlg_sep']).ravel()
         if not isinstance(
                 self.hparams['est_hmlg_sep'], (np.ndarray, float, int)):
             raise ValueError(f"{self.name} constraint hyperparam 'est_hmlg_sep'"
@@ -385,7 +385,7 @@ class BeadChainConnectivity2022(Constraint):
         self._fullres_struct_nan = None  # Not necessary for this constraint
         self._lowmem = lowmem
         self._var = None
-        self.mods = mods  # TODO remove
+        self.mods = mods
 
         self.check()
 
@@ -619,7 +619,7 @@ class HomologSeparating2022(Constraint):
         self._fullres_struct_nan = None  # Not necessary for this constraint
         self._lowmem = lowmem
         self._var = None
-        self.mods = mods  # TODO remove
+        self.mods = mods
 
         self.check()
 

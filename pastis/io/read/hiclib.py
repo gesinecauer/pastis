@@ -67,8 +67,7 @@ def load_hiclib_counts(filename, lengths=None):
     mask = np.isnan(data)
     if np.any(mask):
         warnings.warn(
-            "NAs detected in %s. "
-            "Removing NAs and replacing with 0." % filename)
+            f"NaN detected in {filename}. Removing NaN and replacing with 0.")
         row = row[np.invert(mask)]
         col = col[np.invert(mask)]
         data = data[np.invert(mask)]

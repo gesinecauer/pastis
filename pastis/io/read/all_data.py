@@ -12,11 +12,11 @@ def _get_lengths(lengths):
 
     if lengths is None:
         raise ValueError("Must input chromosome lengths.")
-    if isinstance(lengths, str) and os.path.exists(lengths):
+    if isinstance(lengths, str) and os.path.isfile(lengths):
         lengths = load_lengths(lengths)
     elif isinstance(lengths, (list, np.ndarray)):
         lengths = np.asarray(lengths)
-        if lengths.size == 1 and isinstance(lengths[0], str) and os.path.exists(
+        if lengths.size == 1 and isinstance(lengths[0], str) and os.path.isfile(
                 lengths[0]):
             lengths = load_lengths(lengths[0])
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
@@ -29,11 +29,11 @@ def _get_bias(bias, lengths):
     if bias is None:
         return None
     lengths = _get_lengths(lengths)
-    if isinstance(bias, str) and os.path.exists(bias):
+    if isinstance(bias, str) and os.path.isfile(bias):
         bias = np.loadtxt(bias)
     elif isinstance(bias, (list, np.ndarray)):
         bias = np.asarray(bias)
-        if bias.size == 1 and isinstance(bias[0], str) and os.path.exists(
+        if bias.size == 1 and isinstance(bias[0], str) and os.path.isfile(
                 bias[0]):
             bias = np.loadtxt(bias[0])
     bias = np.array(bias, copy=False, ndmin=1, dtype=float).ravel()
@@ -51,11 +51,11 @@ def _get_struct(struct, lengths, ploidy):
     if struct is None:
         return None
     lengths = _get_lengths(lengths)
-    if isinstance(struct, str) and os.path.exists(struct):
+    if isinstance(struct, str) and os.path.isfile(struct):
         struct = np.loadtxt(struct)
     elif isinstance(struct, (list, np.ndarray)):
         struct = np.asarray(struct)
-        if struct.size == 1 and isinstance(struct[0], str) and os.path.exists(
+        if struct.size == 1 and isinstance(struct[0], str) and os.path.isfile(
                 struct[0]):
             struct = np.loadtxt(struct[0])
     struct = np.array(struct, copy=False, dtype=float)
@@ -74,11 +74,11 @@ def _get_struct(struct, lengths, ploidy):
 def _get_chrom(chrom, lengths=None):
     """Parse chromosome names, load from file if necessary."""
 
-    if isinstance(chrom, str) and os.path.exists(chrom):
+    if isinstance(chrom, str) and os.path.isfile(chrom):
         chrom = np.loadtxt(chrom, dtype='str')
     elif chrom is not None and isinstance(chrom, (list, np.ndarray)):
         chrom = np.asarray(chrom)
-        if chrom.size == 1 and isinstance(chrom[0], str) and os.path.exists(
+        if chrom.size == 1 and isinstance(chrom[0], str) and os.path.isfile(
                 chrom[0]):
             chrom = np.loadtxt(chrom[0], dtype='str')
     else:  # Create chromosome names: num1, num2, num3... etc
@@ -106,6 +106,8 @@ def _get_counts(counts, lengths, ploidy):
     for i in range(len(counts)):
         if isinstance(counts[i], np.ndarray) or sparse.issparse(counts[i]):
             pass
+        elif not os.path.isfile(counts[i]):
+            raise ValueError(f"File does not exist: {counts[i]}")
         elif counts[i].endswith(".npy") or counts[i].endswith(".npz"):
             counts[i] = np.load(counts[i])
         elif counts[i].endswith(".matrix") or counts[i].endswith(".matrix.gz"):

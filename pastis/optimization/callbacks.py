@@ -37,12 +37,12 @@ class Callback(object):
     multiscale_factor : int, optional
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 indicates full resolution.
-    history : dict of list, optional
-        Previously generated history logs, to be added to during this
+    log : dict of list, optional
+        Previously generated logs, to be added to during this
         optimization.
-    frequency : int or dict, optional
+    XXX : int or dict, optional
         Frequency of iterations at which operations are performed. Each key
-        indicates an operation, options: "history" (logs history), "print"
+        indicates an operation, options: "log" (adds to logs), "print"
         (prints time and current objective value), "save" (saves current
         structure to file).
     directory : str, optional
@@ -69,9 +69,9 @@ class Callback(object):
         resolution. A value of 1 indicates full resolution.
     struct_nan : array of int
         Beads that should be removed (set to NaN) in the structure.
-    frequency : dict
+    XXX : dict
         Frequency of iterations at which operations are performed. Each key
-        indicates an operation, options: "history" (logs history), "print"
+        indicates an operation, options: "log" (adds to logs), "print"
         (prints time and current objective value), "save" (saves current
         structure to file).
     directory : str
@@ -85,8 +85,8 @@ class Callback(object):
         True alpha, to be used by `analysis_function`.
     verbose : bool
         Verbosity.
-    history : dict of list
-        History logs generated during optimization. By default, history includes
+    log : dict of list
+        Logs generated during optimization. By default, log includes
         the following information and keys, respectively: iteration ("iter"),
         alpha ("alpha"), multiscale_factor ("multiscale_factor"),
         current iteration of alpha/structure optimization ("alpha_loop"),
@@ -101,12 +101,12 @@ class Callback(object):
         Current iter (iteration) of optimization.
     time : str
         Time since optimization began.
-    structures : list of array of float or None
+    structures_ : list of array of float or None
         Current 3D chromatin structure(s).
-    alpha : float or None
+    alpha_ : float or None
         Current biophysical parameter of the transfer function used in
         converting counts to wish distances.
-    Xi : float or array of float or None
+    X_ : float or array of float or None
         Current values being optimized (structure, alpha, or chromosome
         orientation).
     time_start : timeit.default_timer instance
@@ -115,8 +115,9 @@ class Callback(object):
 
     def __init__(self, lengths, ploidy, counts=None, bias=None, beta_init=None,
                  multiscale_factor=1, multiscale_reform=False,
-                 history=None, analysis_function=None, frequency=None,
-                 on_optimization_begin=None, directory=None, seed=None, struct_true=None,
+                 log=None, analysis_function=None, print_freq=100,
+                 log_freq=100, save_freq=None, directory=None, seed=None,
+                 on_optimization_begin=None, struct_true=None,
                  alpha_true=None, constraints=None, simple_diploid=False, mixture_coefs=None,
                  verbose=False, mods=[]):
         self.ploidy = ploidy
@@ -138,23 +139,12 @@ class Callback(object):
         self.mixture_coefs = mixture_coefs
         self.mods = mods
 
-        if frequency is None or isinstance(frequency, int):
-            self.frequency = {
-                'print': frequency, 'history': frequency, 'save': frequency}
-            if frequency is None:
-                self.frequency['print'] = 100
-        else:
-            if not isinstance(frequency, dict) or any(
-                    [k not in ('print', 'history', 'save') for k in frequency.keys()]):
-                raise ValueError("Callback frequency must be None, int, or dict"
-                                 " with keys = (print, history, save).")
-            self.frequency = {'print': None, 'history': None, 'save': None}
-            for k, v in frequency.items():
-                self.frequency[k] = v
-
         self.on_optimization_begin_ = on_optimization_begin
         self.analysis_function = analysis_function
 
+        self.print_freq = print_freq
+        self.log_freq = log_freq
+        self.save_freq = save_freq
         self.directory = '' if directory is None else directory
         self.seed = seed
         self.verbose = verbose
@@ -185,13 +175,13 @@ class Callback(object):
             self.struct_true = None
         self.alpha_true = alpha_true
 
-        if history is None:
-            self.history = {}
-        elif isinstance(history, dict) and all(
-                [isinstance(v, list) for v in history.values()]):
-            self.history = history
+        if log is None:
+            self.log = {}
+        elif isinstance(log, dict) and all(
+                [isinstance(v, list) for v in log.values()]):
+            self.log = log
         else:
-            raise ValueError("History must be dictionary of lists")
+            raise ValueError("log must be dictionary of lists")
 
         self.opt_type = None
         self.alpha_loop = None
@@ -244,7 +234,7 @@ class Callback(object):
         self.time_start = timer()
         return res
 
-    def on_iter_end(self, obj_logs, structures, alpha, Xi, epsilon=None):
+    def on_iter_end(self, obj_logs, structures, alpha, X, epsilon=None):
         """Functionality to add to the end of each iter.
 
         This method will be called at the end of each iter during the
@@ -260,7 +250,7 @@ class Callback(object):
         alpha : float
             Current biophysical parameter of the transfer function used in
             converting counts to wish distances.
-        Xi : float or array of float
+        X : float or array of float
             Current values being optimized (structure, alpha, or chromosome
             orientation).
         """
@@ -280,9 +270,9 @@ class Callback(object):
                 if isinstance(v, jnp.ndarray):
                     self.obj[k] = v._value
 
-        if isinstance(Xi, jnp.ndarray):
-            Xi = Xi._value
-        self.X_ = Xi
+        if isinstance(X, jnp.ndarray):
+            X = X._value
+        self.X_ = X
 
         self.structures_ = []
         for struct in structures:
@@ -307,7 +297,7 @@ class Callback(object):
         self.epsilon_ = epsilon
 
         self._print()
-        self._log_history()
+        self._add_to_log()
         self._save_X()
 
     def on_optimization_end(self):
@@ -317,7 +307,7 @@ class Callback(object):
 
         self.optimization_complete = True
         self._print()
-        self._log_history()
+        self._add_to_log()
 
     def _check_frequency(self, frequency):
         if frequency is not None and frequency > 0:
@@ -330,7 +320,7 @@ class Callback(object):
     def _print(self):
         """Prints loss every given number of iters."""
 
-        if not self._check_frequency(self.frequency['print']):
+        if not self._check_frequency(self.print_freq):
             return
 
         info_dict = {'At iterate': ' ' * (6 - len(str(self.iter))) + str(
@@ -347,7 +337,7 @@ class Callback(object):
     def _save_X(self):
         """This will save the model to disk every given number of iters."""
 
-        if not self._check_frequency(self.frequency['save']):
+        if not self._check_frequency(self.save_freq):
             return
 
         X = self.X_
@@ -360,16 +350,17 @@ class Callback(object):
             seed_str = f'.{self.seed:03d}'
         filename = os.path.join(
             self.directory,
-            f"{self.opt_type}_inferred{seed_str}.iter{self.iter:07d}.coords")
+            f"{self.opt_type}_inferred{seed_str}.iter{self.iter}.coords")
+        os.path.makedirs(self.directory, exist_ok=True)
         if self.verbose:
             print(f"[{self.iter}] Saving model checkpoint to {filename}",
                   flush=True)
         np.savetxt(filename, X)
 
-    def _log_history(self):
+    def _add_to_log(self):
         """Keeps a log of the loss and other values."""
 
-        if not self._check_frequency(self.frequency['history']):
+        if not self._check_frequency(self.log_freq):
             return
 
         to_log = [('iter', self.iter), ('alpha', self.alpha_),
@@ -384,7 +375,7 @@ class Callback(object):
             to_log.extend(self.analysis_function(self).items())
 
         for k, v in to_log:
-            if k in self.history:
-                self.history[k].append(v)
+            if k in self.log:
+                self.log[k].append(v)
             else:
-                self.history[k] = [v]
+                self.log[k] = [v]
