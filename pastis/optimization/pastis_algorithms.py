@@ -147,7 +147,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if verbose and outfiles is not None:
         print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
 
-    # GET LOW-RES BIAS, IF NEEDED
+    # GET LOW-RES BIAS, IF NEEDED  # FIXME move below "prepare counts object"
     if multiscale_factor > 1 and not multiscale_reform:
         bias = decrease_bias_res(
             bias, multiscale_factor=multiscale_factor, lengths=lengths)
@@ -160,14 +160,16 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         excluded_counts=excluded_counts, multiscale_reform=multiscale_reform,
         simple_diploid=simple_diploid, mods=mods)
     if simple_diploid:
+        if ploidy != 2:
+            raise ValueError("Data is not diploid.")
         ploidy = 1
-        if beta_init is not None:
+        if beta_init is not None:  # FIXME should this fxn return beta_init?? Also should unit test inferring hmlg_sep via ambig...
             beta_init = beta_init * 2
     if verbose:
         print('BETA: ' + ', '.join(
             [f'{c.ambiguity}={c.beta:.3g}' for c in counts]), flush=True)
         if alpha is None:
-            print(f'ALPHA: to be inferred, init = {alpha_init:.3g}', flush=True)
+            print(f'ALPHA: to be inferred, init={alpha_init:.3g}', flush=True)
         else:
             print(f'ALPHA: {alpha:.3g}', flush=True)
 
@@ -194,15 +196,12 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         epsilon = None
 
     # HOMOLOG-SEPARATING CONSTRAINT
-    if ploidy == 1 and hsc_lambda > 0:
-        raise ValueError("Can not apply homolog-separating constraint to"
-                         " haploid data.")
     if hsc_lambda > 0:
         if est_hmlg_sep is not None:
-            est_hmlg_sep = np.array(est_hmlg_sep, dtype=float).reshape(-1, )
-            if est_hmlg_sep.shape[0] == 1 and lengths.shape[0] != 1:
-                est_hmlg_sep = np.tile(est_hmlg_sep, lengths.shape[0])
-        if est_hmlg_sep is None and reorienter is not None and reorienter.reorient:
+            est_hmlg_sep = np.array(est_hmlg_sep, dtype=float, ndmin=1).ravel()
+            if est_hmlg_sep.size == 1 and lengths.size != 1:
+                est_hmlg_sep = np.tile(est_hmlg_sep, lengths.size)
+        elif reorienter is not None and reorienter.reorient:
             est_hmlg_sep = distance_between_homologs(
                 structures=reorienter.struct_init, lengths=lengths,
                 mixture_coefs=mixture_coefs)
@@ -219,21 +218,16 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     constraints = tuple(constraints)
 
     # SETUP CALLBACKS
-    if simple_diploid and struct_true is not None:
-        struct_true_tmp = np.nanmean(
-            [struct_true[:int(struct_true.shape[0] / 2)],
-             struct_true[int(struct_true.shape[0] / 2):]], axis=0)
-    else:
-        struct_true_tmp = struct_true
     if callback_fxns is None:
         callback_fxns = {}
     callback = Callback(
         lengths=lengths, ploidy=ploidy, counts=counts, bias=bias,
         multiscale_factor=multiscale_factor,
         multiscale_reform=multiscale_reform, frequency=callback_freq,
-        directory=outdir, seed=seed, struct_true=struct_true_tmp,
+        directory=outdir, seed=seed, struct_true=struct_true,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
-        mixture_coefs=mixture_coefs, **callback_fxns, verbose=verbose, mods=mods)
+        simple_diploid=simple_diploid, mixture_coefs=mixture_coefs,
+        **callback_fxns, verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
             epsilon, ploidy)

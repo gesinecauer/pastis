@@ -518,7 +518,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             opt_type = 'structure.chrom_reorient'
         else:
             opt_type = 'structure'
-        callback.on_training_begin(
+        callback.on_optimization_begin(
             opt_type=opt_type, alpha_loop=alpha_loop)
         obj = objective_wrapper(
             x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
@@ -557,7 +557,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
 
     history = None
     if callback is not None:
-        callback.on_training_end()
+        callback.on_optimization_end()
         history = callback.history
 
     if verbose:

@@ -40,21 +40,11 @@ class Callback(object):
     history : dict of list, optional
         Previously generated history logs, to be added to during this
         optimization.
-    analysis_function : function, optional
-        Analysis function to be executed before history is logged.
-        The function should only take `self` as an input, and should return a
-        dictionary of items that will be added to the history logs.
     frequency : int or dict, optional
         Frequency of iterations at which operations are performed. Each key
         indicates an operation, options: "history" (logs history), "print"
         (prints time and current objective value), "save" (saves current
         structure to file).
-    on_training_begin : function, optional
-        Function to be executed at the beginning of optimization.
-    on_training_end : function, optional
-        Function to be executed at the end of optimization.
-    on_iter_end : function, optional
-        Function to be executed at the end of each iter.
     directory : str, optional
         Directory in which to save structures generated during optimization.
     seed : int, optional
@@ -84,16 +74,6 @@ class Callback(object):
         indicates an operation, options: "history" (logs history), "print"
         (prints time and current objective value), "save" (saves current
         structure to file).
-    analysis_function : function or None
-        Analysis function to be executed before history is logged.
-        The function should only take `self` as an input, and should return a
-        dictionary of items that will be added to the history logs.
-    on_training_begin_ : function or None
-        Function to be executed at the beginning of optimization.
-    on_training_end_ : function or None
-        Function to be executed at the end of optimization.
-    on_iter_end_ : function or None
-        Function to be executed at the end of each iter.
     directory : str
         Directory in which to save structures generated during optimization.
     seed : int, optional
@@ -129,9 +109,6 @@ class Callback(object):
     Xi : float or array of float or None
         Current values being optimized (structure, alpha, or chromosome
         orientation).
-    orientation : array of float or None
-        Current values for the relative orientation of each chromosome
-        (for `opt_type` == "chrom_reorient").
     time_start : timeit.default_timer instance
         Time at which optimization began.
     """
@@ -139,13 +116,11 @@ class Callback(object):
     def __init__(self, lengths, ploidy, counts=None, bias=None, beta_init=None,
                  multiscale_factor=1, multiscale_reform=False,
                  history=None, analysis_function=None, frequency=None,
-                 on_training_begin=None, on_training_end=None,
-                 on_iter_end=None, directory=None, seed=None, struct_true=None,
-                 alpha_true=None, constraints=None, mixture_coefs=None,
+                 on_optimization_begin=None, directory=None, seed=None, struct_true=None,
+                 alpha_true=None, constraints=None, simple_diploid=False, mixture_coefs=None,
                  verbose=False, mods=[]):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
-        self.epsilon = None
         self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
@@ -163,7 +138,6 @@ class Callback(object):
         self.mixture_coefs = mixture_coefs
         self.mods = mods
 
-        self.analysis_function = analysis_function
         if frequency is None or isinstance(frequency, int):
             self.frequency = {
                 'print': frequency, 'history': frequency, 'save': frequency}
@@ -177,35 +151,39 @@ class Callback(object):
             self.frequency = {'print': None, 'history': None, 'save': None}
             for k, v in frequency.items():
                 self.frequency[k] = v
-        self.on_training_begin_ = on_training_begin
-        self.on_training_end_ = on_training_end
-        self.on_iter_end_ = on_iter_end
-        if directory is None:
-            directory = ''
-        self.directory = directory
+
+        self.on_optimization_begin_ = on_optimization_begin
+        self.analysis_function = analysis_function
+
+        self.directory = '' if directory is None else directory
         self.seed = seed
+        self.verbose = verbose
+
         self.epsilon_true = None
         if struct_true is not None:
             struct_true = struct_true.reshape(-1, 3)
             if multiscale_factor != 1 and multiscale_reform:
                 self.epsilon_true = get_epsilon_from_struct(
-                    struct_true, lengths=lengths, ploidy=ploidy,
+                    struct_true, lengths=lengths,
+                    ploidy=(2 if simple_diploid else ploidy),
                     multiscale_factor=multiscale_factor, verbose=False)
                 if verbose:
                     print(f"True epsilon ({multiscale_factor}x):"
                           f" {self.epsilon_true:.3g}", flush=True)
+            if simple_diploid:
+                struct_true = np.nanmean(  # FIXME is this even correct?
+                    [struct_true[:int(struct_true.shape[0] / 2)],
+                     struct_true[int(struct_true.shape[0] / 2):]], axis=0)
             if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
-                self.struct_true = decrease_struct_res(
+                struct_true = decrease_struct_res(
                     struct_true, multiscale_factor=multiscale_factor,
                     lengths=lengths, ploidy=ploidy)
-            else:
-                self.struct_true = struct_true
-            if type(self.struct_true).__name__ == 'DeviceArray':
+            self.struct_true = struct_true
+            if isinstance(self.struct_true, jnp.ndarray):
                 self.struct_true = self.struct_true._value
         else:
             self.struct_true = None
         self.alpha_true = alpha_true
-        self.verbose = verbose
 
         if history is None:
             self.history = {}
@@ -218,100 +196,17 @@ class Callback(object):
         self.opt_type = None
         self.alpha_loop = None
         self.iter = -1
+        self.seconds = 0
         self.time = '0:00:00.0'
-        self.structures = None
-        self.alpha = None
-        self.X = None
-        self.orientation = None
         self.time_start = None
+        self.optimization_complete = False
 
-    def _set_structures(self, structures):
-        self.structures = []
-        for struct in structures:
-            if type(struct).__name__ == 'DeviceArray':
-                struct = struct._value
-            struct = np.array(struct, copy=True).reshape(-1, 3)
-            struct[self.struct_nan] = np.nan
-            self.structures.append(struct)
+        self.structures_ = None
+        self.alpha_ = None
+        self.epsilon_ = None
+        self.X_ = None
 
-    def _check_frequency(self, frequency, last_iter=False):
-        output = False
-        if frequency is not None and frequency:
-            if not last_iter and self.iter % frequency == 0:
-                output = True
-            elif last_iter and self.iter % frequency != 0:
-                output = True
-        return output
-
-    def _print(self, last_iter=False):
-        """Prints loss every given number of iters."""
-
-        if not self._check_frequency(self.frequency['print'], last_iter):
-            return
-
-        info_dict = {'At iterate': ' ' * (6 - len(str(self.iter))) + str(
-            self.iter), 'f= ': '%.6g' % self.obj['obj'],
-            'time= ': self.time}
-        if self.epsilon is not None:
-            if np.array(self.epsilon).size == 1:
-                info_dict['epsilon= '] = f"{self.epsilon:.3g}"
-            elif self.epsilon.size == self.X.shape[0]:
-                info_dict['epsilon= '] = f"{self.epsilon.mean():.3g}"
-            else:
-                info_dict['epsilon= '] = f"{self.epsilon[0]:.3g}"
-        print('\t\t'.join([f'{k}{v}' for k, v in info_dict.items()]) + '\n',
-              flush=True)
-
-    def _save_X(self):
-        """This will save the model to disk every given number of iters."""
-
-        if not self._check_frequency(self.frequency['save']):
-            return
-
-        X = self.X
-        if isinstance(X, list):
-            X = np.concatenate(X)
-
-        if self.seed is None:
-            seed_str = ''
-        else:
-            seed_str = f'.{self.seed:03d}'
-        filename = os.path.join(
-            self.directory,
-            f"{self.opt_type}_inferred{seed_str}.iter{self.iter:07d}.coords")
-        if self.verbose:
-            print(f"[{self.iter}] Saving model checkpoint to {filename}",
-                  flush=True)
-        np.savetxt(filename, X)
-
-    def _log_history(self, last_iter=False):
-        """Keeps a log of the loss and other values."""
-
-        if not self._check_frequency(self.frequency['history'], last_iter):
-            return
-
-        if not isinstance(self.alpha, np.ndarray) or self.alpha.shape == ():
-            alpha = float(self.alpha)
-        else:
-            alpha = ','.join(map(str, self.alpha))
-        to_log = [('iter', self.iter), ('alpha', alpha),
-                  ('alpha_loop', self.alpha_loop),
-                  ('opt_type', self.opt_type),
-                  ('multiscale_factor', self.multiscale_factor),
-                  ('seconds', self.seconds),
-                  ('epsilon', self.epsilon)]
-        to_log.extend(list(self.obj.items()))
-
-        if self.analysis_function is not None:
-            to_log.extend(self.analysis_function(self).items())
-
-        for k, v in to_log:
-            if k in self.history:
-                self.history[k].append(v)
-            else:
-                self.history[k] = [v]
-
-    def on_training_begin(self, opt_type=None, alpha_loop=None, **kwargs):
+    def on_optimization_begin(self, opt_type=None, alpha_loop=None):
         """Functionality to add to the beginning of optimization.
 
         This method will be called at the beginning of the optimization
@@ -335,18 +230,21 @@ class Callback(object):
         self.iter = -1
         self.seconds = 0
         self.time = '0:00:00.0'
-        self.structures = None
-        self.alpha = None
-        self.orientation = None
-        if self.on_training_begin_ is not None:
-            res = self.on_training_begin_(self, **kwargs)
+        self.optimization_complete = False
+
+        self.structures_ = None
+        self.alpha_ = None
+        self.epsilon_ = None
+        self.X_ = None
+
+        if self.on_optimization_begin_ is not None:
+            res = self.on_optimization_begin_(self, **kwargs)
         else:
             res = None
         self.time_start = timer()
         return res
 
-    def on_iter_end(self, obj_logs, structures, alpha, Xi, epsilon=None,
-                    **kwargs):
+    def on_iter_end(self, obj_logs, structures, alpha, Xi, epsilon=None):
         """Functionality to add to the end of each iter.
 
         This method will be called at the end of each iter during the
@@ -375,18 +273,22 @@ class Callback(object):
         else:
             self.time = current_time[
                 0] + str(float('0.' + current_time[1])).lstrip('0')
+
         self.obj = obj_logs
         if self.obj is not None:
             for k, v in self.obj.items():
-                if type(v).__name__ == 'DeviceArray':
+                if isinstance(v, jnp.ndarray):
                     self.obj[k] = v._value
 
-        if type(Xi).__name__ == 'DeviceArray':
-            self.X = Xi._value
-        else:
-            self.X = Xi
-        if self.opt_type != 'alpha' or self.iter == 0:
-            self._set_structures(structures)  # FIXME only do this if necessary!! >:(
+        if isinstance(Xi, jnp.ndarray):
+            Xi = Xi._value
+        self.X_ = Xi
+
+        self.structures_ = []
+        for struct in structures:
+            if isinstance(struct, jnp.ndarray):
+                struct = struct._value
+            self.structures_.append(struct)
 
         if isinstance(alpha, jnp.ndarray):
             alpha = alpha._value
@@ -394,30 +296,95 @@ class Callback(object):
             if alpha.size > 1:
                 raise ValueError("Alpha must be a float.")
             alpha = float(alpha)
-        self.alpha = alpha
+        self.alpha_ = alpha
 
-        if self.opt_type == 'chrom_reorient':
-            self.orientation = Xi
-        if type(epsilon).__name__ == 'DeviceArray':
-            self.epsilon = epsilon._value
-        else:
-            self.epsilon = epsilon
+        if isinstance(epsilon, jnp.ndarray):
+            epsilon = epsilon._value
+        if isinstance(epsilon, np.ndarray):
+            if epsilon.size > 1:
+                raise ValueError("Alpha must be a float.")
+            epsilon = float(epsilon)
+        self.epsilon_ = epsilon
 
         self._print()
         self._log_history()
         self._save_X()
-        if self.on_iter_end_ is not None:
-            self.on_iter_end_(self, **kwargs)
 
-        self.structures = None
-
-    def on_training_end(self, **kwargs):
+    def on_optimization_end(self):
         """Functionality to add to the end of optimization.
 
-        This method will be called at the end of the optimization procedure.
-        """
+        This method will be called at the end of the optimization procedure."""
 
-        self._print(last_iter=True)
-        self._log_history(last_iter=True)
-        if self.on_training_end_ is not None:
-            self.on_training_end_(self, **kwargs)
+        self.optimization_complete = True
+        self._print()
+        self._log_history()
+
+    def _check_frequency(self, frequency):
+        if frequency is not None and frequency > 0:
+            if not self.optimization_complete and self.iter % frequency == 0:
+                return True
+            elif self.optimization_complete and self.iter % frequency != 0:
+                return True
+        return False
+
+    def _print(self):
+        """Prints loss every given number of iters."""
+
+        if not self._check_frequency(self.frequency['print']):
+            return
+
+        info_dict = {'At iterate': ' ' * (6 - len(str(self.iter))) + str(
+            self.iter), 'f= ': '%.6g' % self.obj['obj'],
+            'time= ': self.time}
+        if self.epsilon_ is not None:
+            if np.array(self.epsilon_).size == 1:
+                info_dict['epsilon= '] = f"{self.epsilon_:.3g}"
+            elif self.epsilon_.size == self.X_.shape[0]:
+                info_dict['epsilon= '] = f"{self.epsilon_.mean():.3g}"
+        print('\t\t'.join([f'{k}{v}' for k, v in info_dict.items()]) + '\n',
+              flush=True)
+
+    def _save_X(self):
+        """This will save the model to disk every given number of iters."""
+
+        if not self._check_frequency(self.frequency['save']):
+            return
+
+        X = self.X_
+        if isinstance(X, list):
+            X = np.concatenate(X)
+
+        if self.seed is None:
+            seed_str = ''
+        else:
+            seed_str = f'.{self.seed:03d}'
+        filename = os.path.join(
+            self.directory,
+            f"{self.opt_type}_inferred{seed_str}.iter{self.iter:07d}.coords")
+        if self.verbose:
+            print(f"[{self.iter}] Saving model checkpoint to {filename}",
+                  flush=True)
+        np.savetxt(filename, X)
+
+    def _log_history(self):
+        """Keeps a log of the loss and other values."""
+
+        if not self._check_frequency(self.frequency['history']):
+            return
+
+        to_log = [('iter', self.iter), ('alpha', self.alpha_),
+                  ('alpha_loop', self.alpha_loop),
+                  ('opt_type', self.opt_type),
+                  ('multiscale_factor', self.multiscale_factor),
+                  ('seconds', self.seconds),
+                  ('epsilon', self.epsilon_)]
+        to_log.extend(list(self.obj.items()))
+
+        if self.analysis_function is not None:
+            to_log.extend(self.analysis_function(self).items())
+
+        for k, v in to_log:
+            if k in self.history:
+                self.history[k].append(v)
+            else:
+                self.history[k] = [v]

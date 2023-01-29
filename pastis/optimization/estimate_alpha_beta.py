@@ -339,7 +339,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
             opt_type = 'alpha.chrom_reorient'
         else:
             opt_type = 'alpha'
-        callback.on_training_begin(opt_type=opt_type, alpha_loop=alpha_loop)
+        callback.on_optimization_begin(opt_type=opt_type, alpha_loop=alpha_loop)
         objective_wrapper_alpha(
             alpha=alpha_init, counts=counts, X=X.flatten(), lengths=lengths,
             ploidy=ploidy, bias=bias, constraints=constraints,
@@ -363,7 +363,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     history = None
     if callback is not None:
-        callback.on_training_end()
+        callback.on_optimization_end()
         history = callback.history
 
     alpha, obj, d = results
