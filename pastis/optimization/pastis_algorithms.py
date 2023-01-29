@@ -160,7 +160,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         if ploidy != 2:
             raise ValueError("Data is not diploid.")
         ploidy = 1
-        if beta_init is not None:  # FIXME should this fxn return beta_init?? Also should unit test inferring hmlg_sep via ambig...
+        if beta_init is not None:
             beta_init = beta_init * 2
     if verbose:
         print('BETA: ' + ', '.join(
@@ -221,7 +221,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         **callback_freq, **callback_fxns, verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
-            epsilon, ploidy)
+            epsilon, ploidy, beta_init)
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -371,7 +371,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
         outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, bias, struct_nan, struct_init, constraints, callback, epsilon,
-        ploidy) = prepped
+        ploidy, beta_init) = prepped
 
     # INFER STRUCTURE
     pm = PastisPM(
