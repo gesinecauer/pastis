@@ -86,8 +86,7 @@ def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
 
 
 def _load_infer_param(infer_param_file):
-    """Loads a dictionary of inference variables, including alpha and beta.
-    """
+    """Loads a dictionary of values used in or created by inference."""
 
     infer_param = dict(pd.read_csv(
         infer_param_file, sep='\t', header=None, index_col=0,
@@ -100,14 +99,12 @@ def _load_infer_param(infer_param_file):
     convert_type_fxns = {
         'alpha': [float], 'converged': [strtobool], 'seed': [float, int],
         'obj': [float], 'time': [float], 'alpha_converged': [strtobool],
-        'alpha_obj': [float], 'alpha_loop': [int], 'rescale_by': [float]}
+        'alpha_obj': [float], 'alpha_loop': [int], 'rescale_by': [float],
+        'epsilon': [float]}
     for key, type_fxns in convert_type_fxns.items():
         if key in infer_param:
             for type_fxn in type_fxns:
                 infer_param[key] = type_fxn(infer_param[key])
-
-    if 'epsilon' in infer_param and infer_param['epsilon'].size == 1:
-        infer_param['epsilon'] = infer_param['epsilon'][0]  # TODO just put epsilon above
 
     return infer_param
 
@@ -625,7 +622,7 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
             col[col >= n] -= n
         mask_near_diag = np.abs(row - col) <= nbins
         mask = mask_intra & mask_near_diag
-    # elif sections == 'lowres nghbr':
+    # elif sections == 'lowres nghbr':  # TODO delete
     #     row = counts.row; col = counts.col
     #     row = row.copy()
     #     col = col.copy()

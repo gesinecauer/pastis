@@ -512,7 +512,7 @@ class BeadChainConnectivity2022(Constraint):
                     counts_nghbr_object.bins_nonzero.data,
                     np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
 
-            if counts_nghbr_mask is not None:  # TODO not necessary, right?
+            if counts_nghbr_mask is not None:
                 counts_nghbr[~counts_nghbr_mask] = 0
 
         var = {
@@ -583,9 +583,10 @@ class BeadChainConnectivity2022(Constraint):
             obj = gamma_poisson_nll(
                 theta=theta, k=k, data=np.tile(var['counts_nghbr'], 2),
                 bias_per_bin=bias_per_bin, mask=counts_nghbr_mask, mods=self.mods)
-            lambda_pois = gamma_mean  # TODO temp
 
         if 'debug2' in self.mods and type(obj).__name__ in ('DeviceArray', 'ndarray'):
+            if not (self.multiscale_factor == 1 or self.multires_naive):
+                lambda_pois = gamma_mean
             to_print = f"𝔼[c]={var['counts_nghbr'].mean():.2g}\t   μ={lambda_pois.mean():.2g}"
             if epsilon is not None:
                 to_print += f"\t   V[c]={var['counts_nghbr'].var(axis=0).mean():.2g}"
@@ -840,7 +841,6 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
                      fullres_struct_nan=None, verbose=True, mods=()):
     """TODO"""
 
-    # TODO remove
     if mods is None:
         mods = []
     elif isinstance(mods, str):

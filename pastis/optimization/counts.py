@@ -1106,7 +1106,7 @@ class CountsMatrix(object):
         first_empty = first.bins_nonzero is None and first.bins_zero is None
         second_empty = second.bins_nonzero is None and second.bins_zero is None
         if first_empty and second_empty:
-            return self.copy()  # TODO should it (& stmts below) return a copy?
+            return self.copy()
         elif first_empty:
             return second.copy()
         elif second_empty:
@@ -1166,7 +1166,7 @@ class CountsMatrix(object):
 
     def __radd__(self, other):
         if other == 0:
-            return self.copy()  # TODO should it return a copy?
+            return self.copy()
         else:
             return self.__add__(other)
 
@@ -1305,7 +1305,7 @@ class CountsBins(object):
         """
         return self.row.size
 
-    def copy(self):  # TODO don't include this method?
+    def copy(self):
         """Copy counts matrix."""
         return deepcopy(self)
 
