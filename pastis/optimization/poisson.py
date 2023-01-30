@@ -319,37 +319,10 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     """Objective function wrapper to match scipy.optimize's interface.
     """
 
-    # Check format of input; convert lists to tuples for jax jit
-    if not isinstance(lengths, tuple):
-        lengths = tuple(
-            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
-    if isinstance(counts, list):
-        counts = tuple(counts)
-    elif not isinstance(counts, tuple):
-        counts = (counts,)
-    if constraints is not None:
-        if not isinstance(constraints, (list, tuple)):
-            constraints = [constraints]
-        if not all([x.setup_completed for x in constraints]):
-            # Constraint setup may modify object attributes, so it must be
-            # completed before inputting constraints into a jitted function
-            if isinstance(constraints, tuple):
-                constraints = list(constraints)
-            [x.setup(counts=counts, bias=bias) for x in constraints]
-        if not isinstance(constraints, tuple):
-            constraints = tuple(constraints)
-    if bias is not None and np.all(bias == 1):
-        bias = None
-    if mixture_coefs is not None:
-        if isinstance(mixture_coefs, (list, np.ndarray)):
-            mixture_coefs = tuple(mixture_coefs)
-        elif not isinstance(mixture_coefs, tuple):
-            mixture_coefs = (mixture_coefs,)
-    if mods is not None:
-        if isinstance(mods, (list, np.ndarray)):
-            mods = tuple(mods)
-        elif not isinstance(mods, tuple):
-            mods = (mods,)
+    checked = _check_input(
+        lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
+        bias=bias, mixture_coefs=mixture_coefs, mods=mods)
+    (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
     new_obj, (obj_logs, structures, alpha, epsilon) = objective_jit(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
@@ -370,14 +343,39 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     """Gradient function wrapper to match scipy.optimize's interface.
     """
 
-    # Check format of input; convert lists to tuples for jax jit
-    if not isinstance(lengths, tuple):
-        lengths = tuple(
-            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
+    checked = _check_input(
+        lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
+        bias=bias, mixture_coefs=mixture_coefs, mods=mods)
+    (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
+
+    new_grad = np.array(gradient(
+        X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, constraints=constraints, reorienter=reorienter,
+        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+        mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
+
+    return new_grad
+
+
+def _check_input(lengths, alpha, counts, constraints, bias, mixture_coefs,
+                 lengths_as_tuple=True, mods=()):
+    """Check format of input; convert lists to tuples for jax jit"""
+
+    if lengths_as_tuple:
+        if not isinstance(lengths, tuple):
+            lengths = tuple(
+                np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
+    else:
+        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+
+    if alpha is not None and (alpha > -1 or alpha < -4):
+        raise ValueError(f"Alpha must be between -4 and -1, {alpha=:.3g}.")
+
     if isinstance(counts, list):
         counts = tuple(counts)
     elif not isinstance(counts, tuple):
         counts = (counts,)
+
     if constraints is not None:
         if not isinstance(constraints, (list, tuple)):
             constraints = [constraints]
@@ -389,26 +387,25 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
             [x.setup(counts=counts, bias=bias) for x in constraints]
         if not isinstance(constraints, tuple):
             constraints = tuple(constraints)
+
     if bias is not None and np.all(bias == 1):
         bias = None
+
     if mixture_coefs is not None:
         if isinstance(mixture_coefs, (list, np.ndarray)):
             mixture_coefs = tuple(mixture_coefs)
         elif not isinstance(mixture_coefs, tuple):
             mixture_coefs = (mixture_coefs,)
+
     if mods is not None:
         if isinstance(mods, (list, np.ndarray)):
             mods = tuple(mods)
         elif not isinstance(mods, tuple):
             mods = (mods,)
+    else:
+        mods = ()
 
-    new_grad = np.array(gradient(
-        X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, constraints=constraints, reorienter=reorienter,
-        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
-
-    return new_grad
+    return (lengths, alpha, counts, constraints, bias, mixture_coefs, mods)
 
 
 def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
@@ -472,37 +469,10 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
 
     multiscale_reform = (epsilon is not None)
 
-    # Check format of input; convert lists to tuples for jax jit
-    if not isinstance(lengths, tuple):
-        lengths = tuple(
-            np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
-    if isinstance(counts, list):
-        counts = tuple(counts)
-    elif not isinstance(counts, tuple):
-        counts = (counts,)
-    if constraints is not None:
-        if not isinstance(constraints, (list, tuple)):
-            constraints = [constraints]
-        if not all([x.setup_completed for x in constraints]):
-            # Constraint setup may modify object attributes, so it must be
-            # completed before inputting constraints into a jitted function
-            if isinstance(constraints, tuple):
-                constraints = list(constraints)
-            [x.setup(counts=counts, bias=bias) for x in constraints]
-        if not isinstance(constraints, tuple):
-            constraints = tuple(constraints)
-    if bias is not None and np.all(bias == 1):
-        bias = None
-    if mixture_coefs is not None:
-        if isinstance(mixture_coefs, (list, np.ndarray)):
-            mixture_coefs = tuple(mixture_coefs)
-        elif not isinstance(mixture_coefs, tuple):
-            mixture_coefs = (mixture_coefs,)
-    if mods is not None:
-        if isinstance(mods, (list, np.ndarray)):
-            mods = tuple(mods)
-        elif not isinstance(mods, tuple):
-            mods = (mods,)
+    checked = _check_input(
+        lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
+        bias=bias, mixture_coefs=mixture_coefs, mods=mods)
+    (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
     if (multiscale_factor != 1 and multiscale_reform):
         x0 = np.append(init_X.flatten(), epsilon)
@@ -658,46 +628,20 @@ class PastisPM(object):
                  alpha_factr=1e12, reorienter=None, null=False,
                  mixture_coefs=None, verbose=True, mods=()):
 
-        # Check format of input; convert lists to tuples for jax jit
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
-        if isinstance(counts, list):
-            counts = tuple(counts)
-        elif not isinstance(counts, tuple):
-            counts = (counts,)
-        if constraints is not None:
-            if not isinstance(constraints, (list, tuple)):
-                constraints = [constraints]
-            if not all([x.setup_completed for x in constraints]):
-                # Constraint setup may modify object attributes, so it must be
-                # completed before inputting constraints into a jitted function
-                if isinstance(constraints, tuple):
-                    constraints = list(constraints)
-                [x.setup(counts=counts, bias=bias) for x in constraints]
-            if not isinstance(constraints, tuple):
-                constraints = tuple(constraints)
-        if bias is not None and np.all(bias == 1):
-            bias = None
-        if mixture_coefs is not None:
-            if isinstance(mixture_coefs, (list, np.ndarray)):
-                mixture_coefs = tuple(mixture_coefs)
-            elif not isinstance(mixture_coefs, tuple):
-                mixture_coefs = (mixture_coefs,)
-        if mods is not None:
-            if isinstance(mods, (list, np.ndarray)):
-                mods = tuple(mods)
-            elif not isinstance(mods, tuple):
-                mods = (mods,)
-        else:
-            mods = ()
-
-        if reorienter is not None:
-            reorienter.set_multiscale_factor(multiscale_factor)
-
-        # Check bias
-        lengths_lowres = decrease_lengths_res(
-            lengths, multiscale_factor=multiscale_factor)
+        # Check input
+        checked = _check_input(
+            lengths=lengths, alpha=alpha, counts=counts,
+            constraints=constraints, bias=bias, mixture_coefs=mixture_coefs,
+            lengths_as_tuple=False, mods=mods)
+        (lengths, alpha, counts, constraints, bias, mixture_coefs,
+            mods) = checked
+        if alpha_init is not None and (alpha_init > -1 or alpha_init < -4):
+            raise ValueError(
+                f"Alpha must be between -4 and -1, {alpha_init=:.3g}.")
         if bias is not None:
             if multiscale_factor > 1 and (epsilon is None):
+                lengths_lowres = decrease_lengths_res(
+                    lengths, multiscale_factor=multiscale_factor)
                 if bias.size != lengths_lowres.sum():
                     raise ValueError(
                         "Bias size must be equal to the sum of low-res"
@@ -707,6 +651,9 @@ class PastisPM(object):
                 raise ValueError("Bias size must be equal to the sum of the"
                                  f" chromosome lengths ({lengths.sum()}). It is"
                                  f" of size {bias.size}.")
+
+        if reorienter is not None:
+            reorienter.set_multiscale_factor(multiscale_factor)
 
         self.counts = counts
         self.lengths = lengths
@@ -769,10 +716,11 @@ class PastisPM(object):
         beta_new = _estimate_beta(
             self.X_.ravel(), self.counts, alpha=self.alpha_,
             lengths=self.lengths, ploidy=self.ploidy, bias=self.bias,
-            mixture_coefs=self.mixture_coefs, reorienter=self.reorienter)
+            mixture_coefs=self.mixture_coefs, reorienter=self.reorienter)._value
         if update_counts:
-            self.counts = [c.update_beta(beta_new) for c in self.counts]
-        return list(beta_new.values())
+            self.counts = [self.counts[i].update_beta(
+                beta_new[i]) for i in range(len(self.counts))]
+        return list(beta_new)
 
     def fit_structure(self, alpha_loop=None):
         """Fit structure to counts data, given current alpha.
