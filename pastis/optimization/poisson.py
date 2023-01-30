@@ -484,12 +484,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
               f" precision = {np.finfo(float).eps:.4g}\n", flush=True)
 
     if callback is not None:
-        if reorienter is not None and reorienter.reorient:
-            opt_type = 'structure.chrom_reorient'
-        else:
-            opt_type = 'structure'
         callback.on_optimization_begin(
-            opt_type=opt_type, alpha_loop=alpha_loop)
+            inferring='structure', alpha_loop=alpha_loop)
         obj = objective_wrapper(
             x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
             bias=bias, constraints=constraints, reorienter=reorienter,

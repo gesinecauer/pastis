@@ -15,7 +15,7 @@ from .counts import _set_initial_beta
 from .initialization import initialize
 from .callbacks import Callback
 from .constraints import prep_constraints, distance_between_homologs
-from .constraints import get_counts_interchrom
+from .constraints import get_counts_interchrom, HomologSeparating2019
 from .poisson import PastisPM, _convergence_criteria
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res
@@ -218,7 +218,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         directory=outdir, seed=seed, struct_true=struct_true,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
         simple_diploid=simple_diploid, mixture_coefs=mixture_coefs,
-        **callback_freq, **callback_fxns, verbose=verbose, mods=mods)
+        reorienter=reorienter, **callback_freq, **callback_fxns,
+        verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
             epsilon, ploidy, beta_init)
@@ -413,7 +414,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         'alpha_loop': alpha_loop, 'rescale_by': rescale_by}
     if constraints is not None:
         hsc19 = [x for x in constraints if (
-            x.name == "Homolog separating (2019)" and x.lambda_val > 0)]
+            isinstance(x, HomologSeparating2019) and x.lambda_val > 0)]
         if len(hsc19) == 1:
             infer_param['est_hmlg_sep'] = hsc19[0].hparams['est_hmlg_sep']
     if reorienter is not None and reorienter.reorient:

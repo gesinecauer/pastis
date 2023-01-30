@@ -90,8 +90,8 @@ class Callback(object):
         the following information and keys, respectively: iteration ("iter"),
         alpha ("alpha"), multiscale_factor ("multiscale_factor"),
         current iteration of alpha/structure optimization ("alpha_loop"),
-        relative orientation of each chromosome ("opt_type").
-    opt_type : {"structure", "alpha", "chrom_reorient", None}
+        relative orientation of each chromosome ("inferring").
+    inferring : {"structure", "alpha", "chrom_reorient", None}
         Type of optimization being performed. Options: 3D chromatin structure
         ("structure"), alpha ("alpha"), relative orientation of each chromosome
         ("chrom_reorient").
@@ -118,8 +118,8 @@ class Callback(object):
                  log=None, analysis_function=None, print_freq=100,
                  log_freq=100, save_freq=None, directory=None, seed=None,
                  on_optimization_begin=None, struct_true=None,
-                 alpha_true=None, constraints=None, simple_diploid=False, mixture_coefs=None,
-                 verbose=False, mods=[]):
+                 alpha_true=None, constraints=None, simple_diploid=False,
+                 reorienter=None, mixture_coefs=None, verbose=False, mods=[]):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
         self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
@@ -183,7 +183,7 @@ class Callback(object):
         else:
             raise ValueError("log must be dictionary of lists")
 
-        self.opt_type = None
+        self.inferring = None
         self.alpha_loop = None
         self.iter = -1
         self.seconds = 0
@@ -196,7 +196,7 @@ class Callback(object):
         self.epsilon_ = None
         self.X_ = None
 
-    def on_optimization_begin(self, opt_type=None, alpha_loop=None):
+    def on_optimization_begin(self, inferring=None, alpha_loop=None):
         """Functionality to add to the beginning of optimization.
 
         This method will be called at the beginning of the optimization
@@ -204,7 +204,7 @@ class Callback(object):
 
         Parameters
         ----------
-        opt_type : {"structure", "alpha", "chrom_reorient", None}
+        inferring : {"structure", "alpha", "chrom_reorient", None}
             Type of optimization being performed. Options: 3D chromatin
             structure ("structure"), alpha ("alpha"), relative orientation of
             each chromosome ("chrom_reorient").
@@ -212,10 +212,12 @@ class Callback(object):
             Current iteration of alpha/structure optimization.
         """
 
-        if opt_type is None:
-            self.opt_type = 'structure'
-        else:
-            self.opt_type = opt_type
+        if inferring is None:
+            inferring = 'structure'
+        if reorienter is not None and reorienter.reorient:
+            inferring = f'{inferring}.chrom_reorient'
+        self.inferring = inferring
+
         self.alpha_loop = alpha_loop
         self.iter = -1
         self.seconds = 0
@@ -350,7 +352,7 @@ class Callback(object):
             seed_str = f'.{self.seed:03d}'
         filename = os.path.join(
             self.directory,
-            f"{self.opt_type}_inferred{seed_str}.iter{self.iter}.coords")
+            f"{self.inferring}_inferred{seed_str}.iter{self.iter}.coords")
         os.path.makedirs(self.directory, exist_ok=True)
         if self.verbose:
             print(f"[{self.iter}] Saving model checkpoint to {filename}",
@@ -365,7 +367,7 @@ class Callback(object):
 
         to_log = [('iter', self.iter), ('alpha', self.alpha_),
                   ('alpha_loop', self.alpha_loop),
-                  ('opt_type', self.opt_type),
+                  ('inferring', self.inferring),
                   ('multiscale_factor', self.multiscale_factor),
                   ('seconds', self.seconds),
                   ('epsilon', self.epsilon_)]

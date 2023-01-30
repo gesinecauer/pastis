@@ -254,11 +254,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     beta_init = {c.ambiguity: c.beta for c in counts}
 
     if callback is not None:
-        if reorienter is not None and reorienter.reorient:
-            opt_type = 'alpha.chrom_reorient'
-        else:
-            opt_type = 'alpha'
-        callback.on_optimization_begin(opt_type=opt_type, alpha_loop=alpha_loop)
+        callback.on_optimization_begin(inferring='alpha', alpha_loop=alpha_loop)
         objective_wrapper_alpha(
             alpha=alpha_init, counts=counts, X=X.flatten(), lengths=lengths,
             ploidy=ploidy, bias=bias, constraints=constraints,
