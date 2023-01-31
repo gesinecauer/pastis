@@ -8,6 +8,10 @@ import os
 import numpy as np
 import pandas as pd
 
+from .utils_poisson import _setup_jax
+_setup_jax()
+import jax.numpy as jnp
+
 from .utils_poisson import _print_code_header, _get_output_files
 from .utils_poisson import _output_subdir, _load_infer_param
 from .counts import preprocess_counts, _ambiguate_beta
@@ -43,6 +47,10 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
     if not infer_draft_lowres:
         return est_hmlg_sep, True
 
+    if ploidy == 1:
+        raise ValueError("Can not apply homolog-separating constraint"
+                         " to haploid data.")
+
     counts, bias, lengths, _, _, _, struct_true = load_data(
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
@@ -56,47 +64,67 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
             f'Low resolution ({multires_factor_draft}x)'],
         max_length=60, blank_lines=2, verbose=verbose and infer_draft_lowres)
 
+    # Setup
+    if mixture_coefs is None:
+        mixture_coefs = [1]
+    if outdir is None:
+        lowres_outdir = None
+    else:
+        lowres_outdir = os.path.join(outdir, 'struct_draft_lowres')
+
     if beta is None:
         _, beta = _set_initial_beta(
             counts, lengths=lengths, ploidy=ploidy, bias=bias,
             exclude_zeros=exclude_zeros)
     elif isinstance(beta, (float, int)):
         beta = [beta]
-
-    if ploidy == 1:
-        raise ValueError("Can not apply homolog-separating constraint"
-                         " to haploid data.")
-    if outdir is None:
-        lowres_outdir = None
-    else:
-        lowres_outdir = os.path.join(outdir, 'struct_draft_lowres')
     ua_index = [i for i in range(len(
         counts)) if counts[i].shape == (
         lengths.sum() * ploidy, lengths.sum() * ploidy)]
-    if len(ua_index) == 1:
-        counts_for_lowres = [counts[ua_index[0]]]
-        simple_diploid_for_lowres = False
-        beta_for_lowres = [beta[ua_index[0]]]
-    elif len(ua_index) > 1:
+    if len(ua_index) > 1:
         raise ValueError("Only input one matrix of unambiguous counts."
                          " Please pool unambiguous counts before"
                          " inputting.")
+
+    if len(ua_index) == 1:
+        counts_for_draft = [counts[ua_index[0]]]
+        simple_diploid_for_draft = False
+        beta_for_draft = [beta[ua_index[0]]]
     else:
+        # Inferring "simple diploid" structures, where we assume homologs to
+        # have identical conformations and essentially treat the ambiguated
+        # diploid data as if it were haploid.
         if lengths.size == 1:
             raise ValueError("Please input more than one chromosome to"
                              " estimate est_hmlg_sep from ambiguous data.")
-        counts_for_lowres = counts
-        simple_diploid_for_lowres = True
-        beta_for_lowres = beta
+        simple_diploid_for_draft = True
+        counts_for_draft = counts
+        beta_for_draft = beta
+
+        if isinstance(init, list):
+            init = jnp.concatenate(init)._value
+        if isinstance(init, jnp.ndarray):
+            init = init._value
+        if isinstance(init, np.ndarray) and (
+                init.size == lengths.sum() * ploidy * 3 * len(mixture_coefs)):
+            # The intialization is a full-res diploid 3D structure.
+            # However, we are currently inferring "simple diploid" structures.
+            # This initialization must be converted to "simple diploid" form.
+            init = _format_structures(
+                init, lengths=lengths, ploidy=2, mixture_coefs=mixture_coefs)
+            init = [np.nanmean(  # FIXME is this even correct?
+                [x[:int(x.shape[0] / 2)], x[int(x.shape[0] / 2):]],
+                axis=0) for x in init]
+            init = np.concatenate(init)
 
     struct_draft_lowres, infer_param_lowres = infer_at_alpha(
-        counts=counts_for_lowres, outdir=lowres_outdir,
+        counts=counts_for_draft, outdir=lowres_outdir,
         lengths=lengths, ploidy=ploidy, alpha=alpha, seed=seed,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        beta=beta_for_lowres, beta_init=beta_init,
+        beta=beta_for_draft, beta_init=beta_init,
         multiscale_factor=multires_factor_draft,
         init=init, max_iter=max_iter, factr=factr, pgtol=pgtol, draft=True,
-        simple_diploid=simple_diploid_for_lowres,
+        simple_diploid=simple_diploid_for_draft,
         callback_fxns=callback_fxns,
         callback_freq=callback_freq,
         reorienter=reorienter, multiscale_reform=multiscale_reform,
@@ -111,7 +139,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         lengths=decrease_lengths_res(
             lengths=lengths, multiscale_factor=multires_factor_draft),
         mixture_coefs=mixture_coefs,
-        simple_diploid=simple_diploid_for_lowres)
+        simple_diploid=simple_diploid_for_draft)
     if verbose:
         print("Estimated distances between homolog centers of mass:"
               " " + " ".join([f'{x:.2g}' for x in est_hmlg_sep]), flush=True)
@@ -575,7 +603,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts, lengths=lengths, ploidy=ploidy, outdir=outdir_,
         alpha=alpha, seed=seed, filter_threshold=filter_threshold,
         normalize=normalize, bias=bias, beta=beta,
-        multiscale_rounds=multiscale_rounds, beta_init=beta_init, init=init,
+        multiscale_rounds=multiscale_rounds, beta_init=beta_init, init=init_,
         max_iter=max_iter, factr=factr, pgtol=pgtol, hsc_lambda=hsc_lambda,
         hsc_version=hsc_version, est_hmlg_sep=est_hmlg_sep,
         hsc_min_beads=hsc_min_beads,
