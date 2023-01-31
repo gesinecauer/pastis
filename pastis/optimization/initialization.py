@@ -6,6 +6,10 @@ if sys.version_info[0] < 3:
 import numpy as np
 import os
 
+from .utils_poisson import _setup_jax
+_setup_jax()
+import jax.numpy as jnp
+
 from .multiscale_optimization import increase_struct_res, decrease_struct_res
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_bias_res
@@ -90,36 +94,40 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     # If initializing with true structure
     if isinstance(init, str) and init.lower() == 'true':
         if struct_true is None:
-            raise ValueError("Attempting to initialize with struct_true but"
-                             " struct_true is None")
+            raise ValueError("Attempting to initialize with true structure but"
+                             " true structure was not provided.")
         if verbose:
             print('INITIALIZATION: initializing with true structure',
                   flush=True)
         init = struct_true
 
-    if isinstance(init, np.ndarray) or isinstance(init, list):
+    if isinstance(init, (np.ndarray, jnp.ndarray, list)):
         if verbose:
             print('INITIALIZATION: 3D structure', flush=True)
         structures = _format_structures(init, mixture_coefs=mixture_coefs)
-    elif isinstance(init, str) and (init.lower() == "mds") and have_unambig:
+    elif not isinstance(init, str):
+        raise ValueError(f"Initialization not understood, {type(init)=}."
+                         "Options: np.ndarray, 'mds', or 'random'.")
+    elif (init.lower() == "mds") and have_unambig:
         struct = _initialize_struct_mds(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state,
             multiscale_factor=multiscale_factor, verbose=verbose)
         structures = [struct] * len(mixture_coefs)
-    elif isinstance(init, str) and (init.lower() in ("random", "rand", "mds")):
+    elif init.lower() in ("random", "rand", "mds"):
         if verbose:
             print('INITIALIZATION: random points', flush=True)
         struct = random_state.uniform(
             low=-1, high=1, size=(lengths_lowres.sum() * ploidy, 3))
         structures = [struct] * len(mixture_coefs)
-    elif isinstance(init, str) and os.path.isfile(init):
+    elif os.path.isfile(init):
         if verbose:
             print(f'INITIALIZATION: 3D structure, {init}', flush=True)
         structures = _format_structures(
             np.loadtxt(init), mixture_coefs=mixture_coefs)
     else:
-        raise ValueError("Initialization method not understood.")
+        raise ValueError(f"Initialization not understood, {init=}."
+                         "Options: np.ndarray, 'mds', or 'random'.")
 
     struct_length = set([s.shape[0] for s in structures])
     if len(struct_length) > 1:

@@ -146,8 +146,11 @@ def _format_structures(structures, lengths=None, ploidy=None,
                        mixture_coefs=None):
     """Reformats and checks shape of structures."""
 
+    # Convert to numpy array
     if isinstance(structures, list):
         structures = jnp.concatenate(structures)._value
+    if isinstance(structures, jnp.ndarray):
+        structures = structures._value
 
     # Reshape
     try:
