@@ -153,11 +153,13 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
     if ploidy_draft == 2:
         est_hmlg_sep = distance_between_homologs(
             struct_draft_lowres, lengths=lengths,
-            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
+            multiscale_factor=multires_factor_draft,
+            mixture_coefs=mixture_coefs)
     else:
         est_hmlg_sep = distance_between_molecules(
             struct_draft_lowres, lengths=lengths, ploidy=ploidy_draft,
-            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
+            multiscale_factor=multires_factor_draft,
+            mixture_coefs=mixture_coefs)
     if verbose:
         print("Estimated distances between homolog centers of mass:"
               " " + " ".join([f'{x:.2g}' for x in est_hmlg_sep]), flush=True)
