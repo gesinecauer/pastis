@@ -75,7 +75,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     """
 
     if mixture_coefs is None:
-        mixture_coefs = [1.]
+        mixture_coefs = [1]
 
     if not isinstance(counts, (list, tuple)):
         counts = [counts]
@@ -110,9 +110,9 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
     elif isinstance(init, str) and (init.lower() in ("random", "rand", "mds")):
         if verbose:
             print('INITIALIZATION: random points', flush=True)
-        structures = [random_state.uniform(
-            low=-1, high=1, size=(
-                lengths_lowres.sum() * ploidy, 3)) for coef in mixture_coefs]
+        struct = random_state.uniform(
+            low=-1, high=1, size=(lengths_lowres.sum() * ploidy, 3))
+        structures = [struct] * len(mixture_coefs)
     elif isinstance(init, str) and os.path.isfile(init):
         if verbose:
             print(f'INITIALIZATION: 3D structure, {init}', flush=True)
@@ -146,7 +146,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                 lengths_lowres.sum() * ploidy / struct_length))
             if verbose:
                 print('INITIALIZATION: increasing resolution of structure by'
-                      ' %d' % resize_factor, flush=True)
+                      f' a factor of {resize_factor}', flush=True)
             structures[i] = increase_struct_res(
                 structures[i], multiscale_factor=resize_factor,
                 lengths=lengths_lowres, ploidy=ploidy,
@@ -157,7 +157,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                 struct_length / (lengths_lowres.sum() * ploidy)))
             if verbose:
                 print('INITIALIZATION: decreasing resolution of structure by'
-                      ' %d' % resize_factor, flush=True)
+                      f' a factor of {resize_factor}', flush=True)
             structures[i] = decrease_struct_res(
                 structures[i], multiscale_factor=resize_factor, lengths=lengths,
                 ploidy=ploidy)

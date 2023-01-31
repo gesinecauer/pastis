@@ -160,10 +160,10 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
                          mixture_coefs=None, callback=None, mods=()):
     """Gradient function wrapper to match scipy.optimize's interface."""
 
-    checked = _check_input(
-        lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
-        bias=bias, mixture_coefs=mixture_coefs, mods=mods)
-    (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
+    # checked = _check_input(  # TODO remove
+    #     lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
+    #     bias=bias, mixture_coefs=mixture_coefs, mods=mods)
+    # (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
     beta_new = _estimate_beta_jit(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,

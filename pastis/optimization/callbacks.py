@@ -116,7 +116,7 @@ class Callback(object):
     def __init__(self, lengths, ploidy, counts=None, bias=None, beta_init=None,
                  multiscale_factor=1, multiscale_reform=False,
                  log=None, analysis_function=None, print_freq=100,
-                 log_freq=100, save_freq=None, directory=None, seed=None,
+                 log_freq=1000, save_freq=None, directory=None, seed=None,
                  on_optimization_begin=None, struct_true=None,
                  alpha_true=None, constraints=None, simple_diploid=False,
                  reorienter=None, mixture_coefs=None, verbose=False, mods=[]):
@@ -137,14 +137,15 @@ class Callback(object):
         self.constraints = constraints
         self.multiscale_reform = multiscale_reform
         self.mixture_coefs = mixture_coefs
+        self.reorienter = reorienter
         self.mods = mods
 
         self.on_optimization_begin_ = on_optimization_begin
         self.analysis_function = analysis_function
 
-        self.print_freq = print_freq
-        self.log_freq = log_freq
-        self.save_freq = save_freq
+        self.print_freq = None if (not print_freq) else print_freq
+        self.log_freq = None if (not log_freq) else log_freq
+        self.save_freq = None if (not save_freq) else save_freq
         self.directory = '' if directory is None else directory
         self.seed = seed
         self.verbose = verbose
@@ -214,7 +215,7 @@ class Callback(object):
 
         if inferring is None:
             inferring = 'structure'
-        if reorienter is not None and reorienter.reorient:
+        if self.reorienter is not None and self.reorienter.reorient:
             inferring = f'{inferring}.chrom_reorient'
         self.inferring = inferring
 
@@ -230,7 +231,7 @@ class Callback(object):
         self.X_ = None
 
         if self.on_optimization_begin_ is not None:
-            res = self.on_optimization_begin_(self, **kwargs)
+            res = self.on_optimization_begin_(self)
         else:
             res = None
         self.time_start = timer()
@@ -294,7 +295,7 @@ class Callback(object):
             epsilon = epsilon._value
         if isinstance(epsilon, np.ndarray):
             if epsilon.size > 1:
-                raise ValueError("Alpha must be a float.")
+                raise ValueError("Epsilon must be a float.")
             epsilon = float(epsilon)
         self.epsilon_ = epsilon
 
@@ -329,10 +330,7 @@ class Callback(object):
             self.iter), 'f= ': '%.6g' % self.obj['obj'],
             'time= ': self.time}
         if self.epsilon_ is not None:
-            if np.array(self.epsilon_).size == 1:
-                info_dict['epsilon= '] = f"{self.epsilon_:.3g}"
-            elif self.epsilon_.size == self.X_.shape[0]:
-                info_dict['epsilon= '] = f"{self.epsilon_.mean():.3g}"
+            info_dict['epsilon= '] = f"{self.epsilon_:.3g}"
         print('\t\t'.join([f'{k}{v}' for k, v in info_dict.items()]) + '\n',
               flush=True)
 
@@ -351,7 +349,7 @@ class Callback(object):
         else:
             seed_str = f'.{self.seed:03d}'
         filename = os.path.join(
-            self.directory,
+            self.directory, "in_progress",
             f"{self.inferring}_inferred{seed_str}.iter{self.iter}.coords")
         os.path.makedirs(self.directory, exist_ok=True)
         if self.verbose:

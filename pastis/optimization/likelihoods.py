@@ -38,6 +38,7 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None,
                       data_per_bin=None, mods=[]):
     """TODO"""
 
+    # Setup
     if data_per_bin is None:
         if mask is not None:
             data_per_bin = mask.sum(axis=0).reshape(1, -1)
@@ -45,6 +46,8 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None,
             data_per_bin = data.shape[0]
         else:
             raise ValueError("Must input data_per_bin")
+    elif isinstance(data_per_bin, (np.ndarray, jnp.ndarray)):
+        data_per_bin = data_per_bin.reshape(1, -1)
     if bias_per_bin is not None and isinstance(
             bias_per_bin, np.ndarray) and np.all(bias_per_bin == 1):
         bias_per_bin = None
@@ -59,31 +62,34 @@ def gamma_poisson_nll(theta, k, data, bias_per_bin=None, mask=None,
 
     if data is None or data.sum() == 0:
         log_likelihood = tmp1
+        return -log_likelihood
+
+    k_plus_1 = k + 1
+    tmp2 = -jnp.mean(_stirling(k_plus_1))
+    tmp3 = jnp.mean(_masksum(
+        _stirling(data + k_plus_1), mask=mask, axis=0) / data_per_bin)
+    if bias_per_bin is None:
+        tmp4 = jnp.mean(_masksum(data, mask=mask, axis=0) / data_per_bin * (
+            jnp.log(theta) + jnp.log1p(k) - log1p_theta - 1))
     else:
-        k_plus_1 = k + 1
-        tmp2 = -jnp.mean(_stirling(k_plus_1))
-        tmp3 = jnp.mean(_masksum(
-            _stirling(data + k_plus_1), mask=mask, axis=0) / data_per_bin)
-        if bias_per_bin is None:
-            tmp4 = jnp.mean(_masksum(data, mask=mask, axis=0) / data_per_bin * (
-                jnp.log(theta) + jnp.log1p(k) - log1p_theta - 1))
-        else:
-            tmp4a = jnp.mean(_masksum(data, mask=mask, axis=0) / data_per_bin * (
-                jnp.log(theta) + jnp.log1p(k) - 1))
-            tmp4b = -jnp.mean(
-                _masksum(data * log1p_theta, mask=mask, axis=0) / data_per_bin)
-            tmp4 = tmp4a + tmp4b
-        tmp5 = jnp.mean(_masksum((data + k + 0.5) * jnp.log1p(
-            data / k_plus_1), mask=mask, axis=0) / data_per_bin)
-        tmp6 = -jnp.mean(
-            _masksum(jnp.log1p(data / k), mask=mask, axis=0) / data_per_bin)
-        log_likelihood = (tmp1 + tmp2 + tmp3 + tmp4 + tmp5 + tmp6)
+        tmp4a = jnp.mean(_masksum(data, mask=mask, axis=0) / data_per_bin * (
+            jnp.log(theta) + jnp.log1p(k) - 1))
+        tmp4b = -jnp.mean(
+            _masksum(data * log1p_theta, mask=mask, axis=0) / data_per_bin)
+        tmp4 = tmp4a + tmp4b
+    tmp5 = jnp.mean(_masksum((data + k + 0.5) * jnp.log1p(
+        data / k_plus_1), mask=mask, axis=0) / data_per_bin)
+    tmp6 = -jnp.mean(
+        _masksum(jnp.log1p(data / k), mask=mask, axis=0) / data_per_bin)
+    log_likelihood = (tmp1 + tmp2 + tmp3 + tmp4 + tmp5 + tmp6)
 
     return -log_likelihood
 
 
 def poisson_nll(data, lambda_pois, mask=None, data_per_bin=None):
     """TODO"""
+
+    # Setup
     if data_per_bin is None:
         if mask is not None:
             data_per_bin = mask.sum(axis=0).reshape(1, -1)

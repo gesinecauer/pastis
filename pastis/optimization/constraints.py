@@ -815,7 +815,7 @@ def _get_hsc2022_negbinom(struct, row, col, alpha, beta, multiscale_factor=1,
     return n, p
 
 
-def _kl_divergence(p, log_q):
+def _kl_divergence(p, log_q, mean=True):
     """Measures KL divergence between two discrete distributions.
 
     Parameters
@@ -824,6 +824,8 @@ def _kl_divergence(p, log_q):
         The target probability distribution from the data.
     log_q : array
         The natural log of the approximated probability distribution.
+    mean : bool, optional
+        Divide by the number of entries in p.
     """
     mask = (p != 0)
     if mask.sum() == mask.size:
@@ -831,7 +833,10 @@ def _kl_divergence(p, log_q):
     else:
         tmp = p[mask] * (np.log(p[mask]) - log_q[mask])
 
-    return jnp.sum(tmp)
+    if mean:
+        return jnp.mean(tmp)
+    else:
+        return jnp.sum(tmp)
 
 
 def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=True,

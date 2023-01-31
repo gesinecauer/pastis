@@ -97,7 +97,7 @@ parser.add_argument("--hsc_perc_diff", type=float, default=None,
 parser.add_argument("--print_freq", type=int, default=100,
                     help="Frequency of iterations at which to print status"
                          " during optimization.")
-parser.add_argument("--log_freq", type=int, default=None,
+parser.add_argument("--log_freq", type=int, default=1000,
                     help="Frequency of iterations at which to log objective"
                          " value and other information during"
                          " optimization.")
