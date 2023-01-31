@@ -470,7 +470,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if update_alpha and alpha_loop is None:
         alpha_loop = 1
     if update_alpha and outdir is not None:
-        outdir_ = os.path.join(outdir, f"alpha_coord_desc.{alpha_loop:03d}")
+        outdir_ = os.path.join(
+            outdir, f"alpha_coord_descent.try{alpha_loop:03d}")
     else:
         outdir_ = outdir
     first_alpha_loop = update_alpha and alpha_loop == 1
@@ -522,18 +523,14 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         chrom_full = chrom_subset
 
     # OPTIONALLY INFER ALPHA VIA SINGLERES
+    init_ = init
     if first_alpha_loop and multiscale_rounds > 1:
-        # for this infer() call: _counts, _bias, _struct_true, filter_threshold=0, multiscale_rounds=1, outdir, alpha=None, alpha_init, init
-
-        # foar later infer() call: alpha=infer_param['alpha'], prev_alpha_obj=infer_param['alpha_obj'], alpha_loop=alpha_loop + 1, beta=infer_param['beta'], init=X_
-        #                         max_alpha_loop?
-
         if outdir is None:
             outdir_1x_alpha = None
         else:
             outdir_1x_alpha = os.path.join(outdir, 'singleres_alpha_inference')
 
-        init, infer_param = infer(
+        init_, infer_param = infer(
             counts=_counts, lengths=lengths, ploidy=ploidy,
             outdir=outdir_1x_alpha, alpha_init=alpha_init, seed=seed,
             filter_threshold=0, normalize=normalize, bias=_bias,
@@ -553,10 +550,19 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             exclude_zeros=exclude_zeros, null=null, chrom_full=chrom_full,
             chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
             verbose=verbose, mods=mods)
+
+        # Do not continue unless inference converged
+        if not infer_param['converged']:
+            return init_, infer_param
+        if ('alpha_converged' in infer_param) and (
+                infer_param['alpha_converged'] is not None) and (
+                not infer_param['alpha_converged']):
+            return init_, infer_param
+
         alpha = infer_param['alpha']
         beta = infer_param['beta']
-        prev_alpha_obj = infer_param['alpha_obj']
         alpha_loop = infer_param['alpha_loop']
+        prev_alpha_obj = None
         first_alpha_loop = False
 
     _print_code_header([
@@ -579,12 +585,11 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
-    if not draft_converged:
+    if not draft_converged:  # Do not continue unless inference converged
         return None, {'seed': seed, 'converged': draft_converged}
 
     # INFER FULL-RES STRUCTURE (with or without multires optimization)
     all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))
-    X_ = init
     epsilon_max_ = epsilon_max
     for multiscale_factor in all_multiscale_factors:
         _print_code_header(
@@ -603,7 +608,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             beta=beta, multiscale_factor=multiscale_factor,
             alpha_loop=alpha_loop, update_alpha=update_alpha,
             beta_init=beta_init,
-            init=X_, max_iter=max_iter, factr=factr, pgtol=pgtol,
+            init=init_, max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
             hsc_lambda=hsc_lambda, bcc_version=bcc_version,
             hsc_version=hsc_version, data_interchrom=data_interchrom,
@@ -618,6 +623,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
             mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
 
+        # Do not continue unless inference converged
         if not infer_param['converged']:
             return struct_, infer_param
         if update_alpha and multiscale_factor == 1 and (
@@ -625,9 +631,9 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             return struct_, infer_param
 
         if reorienter is not None and reorienter.reorient:
-            X_ = infer_param['orient']
+            init_ = infer_param['orient']
         else:
-            X_ = struct_
+            init_ = struct_
         if 'epsilon' in infer_param:  # Adjust for lower resolutions
             epsilon_max_ = infer_param['epsilon']
         if 'lowres_exit' in mods:
@@ -647,8 +653,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         update_alpha=update_alpha, prev_alpha_obj=infer_param['alpha_obj'],
         beta_init=beta_init,
         alpha_loop=alpha_loop + 1, max_alpha_loop=max_alpha_loop,
-        beta=infer_param['beta'], multiscale_rounds=multiscale_rounds, init=X_,
-        max_iter=max_iter, factr=factr, pgtol=pgtol,
+        beta=infer_param['beta'], multiscale_rounds=multiscale_rounds,
+        init=init_, max_iter=max_iter, factr=factr, pgtol=pgtol,
         alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
         hsc_lambda=hsc_lambda, bcc_version=bcc_version, hsc_version=hsc_version,
         data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
@@ -672,7 +678,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    bcc_version='2019', hsc_version='2019',
                    data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
                    hsc_perc_diff=None,
-                   callback_fxns=None, print_freq=100, log_freq=100,
+                   callback_fxns=None, print_freq=100, log_freq=1000,
                    save_freq=None, piecewise=False, piecewise_step=None,
                    piecewise_chrom=None, piecewise_min_beads=5,
                    piecewise_fix_homo=False, piecewise_opt_orient=True,
