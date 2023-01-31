@@ -1384,18 +1384,18 @@ class CountsBins(object):
         Returns the number of full-resolution counts bins corresponding to each
         low-resolution distance bin.
         """
-        if self.multiscale_factor == 1 or self.multires_naive:
+        if self.multiscale_factor == 1:
             return 1
-        elif self.mask is not None:
-            return self.mask.sum(axis=0)
         elif self.multires_naive:
             fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
                 ploidy=self.ploidy, fullres_struct_nan=self._empty_idx_fullres)
             return fullres_per_lowres_bead[self.row] * fullres_per_lowres_bead[
                 self.col]
+        elif self.mask is not None:
+            return self.mask.sum(axis=0)
         else:
-            return self.data.shape[0]
+            return self.multiscale_factor ** 2
 
     def __eq__(self, other):
         if type(other) is type(self):
