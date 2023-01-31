@@ -118,7 +118,7 @@ class Callback(object):
                  log=None, analysis_function=None, print_freq=100,
                  log_freq=1000, save_freq=None, directory=None, seed=None,
                  on_optimization_begin=None, struct_true=None,
-                 alpha_true=None, constraints=None, simple_diploid=False,
+                 alpha_true=None, constraints=None,
                  reorienter=None, mixture_coefs=None, verbose=False, mods=[]):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -155,16 +155,11 @@ class Callback(object):
             struct_true = struct_true.reshape(-1, 3)
             if multiscale_factor != 1 and multiscale_reform:
                 self.epsilon_true = get_epsilon_from_struct(
-                    struct_true, lengths=lengths,
-                    ploidy=(2 if simple_diploid else ploidy),
+                    struct_true, lengths=lengths, ploidy=ploidy,
                     multiscale_factor=multiscale_factor, verbose=False)
                 if verbose:
                     print(f"True epsilon ({multiscale_factor}x):"
                           f" {self.epsilon_true:.3g}", flush=True)
-            if simple_diploid:
-                struct_true = np.nanmean(  # FIXME is this even correct?
-                    [struct_true[:int(struct_true.shape[0] / 2)],
-                     struct_true[int(struct_true.shape[0] / 2):]], axis=0)
             if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
                 struct_true = decrease_struct_res(
                     struct_true, multiscale_factor=multiscale_factor,

@@ -143,14 +143,19 @@ def _output_subdir(outdir, chrom_full=None, chrom_subset=None, null=False,
 
 
 def _format_structures(structures, lengths=None, ploidy=None,
-                       mixture_coefs=None):
+                       mixture_coefs=None, copy=False):
     """Reformats and checks shape of structures."""
 
-    # Convert to numpy array
+    # Convert to numpy array, optionally copy
     if isinstance(structures, list):
-        structures = jnp.concatenate(structures)._value
+        if len(structures) == 1:
+            structures = structures[0]
+        else:
+            structures = jnp.concatenate(structures)._value
     if isinstance(structures, jnp.ndarray):
         structures = structures._value
+    if copy:
+        structures = structures.copy()
 
     # Reshape
     try:
@@ -557,6 +562,101 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
 
     data_subset = {'counts': counts, 'bias': bias, 'struct': structures}
     return lengths_subset, chrom_subset, data_subset
+
+
+def distance_between_homologs(structures, lengths, multiscale_factor=1,
+                              mixture_coefs=None, replace_nan=True):
+    """Computes distances between homolog centers of mass.
+
+    For diploid organisms, this computes the distance between homolog centers
+    of mass for each chromosome.
+
+    Parameters
+    ----------
+    structures : array of float or list of array of float
+        3D chromatin structure(s).
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome.
+
+    Returns
+    -------
+    array of float
+        Distance between homologs per chromosome.
+    """
+
+    from .multiscale_optimization import decrease_lengths_res
+    from .constraints import _get_homolog_separation
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    structures = _format_structures(
+        structures=structures, lengths=lengths_lowres,
+        ploidy=2, mixture_coefs=mixture_coefs, copy=True)
+
+    result = []
+    for struct in structures:
+        mask = np.isfinite(struct[:, 0])
+        struct[~mask] = 0
+
+        hmlg_sep = _get_homolog_separation(
+            struct, lengths=lengths, multiscale_factor=multiscale_factor)._value
+
+        # If the entire chromosome is NaN, set homolog separation to NaN
+        begin = end = 0
+        for i in range(lengths_lowres.size):
+            end = end + lengths_lowres[i]
+            if np.all(~mask[begin:end]) or np.all(~mask[(n + begin):(n + end)]):
+                hmlg_sep[i] = np.nan
+            begin = end
+        if replace_nan:
+            hmlg_sep[np.isnan(hmlg_sep)] = np.nanmedian(hmlg_sep)
+
+        result.append(hmlg_sep)
+
+    return np.mean(result, axis=0)
+
+
+def distance_between_molecules(structures, lengths, ploidy,
+                                multiscale_factor=1, mixture_coefs=None):
+    """Computes distance between molecule centers of mass."""
+
+    from sklearn.metrics import euclidean_distances
+    from .multiscale_optimization import decrease_lengths_res
+    from .constraints import _get_lowres_bead_weights
+
+    lengths_lowres = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor)
+    structures = _format_structures(
+        structures=structures, lengths=lengths_lowres,
+        ploidy=ploidy, mixture_coefs=mixture_coefs, copy=True)
+    bead_weights = _get_lowres_bead_weights(
+        lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
+        lengths_lowres=lengths_lowres)
+
+    result = []
+    for struct in structures:
+        mask = np.isfinite(struct[:, 0])
+        struct[~mask] = 0
+        struct_weighted = struct * bead_weights
+
+        # Get center of mass of each molecule
+        centers_of_mass = []
+        begin = end = 0
+        for i in range(lengths_lowres.size * ploidy):
+            end += np.tile(lengths_lowres, ploidy)[i]
+            if mask[begin:end].sum() == 0:
+                continue
+            centers_of_mass.append(
+                np.sum(struct_weighted[begin:end], axis=0).reshape(1, 3))
+            begin = end
+        centers_of_mass = np.concatenate(centers_of_mass)
+
+        mol_sep = euclidean_distances(centers_of_mass)
+        mol_sep = mol_sep[np.triu_indices(mol_sep.shape[0], 1)]
+
+        result.append(mol_sep)
+
+    return np.mean(result, axis=0)
 
 
 def _intramol_mask(data, lengths_at_res):

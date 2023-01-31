@@ -14,11 +14,12 @@ import jax.numpy as jnp
 
 from .utils_poisson import _print_code_header, _get_output_files
 from .utils_poisson import _output_subdir, _load_infer_param
+from .utils_poisson import distance_between_homologs, distance_between_molecules
 from .counts import preprocess_counts, _ambiguate_beta
 from .counts import _set_initial_beta
 from .initialization import initialize
 from .callbacks import Callback
-from .constraints import prep_constraints, distance_between_homologs
+from .constraints import prep_constraints
 from .constraints import get_counts_interchrom, HomologSeparating2019
 from .poisson import PastisPM, _convergence_criteria
 from .multiscale_optimization import _choose_max_multiscale_factor
@@ -38,8 +39,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  struct_true=None, input_weight=None, exclude_zeros=False,
                  null=False, chrom_full=None, chrom_subset=None,
                  mixture_coefs=None, verbose=True, mods=[]):
-    """Infer draft 3D structures with PASTIS via Poisson model.
-    """
+    """Infer draft 3D structures with PASTIS via Poisson model."""
 
     infer_draft_lowres = est_hmlg_sep is None and hsc_lambda > 0 and str(
         hsc_version) == '2019'
@@ -86,60 +86,78 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                          " Please pool unambiguous counts before"
                          " inputting.")
 
+    struct_true_draft = struct_true
+    init_draft = init
+    beta_init_draft = beta_init
     if len(ua_index) == 1:
-        counts_for_draft = [counts[ua_index[0]]]
-        simple_diploid_for_draft = False
-        beta_for_draft = [beta[ua_index[0]]]
+        ploidy_draft = 2
+        counts_draft = [counts[ua_index[0]]]
+        beta_draft = [beta[ua_index[0]]]
     else:
-        # Inferring "simple diploid" structures, where we assume homologs to
-        # have identical conformations and essentially treat the ambiguated
+        # Inferring "simplified" diploid structures, where we assume homologs of
+        # a given chromosome to have identical conformations and to completely
+        # overlap one another in 3D. We essentially treat the ambiguated
         # diploid data as if it were haploid.
         if lengths.size == 1:
             raise ValueError("Please input more than one chromosome to"
                              " estimate est_hmlg_sep from ambiguous data.")
-        simple_diploid_for_draft = True
-        counts_for_draft = counts
-        beta_for_draft = beta
+        ploidy_draft = 1
 
-        if isinstance(init, list):
-            init = jnp.concatenate(init)._value
-        if isinstance(init, jnp.ndarray):
-            init = init._value
-        if isinstance(init, np.ndarray) and (
-                init.size == lengths.sum() * ploidy * 3 * len(mixture_coefs)):
-            # The intialization is a full-res diploid 3D structure.
-            # However, we are currently inferring "simple diploid" structures.
-            # This initialization must be converted to "simple diploid" form.
-            init = _format_structures(
-                init, lengths=lengths, ploidy=2, mixture_coefs=mixture_coefs)
-            init = [np.nanmean(  # FIXME is this even correct?
+        # Convert counts & betas & struct_true to "simplified" diploid
+        beta_ambig = _ambiguate_beta(
+            beta, counts=counts, lengths=lengths, ploidy=2)
+        beta_draft = 2 * beta_ambig
+        if beta_init_draft is not None:
+            beta_init_draft = beta_init_draft * 2
+        counts_draft = [ambiguate_counts(
+            counts=counts, lengths=lengths, ploidy=2)]
+        if struct_true_draft is not None:
+            struct_true_draft = struct_true_draft.reshape(-1, 3)
+            struct_true_draft = np.nanmean(  # FIXME is this even correct?
+                [struct_true_draft[:int(struct_true_draft.shape[0] / 2)],
+                 struct_true_draft[int(struct_true_draft.shape[0] / 2):]],
+                axis=0)
+
+        # Convert initialization to "simplified" diploid (if necessary)
+        if isinstance(init_draft, list):
+            init_draft = jnp.concatenate(init_draft)._value
+        if isinstance(init_draft, jnp.ndarray):
+            init_draft = init_draft._value
+        if isinstance(init_draft, np.ndarray) and (
+                init_draft.size == lengths.sum() * 2 * 3 * len(mixture_coefs)):
+            # The intialization is a full-res diploid 3D structure. However,
+            # we are currently inferring "simplified" diploid structures.
+            init_draft = _format_structures(
+                init_draft, lengths=lengths, ploidy=2,
+                mixture_coefs=mixture_coefs)
+            init_draft = [np.nanmean(  # FIXME is this even correct?
                 [x[:int(x.shape[0] / 2)], x[int(x.shape[0] / 2):]],
-                axis=0) for x in init]
-            init = np.concatenate(init)
+                axis=0) for x in init_draft]
+            init_draft = np.concatenate(init_draft)
 
     struct_draft_lowres, infer_param_lowres = infer_at_alpha(
-        counts=counts_for_draft, outdir=lowres_outdir,
-        lengths=lengths, ploidy=ploidy, alpha=alpha, seed=seed,
+        counts=counts_draft, outdir=lowres_outdir,
+        lengths=lengths, ploidy=ploidy_draft, alpha=alpha, seed=seed,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        beta=beta_for_draft, beta_init=beta_init,
+        beta=beta_draft, beta_init=beta_init_draft,
         multiscale_factor=multires_factor_draft,
-        init=init, max_iter=max_iter, factr=factr, pgtol=pgtol, draft=True,
-        simple_diploid=simple_diploid_for_draft,
-        callback_fxns=callback_fxns,
-        callback_freq=callback_freq,
+        init=init_draft, max_iter=max_iter, factr=factr, pgtol=pgtol,
+        callback_fxns=callback_fxns, callback_freq=callback_freq,
         reorienter=reorienter, multiscale_reform=multiscale_reform,
-        alpha_true=alpha_true, struct_true=struct_true,
+        alpha_true=alpha_true, struct_true=struct_true_draft,
         input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     if not infer_param_lowres['converged']:
         return None, False
 
-    est_hmlg_sep = distance_between_homologs(
-        structures=struct_draft_lowres,
-        lengths=decrease_lengths_res(
-            lengths=lengths, multiscale_factor=multires_factor_draft),
-        mixture_coefs=mixture_coefs,
-        simple_diploid=simple_diploid_for_draft)
+    if ploidy_draft == 2:
+        est_hmlg_sep = distance_between_homologs(
+            struct_draft_lowres, lengths=lengths,
+            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
+    else:
+        est_hmlg_sep = distance_between_molecules(
+            struct_draft_lowres, lengths=lengths, ploidy=ploidy_draft,
+            multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs)
     if verbose:
         print("Estimated distances between homolog centers of mass:"
               " " + " ".join([f'{x:.2g}' for x in est_hmlg_sep]), flush=True)
@@ -165,7 +183,6 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
                     hsc_version='2019', data_interchrom=None, est_hmlg_sep=None,
                     hsc_min_beads=5, hsc_perc_diff=None, excluded_counts=None,
-                    draft=False, simple_diploid=False,
                     callback_freq=None, callback_fxns=None, reorienter=None,
                     multiscale_reform=False,
                     alpha_true=None, struct_true=None, input_weight=None,
@@ -174,23 +191,18 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     outfiles=None, verbose=True, mods=[]):
     """TODO"""
 
-    if verbose and outfiles is not None:
-        print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
-
     # PREPARE COUNTS OBJECTS
     counts, struct_nan, fullres_struct_nan = preprocess_counts(
         counts=counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, exclude_zeros=exclude_zeros,
         beta=beta, bias=bias, input_weight=input_weight, verbose=verbose,
         excluded_counts=excluded_counts, multiscale_reform=multiscale_reform,
-        simple_diploid=simple_diploid, mods=mods)
-    if simple_diploid:
-        if ploidy != 2:
-            raise ValueError("Data is not diploid.")
-        ploidy = 1
-        if beta_init is not None:
-            beta_init = beta_init * 2
+        mods=mods)
+
+    # PRINT INFERENCE INFORMATION
     if verbose:
+        if outfiles is not None:
+            print(f"OUTPUT: {outfiles['struct_infer']}", flush=True)
         print('BETA: ' + ', '.join(
             [f'{c.ambiguity}={c.beta:.3g}' for c in counts]), flush=True)
         if alpha is None:
@@ -245,9 +257,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_reform=multiscale_reform,
         directory=outdir, seed=seed, struct_true=struct_true,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
-        simple_diploid=simple_diploid, mixture_coefs=mixture_coefs,
-        reorienter=reorienter, **callback_freq, **callback_fxns,
-        verbose=verbose, mods=mods)
+        mixture_coefs=mixture_coefs, reorienter=reorienter, **callback_freq,
+        **callback_fxns, verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
             epsilon, ploidy, beta_init)
@@ -261,8 +272,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                    factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                    bcc_lambda=0, hsc_lambda=0, bcc_version='2019', hsc_version='2019',
                    data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
-                   hsc_perc_diff=None, excluded_counts=None, draft=False,
-                   simple_diploid=False, callback_freq=None, callback_fxns=None, reorienter=None,
+                   hsc_perc_diff=None, excluded_counts=None,
+                   callback_freq=None, callback_fxns=None, reorienter=None,
                    multiscale_reform=False, epsilon_min=1e-2, epsilon_max=1e6,
                    alpha_true=None, struct_true=None, input_weight=None,
                    exclude_zeros=False, null=False,
@@ -342,12 +353,6 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         For diploid organisms: TODO
     excluded_counts : {"inter", "intra"}, optional
         Whether to exclude inter- or intra-chromosomal counts from optimization.
-    draft: bool, optional
-        Whether this optimization is inferring a draft structure.
-    simple_diploid: bool, optional
-        For diploid organisms: whether this optimization is inferring a "simple
-        diploid" structure in which homologs are assumed to be identical and
-        completely overlapping with one another.
 
     Returns
     -------
@@ -391,9 +396,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
         hsc_version=hsc_version, data_interchrom=data_interchrom,
         est_hmlg_sep=est_hmlg_sep, hsc_min_beads=hsc_min_beads,
-        hsc_perc_diff=hsc_perc_diff, excluded_counts=excluded_counts, draft=draft,
-        simple_diploid=simple_diploid, callback_freq=callback_freq,
-        callback_fxns=callback_fxns, reorienter=reorienter,
+        hsc_perc_diff=hsc_perc_diff, excluded_counts=excluded_counts,
+        callback_freq=callback_freq, callback_fxns=callback_fxns, reorienter=reorienter,
         multiscale_reform=multiscale_reform,
         alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null,

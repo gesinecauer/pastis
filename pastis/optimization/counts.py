@@ -321,7 +321,7 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
 def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
                       beta=None, bias=None, excluded_counts=None,
                       exclude_zeros=False, multiscale_reform=True,
-                      input_weight=None, verbose=True, simple_diploid=False, mods=[]):
+                      input_weight=None, verbose=True, mods=[]):
     """Check counts, reformat.
 
     Counts are also checked and reformatted
@@ -354,22 +354,6 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
     struct_nan : array of int
         Beads that should be removed (set to NaN) in the structure.
     """
-
-    if simple_diploid:
-        if ploidy != 2:
-            raise ValueError("Ploidy is not 2, but simple_diploid specified.")
-        counts = check_counts(counts, lengths=lengths, ploidy=2)
-        if beta is None:
-            beta_ambig, _ = _set_initial_beta(
-                counts, lengths=lengths, ploidy=ploidy, bias=bias,
-                exclude_zeros=exclude_zeros)
-        else:
-            beta_ambig = _ambiguate_beta(
-                beta, counts=counts, lengths=lengths, ploidy=2)
-        beta = 2 * beta_ambig
-        counts = [ambiguate_counts(
-            counts=counts, lengths=lengths, ploidy=2)]
-        ploidy = 1
 
     # Beads to remove from full-res structure
     if multiscale_factor == 1:

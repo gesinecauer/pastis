@@ -296,23 +296,10 @@ class HomologSeparating2019(Constraint):
         if self._var is not None:
             return self._var
 
-        if self.multiscale_factor > 1:
-            fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
-                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-                ploidy=self.ploidy)
-            bead_weights = fullres_per_lowres_bead / self.multiscale_factor
-        else:
-            bead_weights = np.ones((self.lengths_lowres.sum() * self.ploidy,))
-
-        n = self.lengths_lowres.sum()
-        begin = end = 0
-        for i in range(len(self.lengths_lowres)):
-            end = end + self.lengths_lowres[i]
-            bead_weights[begin:end] /= np.sum(bead_weights[begin:end])
-            bead_weights[n + begin:n + end] /= np.sum(
-                bead_weights[n + begin:n + end])
-            begin = end
-        bead_weights = bead_weights.reshape(-1, 1)
+        bead_weights = _get_lowres_bead_weights(
+            lengths=self.lengths, ploidy=self.ploidy,
+            multiscale_factor=self.multiscale_factor,
+            lengths_lowres=self.lengths_lowres)
 
         var = {'bead_weights': bead_weights}
         if not self._lowmem:
@@ -329,26 +316,17 @@ class HomologSeparating2019(Constraint):
             return 0
         var = self.setup(counts=counts, bias=bias)
 
-        # Get homolog separation
-        struct_bw = struct * np.repeat(var['bead_weights'], 3, axis=1)
-        n = self.lengths_lowres.sum()
-        hmlg_sep = jnp.zeros(self.lengths_lowres.shape)
-        begin = end = 0
-        for i in range(self.lengths_lowres.size):
-            end = end + self.lengths_lowres[i]
-            chrom1_mean = jnp.sum(struct_bw[begin:end], axis=0)
-            chrom2_mean = jnp.sum(struct_bw[(n + begin):(n + end)], axis=0)
-            hmlg_sep_i = jnp.sqrt(jnp.sum(jnp.square(
-                chrom1_mean - chrom2_mean)))
-            hmlg_sep = hmlg_sep.at[i].set(hmlg_sep_i)
-            begin = end
+        hmlg_sep = _get_homolog_separation(
+            struct, lengths=self.lengths,
+            multiscale_factor=self.multiscale_factor,
+            lengths_lowres=self.lengths_lowres,
+            bead_weights=var['bead_weights'])
 
         hmlg_sep_diff = self.hparams["est_hmlg_sep"] - hmlg_sep
         if 'rscale' in self.mods:
             hmlg_sep_diff = 1 - hmlg_sep / self.hparams["est_hmlg_sep"]
         if self.hparams['perc_diff'] is None:
             hmlg_sep_diff = relu(hmlg_sep_diff)
-            # raise ValueError("I thought we weren't doing RELU for HSC anymore")
         else:
             hsc_cutoff = np.array(self.hparams['perc_diff'] * self.hparams[
                 "est_hmlg_sep"])
@@ -1033,98 +1011,58 @@ def _neighboring_bead_indices(lengths, ploidy, multiscale_factor=1,
     return row_nghbr
 
 
-def _inter_homolog_dis(struct, lengths):
-    """Computes distance between homologs for a normal diploid structure.
-    """
+def _get_lowres_bead_weights(lengths, ploidy, multiscale_factor=1,
+                             lengths_lowres=None):
+    """TODO"""
 
-    struct = struct.copy().reshape(-1, 3)
+    if lengths_lowres is None:
+        lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
 
-    n = int(struct.shape[0] / 2)
-    homo1 = struct[:n, :]
-    homo2 = struct[n:, :]
+    if multiscale_factor > 1:
+        fullres_per_lowres_bead = _count_fullres_per_lowres_bead(
+            multiscale_factor=multiscale_factor, lengths=lengths,
+            ploidy=ploidy)
+        bead_weights = fullres_per_lowres_bead / multiscale_factor
+    else:
+        bead_weights = np.ones((lengths_lowres.sum() * ploidy,))
 
-    hmlg_dis = []
+    n = lengths_lowres.sum()
     begin = end = 0
-    for i in range(lengths.size):
-        end += lengths[i]
-        if np.isnan(homo1[begin:end, 0]).sum() == lengths[i] or np.isnan(
-                homo2[begin:end, 0]).sum() == lengths[i]:
-            hmlg_dis.append(np.nan)
-        else:
-            hmlg_dis.append(((np.nanmean(homo1[
-                begin:end, :], axis=0) - np.nanmean(
-                homo2[begin:end, :], axis=0)) ** 2).sum() ** 0.5)
+    for i in range(lengths_lowres.size):
+        end = end + lengths_lowres[i]
+        bead_weights[begin:end] /= np.sum(bead_weights[begin:end])
+        bead_weights[(n + begin):(n + end)] /= np.sum(
+            bead_weights[(n + begin):(n + end)])
+        begin = end
+    bead_weights = bead_weights.reshape(-1, 1)
+
+    return bead_weights
+
+
+def _get_homolog_separation(struct, lengths, multiscale_factor=1,
+                            lengths_lowres=None, bead_weights=None):
+    """TODO"""
+
+    if lengths_lowres is None:
+        lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
+
+    if bead_weights is None:
+        bead_weights = _get_lowres_bead_weights(
+            lengths=lengths, ploidy=2, multiscale_factor=multiscale_factor,
+            lengths_lowres=lengths_lowres)
+
+    struct_weighted = struct * bead_weights
+    n = lengths_lowres.sum()
+    hmlg_sep = jnp.zeros(lengths_lowres.size)
+    begin = end = 0
+    for i in range(lengths_lowres.size):
+        end = end + lengths_lowres[i]
+        hmlg1_mean = jnp.sum(struct_weighted[begin:end], axis=0)
+        hmlg2_mean = jnp.sum(struct_weighted[(n + begin):(n + end)], axis=0)
+        hmlg_sep_i = jnp.sqrt(jnp.sum(jnp.square(hmlg1_mean - hmlg2_mean)))
+        hmlg_sep = hmlg_sep.at[i].set(hmlg_sep_i)
         begin = end
 
-    hmlg_dis = np.array(hmlg_dis)
-    hmlg_dis[np.isnan(hmlg_dis)] = np.nanmean(hmlg_dis)
-
-    return hmlg_dis
-
-
-def _inter_homolog_dis_via_simple_diploid(struct, lengths):
-    """Computes distance between chromosomes for a faux-haploid structure.
-    """
-
-    from sklearn.metrics import euclidean_distances
-
-    struct = struct.copy().reshape(-1, 3)
-
-    chrom_barycenters = []
-    begin = end = 0
-    for i in range(lengths.size):
-        end += lengths[i]
-        if np.isnan(struct[begin:end, 0]).sum() < lengths[i]:
-            chrom_barycenters.append(
-                np.nanmean(struct[begin:end, :], axis=0).reshape(1, 3))
-        begin = end
-
-    chrom_barycenters = np.concatenate(chrom_barycenters)
-
-    hmlg_dis = euclidean_distances(chrom_barycenters)
-    hmlg_dis[np.tril_indices(hmlg_dis.shape[0])] = np.nan
-
-    return np.full(lengths.shape, np.nanmean(hmlg_dis))
-
-
-def distance_between_homologs(structures, lengths, mixture_coefs=None,
-                              simple_diploid=False):
-    """Computes distances between homologs for a given structure.
-
-    For diploid organisms, this computes the distance between homolog centers
-    of mass for each chromosome.
-
-    Parameters
-    ----------
-    structures : array of float or list of array of float
-        3D chromatin structure(s) for which to assess inter-homolog distances.
-    lengths : array_like of int
-        Number of beads per homolog of each chromosome.
-    simple_diploid: bool, optional
-        For diploid organisms: whether the structure is an inferred "simple
-        diploid" structure in which homologs are assumed to be identical and
-        completely overlapping with one another.
-
-    Returns
-    -------
-    array of float
-        Distance between homologs per chromosome.
-
-    """
-
-    from .utils_poisson import _format_structures
-
-    structures = _format_structures(
-        structures=structures, lengths=lengths,
-        ploidy=(1 if simple_diploid else 2),
-        mixture_coefs=mixture_coefs)
-
-    hmlg_dis = []
-    for struct in structures:
-        if simple_diploid:
-            hmlg_dis.append(_inter_homolog_dis_via_simple_diploid(
-                struct=struct, lengths=lengths))
-        else:
-            hmlg_dis.append(_inter_homolog_dis(struct=struct, lengths=lengths))
-
-    return np.mean(hmlg_dis, axis=0)
+    return hmlg_sep
