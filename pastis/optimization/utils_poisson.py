@@ -577,11 +577,14 @@ def distance_between_homologs(structures, lengths, multiscale_factor=1,
         3D chromatin structure(s).
     lengths : array_like of int
         Number of beads per homolog of each chromosome.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 indicates full resolution.
 
     Returns
     -------
     array of float
-        Distance between homologs per chromosome.
+        Distance between homolog centers of mass per chromosome.
     """
 
     from .multiscale_optimization import decrease_lengths_res
@@ -620,7 +623,25 @@ def distance_between_homologs(structures, lengths, multiscale_factor=1,
 
 def distance_between_molecules(structures, lengths, ploidy,
                                 multiscale_factor=1, mixture_coefs=None):
-    """Computes distance between molecule centers of mass."""
+    """Computes distance between molecule centers of mass.
+
+    Parameters
+    ----------
+    structures : array of float or list of array of float
+        3D chromatin structure(s).
+    lengths : array_like of int
+        Number of beads per homolog of each chromosome.
+    ploidy : {1, 2}
+        Ploidy, 1 indicates haploid, 2 indicates diploid.
+    multiscale_factor : int, optional
+        Factor by which to reduce the resolution. A value of 2 halves the
+        resolution. A value of 1 indicates full resolution.
+
+    Returns
+    -------
+    array of float
+        Pairwise distances between centers of mass of all molecules.
+    """
 
     from sklearn.metrics import euclidean_distances
     from .multiscale_optimization import decrease_lengths_res
