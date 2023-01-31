@@ -592,6 +592,7 @@ def distance_between_homologs(structures, lengths, multiscale_factor=1,
     structures = _format_structures(
         structures=structures, lengths=lengths_lowres,
         ploidy=2, mixture_coefs=mixture_coefs, copy=True)
+    n = lengths_lowres.sum()
 
     result = []
     for struct in structures:
@@ -608,7 +609,8 @@ def distance_between_homologs(structures, lengths, multiscale_factor=1,
             if np.all(~mask[begin:end]) or np.all(~mask[(n + begin):(n + end)]):
                 hmlg_sep[i] = np.nan
             begin = end
-        if replace_nan:
+        if replace_nan and np.any(np.isnan(hmlg_sep)):
+            hmlg_sep = np.array(hmlg_sep)  # Prevent jax read-only issues
             hmlg_sep[np.isnan(hmlg_sep)] = np.nanmedian(hmlg_sep)
 
         result.append(hmlg_sep)

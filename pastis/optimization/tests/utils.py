@@ -98,8 +98,11 @@ def make_3d_struct(nbeads, rng, nghbr_bead_dis=1, noise=0.1,
     return beads
 
 
-def separate_homologs(struct, lengths, true_interhmlg_dis):
+def separate_homologs(struct, lengths, true_interhmlg_dis, random_state=None):
     """Separate homolog centers of mass by specified distance"""
+    if random_state is None:
+        random_state = np.random.RandomState(seed=0)
+
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
@@ -112,7 +115,10 @@ def separate_homologs(struct, lengths, true_interhmlg_dis):
         struct[begin:end] -= np.nanmean(struct[begin:end], axis=0)
         struct[(n + begin):(n + end)] -= np.nanmean(
             struct[(n + begin):(n + end)], axis=0)
-        struct[begin:end, 0] += true_interhmlg_dis[i]
+
+        which_coord = random_state.choice([0, 1, 2])
+        struct[begin:end, which_coord] += true_interhmlg_dis[i] / 2
+        struct[(n + begin):(n + end), which_coord] -= true_interhmlg_dis[i] / 2
         begin = end
 
     return struct
@@ -147,7 +153,8 @@ def get_struct_randwalk(lengths, ploidy, random_state=None,
 
         if ploidy == 2 and true_interhmlg_dis is not None:
             struct = separate_homologs(
-                struct, lengths=lengths, true_interhmlg_dis=true_interhmlg_dis)
+                struct, lengths=lengths, true_interhmlg_dis=true_interhmlg_dis,
+                random_state=random_state)
 
         dis = euclidean_distances(struct)
 

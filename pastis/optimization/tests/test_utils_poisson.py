@@ -12,7 +12,8 @@ if sys.version_info[0] >= 3:
     _setup_jax(debug_nan_inf=True)
     from jax import grad
 
-    from utils import get_counts, set_counts_ambiguity
+    from utils import get_counts, set_counts_ambiguity, get_struct_randwalk
+    from utils import decrease_struct_res_correct
     from pastis.optimization import utils_poisson
 
 
@@ -247,6 +248,47 @@ def test_subset_chrom_of_counts(ambiguity):
     assert_array_equal(lengths_subset_correct, lengths_subset_test)
     assert_array_equal(chrom_subset_correct, chrom_subset_test)
     assert_array_equal(counts_subset_correct, counts_subset_test)
+
+
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
+def test_distance_between_homologs(multiscale_factor):
+    seed = 0
+    lengths = np.array([47, 45, 41])
+    hmlg_sep_correct = np.array([10, 15, 8])
+
+    random_state = np.random.RandomState(seed=seed)
+    struct = get_struct_randwalk(
+        lengths=lengths, ploidy=2, random_state=random_state,
+        true_interhmlg_dis=hmlg_sep_correct)
+    struct_lowres = decrease_struct_res_correct(
+        struct, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=2)
+
+    hmlg_sep_test = utils_poisson.distance_between_homologs(
+        struct_lowres, lengths=lengths, multiscale_factor=multiscale_factor)
+
+    assert_array_almost_equal(hmlg_sep_correct, hmlg_sep_test)
+
+
+@pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
+def test_distance_between_molecules(multiscale_factor):
+    seed = 0
+    lengths = np.array([47])
+    mol_sep_correct = 10
+
+    random_state = np.random.RandomState(seed=seed)
+    struct = get_struct_randwalk(
+        lengths=lengths, ploidy=2, random_state=random_state,
+        true_interhmlg_dis=mol_sep_correct)
+    struct_lowres = decrease_struct_res_correct(
+        struct, multiscale_factor=multiscale_factor, lengths=lengths,
+        ploidy=2)
+
+    mol_sep_test = utils_poisson.distance_between_molecules(
+        struct_lowres, lengths=lengths, ploidy=2,
+        multiscale_factor=multiscale_factor)
+
+    assert_array_almost_equal(mol_sep_correct, mol_sep_test)
 
 
 @pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
