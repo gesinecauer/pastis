@@ -558,6 +558,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # OPTIONALLY INFER ALPHA VIA SINGLERES
     init_ = init
+    est_hmlg_sep_ = est_hmlg_sep
     if first_alpha_loop and multiscale_rounds > 1:
         if outdir is None:
             outdir_1x_alpha = None
@@ -595,7 +596,11 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
         alpha = infer_param['alpha']
         beta = infer_param['beta']
+        est_hmlg_sep_ = infer_param['est_hmlg_sep']
         alpha_loop = infer_param['alpha_loop']
+        if outdir is not None:
+            outdir_ = os.path.join(
+                outdir, f"alpha_coord_descent.try{alpha_loop:03d}")
         prev_alpha_obj = None
         first_alpha_loop = False
 
@@ -611,7 +616,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         normalize=normalize, bias=bias, beta=beta,
         multiscale_rounds=multiscale_rounds, beta_init=beta_init, init=init_,
         max_iter=max_iter, factr=factr, pgtol=pgtol, hsc_lambda=hsc_lambda,
-        hsc_version=hsc_version, est_hmlg_sep=est_hmlg_sep,
+        hsc_version=hsc_version, est_hmlg_sep=est_hmlg_sep_,
         hsc_min_beads=hsc_min_beads,
         callback_freq=callback_freq, callback_fxns=callback_fxns,
         reorienter=reorienter, multiscale_reform=multiscale_reform,
