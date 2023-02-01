@@ -228,17 +228,6 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
     else:
         structures = X
 
-    # Get the constraint terms
-    obj_constraints = {}
-    if constraints is not None:
-        for constraint in constraints:
-            constraint_obj = 0
-            for struct, mix_coef in zip(structures, mixture_coefs):
-                constraint_obj = constraint_obj + mix_coef * constraint.apply(
-                    struct=struct, alpha=alpha, epsilon=epsilon,
-                    counts=counts, bias=bias, inferring_alpha=inferring_alpha)
-            obj_constraints[f"obj_{constraint.abbrev}"] = constraint_obj
-
     # Get main objective (Poisson/NegBinom of all eligible counts bins)
     obj_main = {}
     obj_main_sum = 0
@@ -254,6 +243,17 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
 
     # Take mean of main objective terms, weighted by total number of bins
     obj_main_mean = obj_main_sum / sum([c.nbins for c in counts])
+
+    # Get the constraint terms
+    obj_constraints = {}
+    if constraints is not None:
+        for constraint in constraints:
+            constraint_obj = 0
+            for struct, mix_coef in zip(structures, mixture_coefs):
+                constraint_obj = constraint_obj + mix_coef * constraint.apply(
+                    struct=struct, alpha=alpha, epsilon=epsilon,
+                    counts=counts, bias=bias, inferring_alpha=inferring_alpha)
+            obj_constraints[f"obj_{constraint.abbrev}"] = constraint_obj
 
     # Total objective
     obj = obj_main_mean + sum(obj_constraints.values())
