@@ -122,10 +122,12 @@ def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
         mixture_coefs=mixture_coefs, inferring_alpha=True, mods=mods)
 
 
-_estimate_beta_jit = jit(_estimate_beta, static_argnames=[
-    'counts', 'lengths', 'ploidy', 'reorienter', 'mixture_coefs'])
-objective_alpha_jit = jit(objective_alpha, static_argnames=[
-    'counts', 'lengths', 'ploidy', 'constraints', 'reorienter', 'mixture_coefs', 'mods'])
+# _estimate_beta_jit = jit(_estimate_beta, static_argnames=[
+#     'counts', 'lengths', 'ploidy', 'reorienter', 'mixture_coefs'])
+# objective_alpha_jit = jit(objective_alpha, static_argnames=[
+#     'counts', 'lengths', 'ploidy', 'constraints', 'reorienter', 'mixture_coefs', 'mods'])
+_estimate_beta_jit = _estimate_beta  # TODO decide whether to JIT
+objective_alpha_jit = objective_alpha  # TODO decide whether to JIT
 gradient_alpha = grad(objective_alpha_jit, has_aux=True)
 
 
@@ -235,7 +237,6 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         objective function during optimization.
     """
 
-    # Check format of input; convert lists to tuples for jax jit
     checked = _check_input(
         lengths=lengths, alpha=alpha_init, counts=counts,
         constraints=constraints, bias=bias, mixture_coefs=mixture_coefs, mods=mods)
