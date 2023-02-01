@@ -129,29 +129,36 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         raise ValueError(f"Initialization not understood, {init=}."
                          "Options: np.ndarray, 'mds', or 'random'.")
 
-    struct_length = set([s.shape[0] for s in structures])
-    if len(struct_length) > 1:
-        raise ValueError("Initial structures are of different shapes")
+    # Figure out what resolution structures are currently at
+    struct_nbeads = set([s.shape[0] for s in structures])
+    if len(struct_nbeads) > 1:
+        raise ValueError("Initial structures have differing numbers of beads.")
     else:
-        struct_length = struct_length.pop()
-    multiscale_factor_init = 1
+        struct_nbeads = struct_nbeads.pop()
+    multiscale_factor_current = 1
     while ploidy * decrease_lengths_res(
-            lengths, multiscale_factor_init * 2).sum() >= struct_length:
-        multiscale_factor_init *= 2
-    lengths_init = decrease_lengths_res(
-        lengths, multiscale_factor=multiscale_factor_init)
+            lengths, multiscale_factor_current * 2).sum() >= struct_nbeads:
+        multiscale_factor_current *= 2
+    if np.log2(multiscale_factor_current) != int(
+            np.log2(multiscale_factor_current)):
+        raise ValueError(
+            f"Initial structures contain {struct_nbeads} beads, they can't be"
+            f" resized into {lengths_lowres.sum() * ploidy}-bead structures.")
+    lengths_current = decrease_lengths_res(
+        lengths, multiscale_factor=multiscale_factor_current)
 
+    # Check format of structures, replace NaN
     structures = _format_structures(
-        structures, lengths=lengths_init, ploidy=ploidy,
+        structures, lengths=lengths_current, ploidy=ploidy,
         mixture_coefs=mixture_coefs)
     structures = [_struct_replace_nan(
-        struct, lengths=lengths_init, ploidy=ploidy,
+        struct, lengths=lengths_current, ploidy=ploidy,
         random_state=random_state) for struct in structures]
 
+    # If needed, change resolution of structures to the current resolution
     for i in range(len(structures)):
-        if struct_length < int(lengths_lowres.sum() * ploidy):
-            resize_factor = int(np.ceil(
-                lengths_lowres.sum() * ploidy / struct_length))
+        if multiscale_factor_current > multiscale_factor:
+            resize_factor = int(multiscale_factor_current / multiscale_factor)
             if verbose:
                 print('INITIALIZATION: increasing resolution of structure by'
                       f' a factor of {resize_factor}', flush=True)
@@ -160,9 +167,8 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                 lengths=lengths_lowres, ploidy=ploidy,
                 random_state=random_state)
 
-        elif struct_length > lengths_lowres.sum() * ploidy:
-            resize_factor = int(np.ceil(
-                struct_length / (lengths_lowres.sum() * ploidy)))
+        elif multiscale_factor_current < multiscale_factor:
+            resize_factor = int(multiscale_factor / multiscale_factor_current)
             if verbose:
                 print('INITIALIZATION: decreasing resolution of structure by'
                       f' a factor of {resize_factor}', flush=True)
@@ -170,6 +176,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                 structures[i], multiscale_factor=resize_factor, lengths=lengths,
                 ploidy=ploidy)
 
+    # Check format of structures one more time, just for fun...
     structures = _format_structures(
         structures, lengths=lengths_lowres, ploidy=ploidy,
         mixture_coefs=mixture_coefs)
