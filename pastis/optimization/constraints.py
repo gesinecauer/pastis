@@ -445,12 +445,12 @@ class BeadChainConnectivity2022(Constraint):
             # If a distance bin has no counts associated with it,
             # set those counts to the mean of all counts
             if counts_nghbr_object.bins_zero is None:
-                counts_nghbr[mask_no_data] = np.mean(
-                    counts_nghbr_object.bins_nonzero.data)
+                counts_nghbr[mask_no_data] = np.round(np.mean(
+                    counts_nghbr_object.bins_nonzero.data))
             else:
-                counts_nghbr[mask_no_data] = np.mean(np.append(
+                counts_nghbr[mask_no_data] = np.round(np.mean(np.append(
                     counts_nghbr_object.bins_nonzero.data,
-                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
+                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int))))
         else:
             # Get mask associated with neighbor beads
             counts_nghbr_mask = _get_nonzero_mask(
@@ -462,14 +462,14 @@ class BeadChainConnectivity2022(Constraint):
                 counts_nghbr_mask = np.full(
                     (self.multiscale_factor ** 2, row_nghbr_ambig_lowres.size),
                     True)
-            mask_no_data = _get_nonzero_mask(
+            counts_nghbr_mask_no_data = _get_nonzero_mask(
                 multiscale_factor=self.multiscale_factor, lengths=self.lengths,
                 ploidy=self.ploidy, row=row_nghbr_ambig_lowres[mask_no_data],
                 col=row_nghbr_ambig_lowres[mask_no_data] + 1)
-            if mask_no_data is None:
+            if counts_nghbr_mask_no_data is None:
                 counts_nghbr_mask[:, mask_no_data] = True
             else:
-                counts_nghbr_mask[:, mask_no_data] = mask_no_data
+                counts_nghbr_mask[:, mask_no_data] = counts_nghbr_mask_no_data
             if np.all(counts_nghbr_mask):
                 counts_nghbr_mask = None
 
@@ -483,12 +483,12 @@ class BeadChainConnectivity2022(Constraint):
             # If an entire lowres distance bin has no counts associated with it,
             # set those counts to the mean of all high-res counts
             if counts_nghbr_object.bins_zero is None:
-                counts_nghbr[:, mask_no_data] = np.mean(
-                    counts_nghbr_object.bins_nonzero.data)
+                counts_nghbr[:, mask_no_data] = np.round(np.mean(
+                    counts_nghbr_object.bins_nonzero.data))
             else:
-                counts_nghbr[:, mask_no_data] = np.mean(np.append(
+                counts_nghbr[:, mask_no_data] = np.round(np.mean(np.append(
                     counts_nghbr_object.bins_nonzero.data,
-                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
+                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int))))
 
             if counts_nghbr_mask is not None:
                 counts_nghbr[~counts_nghbr_mask] = 0
