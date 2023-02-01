@@ -166,7 +166,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         if struct_true is not None:
             true_hmlg_sep = distance_between_homologs(
                 structures=struct_true, lengths=lengths)
-            print("TRUE distances between homolog centers of mass:"
+            print("   > TRUE distances between homolog centers of mass:"
                   " " + " ".join([f'{x:.2g}' for x in true_hmlg_sep]),
                   flush=True)
 
