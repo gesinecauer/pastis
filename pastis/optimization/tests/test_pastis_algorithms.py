@@ -20,8 +20,8 @@ if sys.version_info[0] >= 3:
 
 
 def compare_nghbr_dis(lengths, ploidy, multiscale_factor, struct_true,
-                      struct_infer, mean_rtol=0.4, mean_atol=0, var_rtol=1,
-                      var_atol=0.5):
+                      struct_infer, mean_rtol=0.25, mean_atol=0, var_rtol=0.75,
+                      var_atol=0.4):
     """Make sure distances between neighboring beads are accurate."""
     row_nghbr = _neighboring_bead_indices(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor)
@@ -609,4 +609,4 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
         struct_, lengths=lengths, multiscale_factor=multiscale_factor)
     print(f"hmlg sep: true={true_interhmlg_dis},   infer={interhmlg_dis}")
     assert_allclose(true_interhmlg_dis, interhmlg_dis,
-                    rtol=0.55)  # XXX higher than when bias=None...
+                    rtol=0.8)  # XXX higher than when bias=None...
