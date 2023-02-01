@@ -131,7 +131,7 @@ def test_constraint_hsc2019(multiscale_factor):
     ('ua', 4, False), ('ambig', 4, False), ('pa', 4, False),
     ('ua', 8, False), ('ambig', 8, False), ('pa', 8, False)])
 def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
@@ -199,7 +199,7 @@ def test_kl_divergence(p, q):
     ('ua', 4, False), ('ambig', 4, False), ('pa', 4, False),
     ('ua', 8, False), ('ambig', 8, False), ('pa', 8, False)])
 def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     true_interhmlg_dis = 15

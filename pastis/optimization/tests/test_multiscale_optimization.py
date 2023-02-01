@@ -215,7 +215,7 @@ def test__choose_max_multiscale_factor(min_beads):
     "multiscale_factor,use_zero_counts",
     [(2, False), (4, False), (8, False), (2, True), (4, True), (8, True)])
 def test_fullres_per_lowres_dis(multiscale_factor, use_zero_counts):
-    lengths = np.array([100])
+    lengths = np.array([101])
     ploidy = 2
     seed = 0
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
