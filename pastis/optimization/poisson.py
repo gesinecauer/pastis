@@ -159,7 +159,7 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, beta, bias=None,
 def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
               constraints=None, reorienter=None, multiscale_factor=1,
               multiscale_reform=False, mixture_coefs=None,
-              inferring_alpha=False, mods=()):
+              inferring_alpha=False, verbose=False, mods=()):
     """Computes the objective function.
 
     Computes the negative log likelihood of the poisson model and constraints.
@@ -190,6 +190,12 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
     obj : float
         The total negative log likelihood of the poisson model and constraints.
     """
+
+    if verbose:
+        if type(X).__name__ == "DynamicJaxprTracer":
+            print("Compiling objective function via Jax JIT...", flush=True)
+        elif type(X).__name__ == "JVPTracer":
+            print("Compiling gradient function via Jax JIT...", flush=True)
 
     # Check format of input
     if not isinstance(counts, (list, tuple)):
@@ -310,26 +316,26 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
 
 objective_jit = jit(objective, static_argnames=[
     'counts', 'alpha', 'lengths', 'ploidy', 'constraints', 'reorienter',
-    'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'mods'])
+    'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'verbose', 'mods'])
 gradient = grad(objective_jit, has_aux=True)
 
 
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
-                      multiscale_reform=False, callback=None, mixture_coefs=None, mods=()):
-    """Objective function wrapper to match scipy.optimize's interface.
-    """
+                      multiscale_reform=False, callback=None, mixture_coefs=None,
+                      verbose=False, mods=()):
+    """Objective function wrapper to match scipy.optimize's interface."""
 
-    checked = _check_input(
-        lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
-        bias=bias, mixture_coefs=mixture_coefs, mods=mods)
-    (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
+    # checked = _check_input(  # TODO remove
+    #     lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
+    #     bias=bias, mixture_coefs=mixture_coefs, mods=mods)
+    # (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
     new_obj, (obj_logs, structures, alpha, epsilon) = objective_jit(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, mods=mods)
+        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
 
     if callback is not None:
         callback.on_iter_end(obj_logs=obj_logs, structures=structures,
@@ -340,9 +346,9 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
 
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    constraints=None, reorienter=None, multiscale_factor=1,
-                   multiscale_reform=False, callback=None, mixture_coefs=None, mods=()):
-    """Gradient function wrapper to match scipy.optimize's interface.
-    """
+                   multiscale_reform=False, callback=None, mixture_coefs=None,
+                   verbose=False, mods=()):
+    """Gradient function wrapper to match scipy.optimize's interface."""
 
     # checked = _check_input(  # TODO remove
     #     lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
@@ -353,7 +359,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
+        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)[0]).flatten()
 
     return new_grad
 
@@ -482,18 +488,22 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
 
     if verbose:
         print("\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\nMachine"
-              f" precision = {np.finfo(float).eps:.4g}\n", flush=True)
+              f" precision = {np.finfo(np.float64).eps:.4g}\n", flush=True)
 
+    # Compile objective & gradient via Jax JIT; initialize callback
+    _ = fprime_wrapper(
+        x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, constraints=constraints, reorienter=reorienter,
+        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+        callback=callback, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     if callback is not None:
         callback.on_optimization_begin(
             inferring='structure', alpha_loop=alpha_loop)
-        obj = objective_wrapper(
-            x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-            bias=bias, constraints=constraints, reorienter=reorienter,
-            multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-            callback=callback, mixture_coefs=mixture_coefs, mods=mods)
-    else:
-        obj = np.nan
+    obj = objective_wrapper(
+        x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+        bias=bias, constraints=constraints, reorienter=reorienter,
+        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+        callback=callback, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
 
     if multiscale_reform:
         bounds = np.append(
@@ -515,7 +525,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, bias, constraints,
                   reorienter, multiscale_factor, multiscale_reform, callback,
-                  mixture_coefs, mods))
+                  mixture_coefs, verbose, mods))
         X, obj, d = results
         converged = d['warnflag'] == 0
         conv_desc = d['task']

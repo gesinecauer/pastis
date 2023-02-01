@@ -326,6 +326,8 @@ class Callback(object):
             'time= ': self.time}
         if self.epsilon_ is not None:
             info_dict['epsilon= '] = f"{self.epsilon_:.3g}"
+        if self.iter == 0:
+            print(flush=True)
         print('\t\t'.join([f'{k}{v}' for k, v in info_dict.items()]) + '\n',
               flush=True)
 

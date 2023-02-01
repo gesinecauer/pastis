@@ -136,10 +136,10 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
                             mixture_coefs=None, callback=None, mods=()):
     """Objective function wrapper to match scipy.optimize's interface."""
 
-    checked = _check_input(
-        lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
-        bias=bias, mixture_coefs=mixture_coefs, mods=mods)
-    (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
+    # checked = _check_input(  # TODO remove?
+    #     lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
+    #     bias=bias, mixture_coefs=mixture_coefs, mods=mods)
+    # (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
     beta_new = _estimate_beta_jit(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
@@ -250,7 +250,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     if verbose:
         print("\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\nMachine"
-              f" precision = {np.finfo(float).eps:.4g}\n", flush=True)
+              f" precision = {np.finfo(np.float64).eps:.4g}\n", flush=True)
 
     beta_init = {c.ambiguity: c.beta for c in counts}
 
