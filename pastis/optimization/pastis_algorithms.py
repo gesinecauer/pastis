@@ -668,7 +668,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             init_ = infer_param['orient']
         else:
             init_ = struct_
-        if 'epsilon' in infer_param:
+        if 'epsilon' in infer_param and infer_param['epsilon'] is not None:
             # Epsilon for the next-highest resolution should be smaller than
             # the previous resolution's epsilon... but allow some wiggle room
             epsilon_max_ = infer_param['epsilon'] * 1.5

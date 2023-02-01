@@ -73,7 +73,7 @@ def compare_hmlg_dis(lengths, ploidy, multiscale_factor, struct_true,
     (1, True), (2, True), (4, True), (8, True), (2, False), (4, False),
     (8, False)])
 def test_haploid(multiscale_factor, multiscale_reform):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 1
     seed = 0
     bcc_lambda = 0
@@ -104,7 +104,7 @@ def test_haploid(multiscale_factor, multiscale_reform):
     (1, True), (2, True), (4, True), (8, True), (2, False), (4, False),
     (8, False)])
 def test_haploid_biased(multiscale_factor, multiscale_reform):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 1
     seed = 0
     bcc_lambda = 0
@@ -135,7 +135,7 @@ def test_haploid_biased(multiscale_factor, multiscale_reform):
 @pytest.mark.parametrize("multiscale_rounds,multiscale_reform", [
     (1, True), (2, True), (2, False)])
 def test_haploid_run_pastis(multiscale_rounds, multiscale_reform):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 1
     seed = 0
     bcc_lambda = 0
@@ -165,7 +165,7 @@ def test_haploid_run_pastis(multiscale_rounds, multiscale_reform):
 @pytest.mark.parametrize("multiscale_rounds,multiscale_reform", [
     (1, True), (2, True), (2, False)])
 def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 1
     seed = 0
     bcc_lambda = 0
@@ -310,7 +310,7 @@ def test_constraint_bcc2019():
 
 
 def test_constraint_hsc2019_infer_hmlg_sep():
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     bcc_lambda = 0
@@ -358,7 +358,7 @@ def test_constraint_hsc2019_infer_hmlg_sep():
     ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_constraint_hsc2019(ambiguity, multiscale_factor):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     bcc_lambda = 1  # Can include to improve stability, update as needed
@@ -401,7 +401,7 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
     ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_constraint_bcc2022(ambiguity, multiscale_factor):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
@@ -451,7 +451,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
     ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
@@ -501,7 +501,7 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
     ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_constraint_hsc2022(ambiguity, multiscale_factor):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
@@ -558,7 +558,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     ('ua', 1), ('ambig', 1), ('pa', 1), ('ua', 2), ('ambig', 2), ('pa', 2),
     ('ua', 4), ('ambig', 4), ('pa', 4), ('ua', 8), ('ambig', 8), ('pa', 8)])
 def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
-    lengths = np.array([40])
+    lengths = np.array([41])
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
