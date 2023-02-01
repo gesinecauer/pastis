@@ -180,6 +180,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
 def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     filter_threshold=0.04, normalize=True, bias=None, alpha_init=None,
                     max_alpha_loop=20, beta=None, multiscale_factor=1,
+                    epsilon_min=1e-2, epsilon_max=1e6,
                     beta_init=None, init='mds', max_iter=30000,
                     factr=1e7, pgtol=1e-05, alpha_factr=1e12,
                     bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
@@ -227,7 +228,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         reorienter=reorienter, mixture_coefs=mixture_coefs,
         struct_true=struct_true, verbose=verbose, mods=mods)
     if multiscale_reform and multiscale_factor != 1:
-        epsilon = random_state.uniform()
+        epsilon = random_state.uniform(
+            low=epsilon_min * 1.1, high=min(1, epsilon_max))
     else:
         epsilon = None
 
@@ -392,7 +394,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts, lengths=lengths, ploidy=ploidy, outdir=outdir, alpha=alpha,
         seed=seed, filter_threshold=filter_threshold, normalize=normalize,
         bias=bias, alpha_init=alpha_init, max_alpha_loop=max_alpha_loop,
-        beta=beta, multiscale_factor=multiscale_factor, beta_init=beta_init, init=init,
+        beta=beta, multiscale_factor=multiscale_factor, epsilon_min=epsilon_min,
+        epsilon_max=epsilon_max, beta_init=beta_init, init=init,
         max_iter=max_iter, factr=factr, pgtol=pgtol, alpha_factr=alpha_factr,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
         hsc_version=hsc_version, data_interchrom=data_interchrom,
@@ -596,7 +599,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
         alpha = infer_param['alpha']
         beta = infer_param['beta']
-        est_hmlg_sep_ = infer_param['est_hmlg_sep']
+        if 'est_hmlg_sep' in infer_param:
+            est_hmlg_sep_ = infer_param['est_hmlg_sep']
         alpha_loop = infer_param['alpha_loop']
         if outdir is not None:
             outdir_ = os.path.join(
