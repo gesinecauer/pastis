@@ -15,7 +15,7 @@ import jax.numpy as jnp
 from .utils_poisson import _print_code_header, _get_output_files
 from .utils_poisson import _output_subdir, _load_infer_param
 from .utils_poisson import distance_between_homologs, distance_between_molecules
-from .counts import preprocess_counts, _ambiguate_beta
+from .counts import preprocess_counts, _ambiguate_beta, ambiguate_counts
 from .counts import _set_initial_beta
 from .initialization import initialize
 from .callbacks import Callback
