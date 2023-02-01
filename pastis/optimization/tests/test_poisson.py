@@ -1,7 +1,7 @@
 import sys
 import pytest
 import numpy as np
-from numpy.testing import assert_array_almost_equal
+from numpy.testing import assert_allclose
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -263,7 +263,7 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
         multiscale_reform=multiscale_reform)[0]._value
 
     print(f"{obj_unbiased=:g}   {obj_biased=:g}")
-    assert_array_almost_equal(obj_unbiased, obj_biased)
+    assert_allclose(obj_unbiased, obj_biased)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor", [

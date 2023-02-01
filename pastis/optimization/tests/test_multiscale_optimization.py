@@ -1,7 +1,7 @@
 import sys
 import pytest
 import numpy as np
-from numpy.testing import assert_array_almost_equal, assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -83,7 +83,7 @@ def test_increase_struct_res():
     struct_highres_test = multiscale_optimization.increase_struct_res(
         struct_lowres, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    assert_array_almost_equal(
+    assert_allclose(
         struct_highres_correct, struct_highres_test)
 
 
@@ -110,9 +110,9 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
         counts, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy).toarray()
 
-    assert_array_almost_equal(
+    assert_array_equal(
         counts_lowres_correct != 0, counts_lowres_test != 0)
-    assert_array_almost_equal(counts_lowres_correct, counts_lowres_test)
+    assert_allclose(counts_lowres_correct, counts_lowres_test)
 
 
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
@@ -151,7 +151,7 @@ def test_decrease_struct_res(multiscale_factor):
         struct, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
 
-    assert_array_almost_equal(
+    assert_allclose(
         struct_lowres_correct, struct_lowres_test)
 
 
@@ -193,7 +193,7 @@ def test_get_epsilon_from_struct(multiscale_factor):
         struct, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, replace_nan=False, verbose=False)
 
-    assert_array_almost_equal(np.mean(epsilon_correct), epsilon_test)
+    assert_allclose(np.mean(epsilon_correct), epsilon_test)
 
 
 @pytest.mark.parametrize("min_beads", [5, 10, 11, 100, 101, 200])

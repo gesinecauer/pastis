@@ -2,7 +2,7 @@ import sys
 import pytest
 import numpy as np
 from scipy.special import rel_entr
-from numpy.testing import assert_array_almost_equal
+from numpy.testing import assert_allclose
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -186,8 +186,8 @@ def test_kl_divergence(p, q):
     q = np.array(q, ndmin=1, copy=False)
 
     kl_correct = rel_entr(p, q).sum()
-    kl_test = constraints._kl_divergence(p, np.log(q))
-    assert_array_almost_equal(kl_correct, kl_test)
+    kl_test = constraints._kl_divergence(p, np.log(q), mean=False)
+    assert_allclose(kl_correct, kl_test)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor,multiscale_reform", [

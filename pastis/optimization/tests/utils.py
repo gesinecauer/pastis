@@ -102,6 +102,8 @@ def separate_homologs(struct, lengths, true_interhmlg_dis, random_state=None):
     """Separate homolog centers of mass by specified distance"""
     if random_state is None:
         random_state = np.random.RandomState(seed=0)
+    elif isinstance(random_state, int):
+        random_state = np.random.RandomState(seed=random_state)
 
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
@@ -269,6 +271,11 @@ def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity,
     """For convenience, create data_interchrom from unambig inter-hmlg counts
 
     Enables generation of data_interchrom for one simulated chromosome"""
+
+    if random_state is None:
+        random_state = np.random.RandomState(seed=0)
+    elif isinstance(random_state, int):
+        random_state = np.random.RandomState(seed=random_state)
 
     if ambiguity.lower() == "pa":
         beta_ua = beta * 2

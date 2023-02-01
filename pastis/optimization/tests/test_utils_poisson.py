@@ -1,7 +1,7 @@
 import sys
 import pytest
 import numpy as np
-from numpy.testing import assert_array_almost_equal, assert_array_equal
+from numpy.testing import assert_array_equal, assert_allclose
 from sklearn.metrics.pairwise import paired_distances
 
 pytestmark = pytest.mark.skipif(
@@ -27,7 +27,7 @@ def test_euclidean_distance():
 
     euc_dis_correct = paired_distances(struct[row], struct[col])
     euc_dis_test = utils_poisson._euclidean_distance(struct, row=row, col=col)
-    assert_array_almost_equal(euc_dis_correct, euc_dis_test)
+    assert_allclose(euc_dis_correct, euc_dis_test)
 
 
 @pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
@@ -267,7 +267,7 @@ def test_distance_between_homologs(multiscale_factor):
     hmlg_sep_test = utils_poisson.distance_between_homologs(
         struct_lowres, lengths=lengths, multiscale_factor=multiscale_factor)
 
-    assert_array_almost_equal(hmlg_sep_correct, hmlg_sep_test)
+    assert_allclose(hmlg_sep_correct, hmlg_sep_test)
 
 
 @pytest.mark.parametrize("multiscale_factor", [1, 2, 4, 8])
@@ -288,7 +288,7 @@ def test_distance_between_molecules(multiscale_factor):
         struct_lowres, lengths=lengths, ploidy=2,
         multiscale_factor=multiscale_factor)
 
-    assert_array_almost_equal(mol_sep_correct, mol_sep_test)
+    assert_allclose(mol_sep_correct, mol_sep_test)
 
 
 @pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])

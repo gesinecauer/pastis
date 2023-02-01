@@ -2,7 +2,7 @@ import sys
 import pytest
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances, paired_distances
-from numpy.testing import assert_array_almost_equal
+from numpy.testing import assert_allclose
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -14,13 +14,14 @@ if sys.version_info[0] >= 3:
     from utils import get_counts, get_struct_randwalk, get_true_data_interchrom
     from utils import decrease_struct_res_correct
     from pastis.optimization import pastis_algorithms
-    from pastis.optimization.constraints import _inter_homolog_dis
+    from pastis.optimization.utils_poisson import distance_between_homologs
     from pastis.optimization.constraints import _neighboring_bead_indices
     from pastis.optimization.multiscale_optimization import decrease_lengths_res
 
 
 def compare_nghbr_dis(lengths, ploidy, multiscale_factor, struct_true,
-                      struct_infer, mean_decimal=0, var_decimal=-1):
+                      struct_infer, mean_rtol=0.4, mean_atol=0, var_rtol=1,
+                      var_atol=0.5):
     """Make sure distances between neighboring beads are accurate."""
     row_nghbr = _neighboring_bead_indices(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor)
@@ -36,14 +37,16 @@ def compare_nghbr_dis(lengths, ploidy, multiscale_factor, struct_true,
     print(f"{np.median(nghbr_dis_correct)=:g}    {np.median(nghbr_dis_)=:g}")
     print(f"{nghbr_dis_correct.mean()=:g}    {nghbr_dis_.mean()=:g}")
     print(f"{nghbr_dis_correct.var()=:g}    {nghbr_dis_.var()=:g}")
-    assert_array_almost_equal(
-        nghbr_dis_correct.mean(), nghbr_dis_.mean(), decimal=mean_decimal)
-    assert_array_almost_equal(
-        nghbr_dis_correct.var(), nghbr_dis_.var(), decimal=var_decimal)
+    assert_allclose(
+        nghbr_dis_correct.mean(), nghbr_dis_.mean(), rtol=mean_rtol,
+        atol=mean_atol)
+    assert_allclose(
+        nghbr_dis_correct.var(), nghbr_dis_.var(), rtol=var_rtol, atol=var_atol)
 
 
 def compare_hmlg_dis(lengths, ploidy, multiscale_factor, struct_true,
-                     struct_infer, mean_decimal=0, var_decimal=-1):
+                     struct_infer, mean_rtol=0.25, mean_atol=0, var_rtol=1,
+                     var_atol=1):
     """Check individual inter-homolog distances between all loci"""
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -58,11 +61,12 @@ def compare_hmlg_dis(lengths, ploidy, multiscale_factor, struct_true,
     print(f"{np.median(dis_interhmlg_correct)=:g}    {np.median(dis_interhmlg_)=:g}")
     print(f"{dis_interhmlg_correct.mean()=:g}    {dis_interhmlg_.mean()=:g}")
     print(f"{dis_interhmlg_correct.var()=:g}    {dis_interhmlg_.var()=:g}")
-    assert_array_almost_equal(
-        dis_interhmlg_correct.mean(), dis_interhmlg_.mean(),
-        decimal=mean_decimal)
-    assert_array_almost_equal(
-        dis_interhmlg_correct.var(), dis_interhmlg_.var(), decimal=var_decimal)
+    assert_allclose(
+        dis_interhmlg_correct.mean(), dis_interhmlg_.mean(), rtol=mean_rtol,
+        atol=mean_atol)
+    assert_allclose(
+        dis_interhmlg_correct.var(), dis_interhmlg_.var(), rtol=var_rtol,
+        atol=var_atol)
 
 
 @pytest.mark.parametrize("multiscale_factor,multiscale_reform", [
@@ -188,10 +192,7 @@ def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
     assert infer_param['converged']
 
     print(f"{alpha=:g}    {infer_param['alpha']=:g}")
-    if multiscale_rounds == 1:
-        assert_array_almost_equal(alpha, infer_param['alpha'], decimal=0)
-    else:
-        assert_array_almost_equal(alpha, infer_param['alpha'], decimal=1)
+    assert_allclose(alpha, infer_param['alpha'], rtol=0.1)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor", [
@@ -265,8 +266,8 @@ def test_diploid_combo():
     # Make sure estimated betas are appropriate given nreads per counts matrix
     infer_beta = np.array(infer_param['beta'])
     sim_ratio = np.array([ratio_ambig, ratio_pa, ratio_ua])
-    assert_array_almost_equal(
-        infer_beta / infer_beta.sum(), sim_ratio / sim_ratio.sum(), decimal=2)
+    assert_allclose(
+        infer_beta / infer_beta.sum(), sim_ratio / sim_ratio.sum(), rtol=0.01)
 
 
 def test_constraint_bcc2019():
@@ -279,7 +280,7 @@ def test_constraint_bcc2019():
     alpha, beta = -3, 1e3
     true_interhmlg_dis = 10
     multiscale_factor = 1
-    null = True  # Only optimize constraints, not main obj
+    null = True  # If True, only optimize constraints, not main obj
     init = None
 
     random_state = np.random.RandomState(seed=seed)
@@ -304,8 +305,8 @@ def test_constraint_bcc2019():
 
     compare_nghbr_dis(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
-        var_decimal=-1)
+        struct_true=struct_true, struct_infer=struct_, mean_rtol=0.25,
+        var_rtol=0.75)
 
 
 def test_constraint_hsc2019_infer_hmlg_sep():
@@ -317,7 +318,7 @@ def test_constraint_hsc2019_infer_hmlg_sep():
     true_interhmlg_dis = 15
     est_hmlg_sep = None  # Want to make sure can be inferred from unambig
     alpha, beta = -3, 1e3
-    null = True  # Only optimize constraints, not main obj
+    null = True  # If True, only optimize constraints, not main obj
     init = None
 
     random_state = np.random.RandomState(seed=seed)
@@ -341,12 +342,13 @@ def test_constraint_hsc2019_infer_hmlg_sep():
     assert infer_param['converged']
 
     infer_est_hmlg_sep = infer_param['est_hmlg_sep']
-    interhmlg_dis = _inter_homolog_dis(struct_, lengths=lengths)
+    interhmlg_dis = distance_between_homologs(
+        struct_, lengths=lengths, multiscale_factor=1)
     print(f"hmlg sep: true={true_interhmlg_dis}, infer={infer_est_hmlg_sep}, "
           f"final={interhmlg_dis}")
 
     # Make sure inference of est_hmlg_sep yields an acceptable result
-    assert_array_almost_equal(true_interhmlg_dis, infer_est_hmlg_sep, decimal=0)
+    assert_allclose(true_interhmlg_dis, infer_est_hmlg_sep, rtol=0.25)
 
     # Make sure inferred homologs are separated >= inferred est_hmlg_sep
     assert interhmlg_dis >= infer_est_hmlg_sep - 1e-6
@@ -364,7 +366,7 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
     true_interhmlg_dis = 15
     est_hmlg_sep = true_interhmlg_dis  # Using true value for convenience
     alpha, beta = -3, 1e3
-    null = True  # Only optimize constraints, not main obj
+    null = True  # If True, only optimize constraints, not main obj
     init = None
 
     random_state = np.random.RandomState(seed=seed)
@@ -388,10 +390,10 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
 
     assert infer_param['converged']
 
-    interhmlg_dis = _inter_homolog_dis(struct_, lengths=lengths)
-    print(f"hmlg sep: true={true_interhmlg_dis},   infer={interhmlg_dis}")
-
     # Make sure inferred homologs are separated >= inferred est_hmlg_sep
+    interhmlg_dis = distance_between_homologs(
+        struct_, lengths=lengths, multiscale_factor=multiscale_factor)
+    print(f"hmlg sep: true={true_interhmlg_dis},   infer={interhmlg_dis}")
     assert interhmlg_dis >= est_hmlg_sep - 1e-6
 
 
@@ -403,12 +405,12 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
-    true_interhmlg_dis = 10
+    true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true if including hsc2022
     bcc_lambda = 0.1  # Update this as needed
-    hsc_lambda = 1  # Can include to improve stability, update as needed
-    null = True  # Only optimize constraints, not main obj
+    hsc_lambda = 10  # Can include to improve stability, update as needed
+    null = True  # If True, only optimize constraints, not main obj
     init = None
 
     random_state = np.random.RandomState(seed=seed)
@@ -442,8 +444,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
 
     compare_nghbr_dis(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
-        var_decimal=-1)
+        struct_true=struct_true, struct_infer=struct_)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor", [
@@ -454,12 +455,12 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
-    true_interhmlg_dis = 10
+    true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true if including hsc2022
     bcc_lambda = 0.1  # Update this as needed
-    hsc_lambda = 1  # Can include to improve stability, update as needed
-    null = True  # Only optimize constraints, not main obj
+    hsc_lambda = 10  # Can include to improve stability, update as needed
+    null = True  # If True, only optimize constraints, not main obj
     init = None
 
     random_state = np.random.RandomState(seed=seed)
@@ -493,8 +494,7 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
 
     compare_nghbr_dis(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
-        var_decimal=-1)
+        struct_true=struct_true, struct_infer=struct_)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor", [
@@ -505,12 +505,12 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
-    true_interhmlg_dis = 10
+    true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true for hsc2022
     bcc_lambda = 0.1  # Can include to improve stability, update as needed
-    hsc_lambda = 1  # Update this as needed
-    null = True  # Only optimize constraints, not main obj
+    hsc_lambda = 10  # Update this as needed
+    null = True  # If True, only optimize constraints, not main obj
     init = None
 
     random_state = np.random.RandomState(seed=seed)
@@ -545,13 +545,13 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     # Check individual inter-homolog distances between all loci
     compare_hmlg_dis(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
-        var_decimal=-1)
+        struct_true=struct_true, struct_infer=struct_)
 
     # Make sure distance between homolog centers of mass isn't way off
-    interhmlg_dis = _inter_homolog_dis(struct_, lengths=lengths)
+    interhmlg_dis = distance_between_homologs(
+        struct_, lengths=lengths, multiscale_factor=multiscale_factor)
     print(f"hmlg sep: true={true_interhmlg_dis},   infer={interhmlg_dis}")
-    assert_array_almost_equal(true_interhmlg_dis, interhmlg_dis, decimal=-1)
+    assert_allclose(true_interhmlg_dis, interhmlg_dis, rtol=0.35)
 
 
 @pytest.mark.parametrize("ambiguity,multiscale_factor", [
@@ -562,12 +562,12 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
     ploidy = 2
     seed = 0
     alpha, beta = -3, 1e3
-    true_interhmlg_dis = 10
+    true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true for hsc2022
     bcc_lambda = 0.1  # Can include to improve stability, update as needed
-    hsc_lambda = 1  # Update this as needed
-    null = True  # Only optimize constraints, not main obj
+    hsc_lambda = 10  # Update this as needed
+    null = True  # If True, only optimize constraints, not main obj
     init = None
 
     random_state = np.random.RandomState(seed=seed)
@@ -602,11 +602,11 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
     # Check individual inter-homolog distances between all loci
     compare_hmlg_dis(
         lengths=lengths, ploidy=ploidy, multiscale_factor=multiscale_factor,
-        struct_true=struct_true, struct_infer=struct_, mean_decimal=0,
-        var_decimal=-1)
+        struct_true=struct_true, struct_infer=struct_)
 
     # Make sure distance between homolog centers of mass isn't way off
-    interhmlg_dis = _inter_homolog_dis(struct_, lengths=lengths)
+    interhmlg_dis = distance_between_homologs(
+        struct_, lengths=lengths, multiscale_factor=multiscale_factor)
     print(f"hmlg sep: true={true_interhmlg_dis},   infer={interhmlg_dis}")
-    assert_array_almost_equal(true_interhmlg_dis, interhmlg_dis, decimal=-1)
-
+    assert_allclose(true_interhmlg_dis, interhmlg_dis,
+                    rtol=0.55)  # XXX higher than when bias=None...

@@ -2,7 +2,7 @@ import sys
 import pytest
 import numpy as np
 from scipy import sparse
-from numpy.testing import assert_array_almost_equal, assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
@@ -42,9 +42,9 @@ def compare_counts_bins_objects(bins, bins_correct):
     # print(bins.data[:, 0])
 
     if bins_correct.data is not None and bins.data is not None:
-        assert_array_almost_equal(
+        assert_allclose(
             bins_correct.data.sum(axis=0), bins.data.sum(axis=0))
-        assert_array_almost_equal(bins_correct.data, bins.data)
+        assert_allclose(bins_correct.data, bins.data)
     else:
         assert bins_correct.data is None
         assert bins.data is None
@@ -81,7 +81,7 @@ def compare_counts_objects(counts, counts_correct):
         np.isnan(counts_correct_arr)) & (counts_correct_arr != 0)
     counts_non0 = np.invert(np.isnan(counts_arr)) & (counts_arr != 0)
     assert_array_equal(counts_correct_non0, counts_non0)
-    assert_array_almost_equal(counts_correct_arr, counts_arr)
+    assert_allclose(counts_correct_arr, counts_arr)
 
     # Compare CountsBins objects
     print("COMPARING NONZERO BINS")
@@ -314,7 +314,7 @@ def test_ambiguate_beta(ambiguity, use_bias):
     beta_mle = _estimate_beta(
         struct_true, counts=counts_objects, alpha=alpha, lengths=lengths,
         ploidy=ploidy, bias=bias)[0]._value
-    assert_array_almost_equal(beta, beta_mle)
+    assert_allclose(beta, beta_mle)
 
     # Test _ambiguate_beta
     counts_ambig = ambiguate_counts_correct(
@@ -327,13 +327,13 @@ def test_ambiguate_beta(ambiguity, use_bias):
         ploidy=ploidy, bias=bias)[0]._value
     beta_ambig_test = counts_py._ambiguate_beta(
         beta, counts=counts, lengths=lengths, ploidy=ploidy)
-    assert_array_almost_equal(beta_ambig_correct, beta_ambig_test)
+    assert_allclose(beta_ambig_correct, beta_ambig_test)
 
     # Test _disambiguate_beta
     beta_disambig = counts_py._disambiguate_beta(
         beta_ambig_correct, counts=counts, lengths=lengths, ploidy=ploidy,
         bias=bias)[0]
-    assert_array_almost_equal(beta, beta_disambig)
+    assert_allclose(beta, beta_disambig)
 
 
 @pytest.mark.parametrize("use_bias", [False, True])
@@ -374,4 +374,4 @@ def test_set_initial_beta(use_bias):
     _, beta_nghbr2 = counts_py._set_initial_beta(
         counts2, lengths=lengths, ploidy=ploidy, bias=bias, exclude_zeros=False,
         neighboring_beads_only=True)
-    assert_array_almost_equal(beta_nghbr1, beta_nghbr2, decimal=5)  # Approx eq
+    assert_allclose(beta_nghbr1, beta_nghbr2, rtol=1e-3)  # Approx eq

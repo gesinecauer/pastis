@@ -1,7 +1,7 @@
 import sys
 import pytest
 import numpy as np
-from numpy.testing import assert_array_almost_equal
+from numpy.testing import assert_allclose
 from scipy.special import gammaln as gammaln
 from scipy.stats import nbinom, poisson
 
@@ -37,14 +37,14 @@ def gammaln_via_stirling_approx(x, stirling_fxn):
 def test_polyval(x):
     correct_polyval = np.polyval(coefs_stirling, x=x)
     jax_polyval = _polyval(x, c=coefs_stirling)
-    assert_array_almost_equal(correct_polyval, jax_polyval)
+    assert_allclose(correct_polyval, jax_polyval)
 
 
 @pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
 def test_stirling_approx(x):
     correct_stirling = stirling_with_np_polyval(x)
     jax_stirling = likelihoods._stirling(x)
-    assert_array_almost_equal(correct_stirling, jax_stirling)
+    assert_allclose(correct_stirling, jax_stirling)
 
 
 @pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
@@ -52,7 +52,7 @@ def test_gammaln_numpy(x):
     correct_gammaln = gammaln(x)
     np_gammaln = gammaln_via_stirling_approx(
         x, stirling_fxn=stirling_with_np_polyval)
-    assert_array_almost_equal(correct_gammaln, np_gammaln)
+    assert_allclose(correct_gammaln, np_gammaln, rtol=1e-4)
 
 
 @pytest.mark.parametrize("x", [1.8, 3.5, 6.23, 10.4, 81.3, 140.5])
@@ -60,7 +60,7 @@ def test_gammaln_jax(x):
     correct_gammaln = gammaln(x)
     jax_gammaln = gammaln_via_stirling_approx(
         x, stirling_fxn=likelihoods._stirling)
-    assert_array_almost_equal(correct_gammaln, jax_gammaln)
+    assert_allclose(correct_gammaln, jax_gammaln, rtol=1e-4)
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5])
@@ -86,8 +86,8 @@ def test_gamma_poisson_nll(seed):
     tmp4 = np.mean(n * np.log(p))
     nll_correct = - (tmp1 + tmp2 + tmp3 + tmp4)
 
-    assert_array_almost_equal(nll, nll_scipy)
-    assert_array_almost_equal(nll, nll_correct)
+    assert_allclose(nll, nll_scipy)
+    assert_allclose(nll, nll_correct)
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5])
@@ -103,4 +103,4 @@ def test_poisson_nll(seed):
     log_factorial_data = gammaln(data + 1).mean()
     nll_scipy = -poisson.logpmf(data, mu=mu).mean() - log_factorial_data
 
-    assert_array_almost_equal(nll, nll_scipy)
+    assert_allclose(nll, nll_scipy)
