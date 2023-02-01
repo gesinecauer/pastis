@@ -360,7 +360,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
 
 def _check_input(lengths, alpha, counts, constraints, bias, mixture_coefs,
                  lengths_as_tuple=True, mods=()):
-    """Check format of input; convert lists to tuples for jax jit"""
+    """Check format of input; convert lists to tuples for jax JIT compilation"""
 
     if lengths_as_tuple:
         if not isinstance(lengths, tuple):

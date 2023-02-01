@@ -13,7 +13,7 @@ _setup_jax()
 import jax.numpy as jnp
 
 from .utils_poisson import _print_code_header, _get_output_files
-from .utils_poisson import _output_subdir, _load_infer_param
+from .utils_poisson import _output_subdir, _load_infer_param, _format_structures
 from .utils_poisson import distance_between_homologs, distance_between_molecules
 from .counts import preprocess_counts, _ambiguate_beta, ambiguate_counts
 from .counts import _set_initial_beta
@@ -263,7 +263,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         **callback_fxns, verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
-            epsilon, ploidy, beta_init)
+            epsilon, ploidy)
 
 
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
@@ -346,8 +346,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     est_hmlg_sep : list of float, optional
         For diploid organisms: hyperparameter of the homolog-separating
         constraint specificying the expected distance between homolog
-        centers of mass for each chromosome. If not supplied, `est_hmlg_sep` will
-        be inferred from the counts data.
+        centers of mass for each chromosome.
     hsc_min_beads : int, optional
         For diploid organisms: number of beads in the low-resolution
         structure from which `est_hmlg_sep` is estimated.
@@ -406,7 +405,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
         outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, bias, struct_nan, struct_init, constraints, callback, epsilon,
-        ploidy, beta_init) = prepped
+        ploidy) = prepped
 
     # INFER STRUCTURE
     pm = PastisPM(
@@ -445,12 +444,13 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         'converged': pm.converged_, 'conv_desc': pm.conv_desc_,
         'time': pm.time_elapsed_, 'epsilon': pm.epsilon_,
         'alpha_obj': pm.alpha_obj_, 'alpha_converged': alpha_converged_,
-        'alpha_loop': alpha_loop, 'rescale_by': rescale_by}
-    if constraints is not None:
-        hsc19 = [x for x in constraints if (
-            isinstance(x, HomologSeparating2019) and x.lambda_val > 0)]
-        if len(hsc19) == 1:
-            infer_param['est_hmlg_sep'] = hsc19[0].hparams['est_hmlg_sep']
+        'alpha_loop': alpha_loop, 'rescale_by': rescale_by,
+        'est_hmlg_sep': est_hmlg_sep}
+    # if constraints is not None:  # TODO remove
+    #     hsc19 = [x for x in constraints if (
+    #         isinstance(x, HomologSeparating2019) and x.lambda_val > 0)]
+    #     if len(hsc19) == 1:
+    #         infer_param['est_hmlg_sep'] = hsc19[0].hparams['est_hmlg_sep']
     if reorienter is not None and reorienter.reorient:
         infer_param['orient'] = pm.orientation_.flatten()
 
@@ -668,8 +668,10 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             init_ = infer_param['orient']
         else:
             init_ = struct_
-        if 'epsilon' in infer_param:  # Adjust for lower resolutions
-            epsilon_max_ = infer_param['epsilon']
+        if 'epsilon' in infer_param:
+            # Epsilon for the next-highest resolution should be smaller than
+            # the previous resolution's epsilon... but allow some wiggle room
+            epsilon_max_ = infer_param['epsilon'] * 1.5
         if 'lowres_exit' in mods:
             exit(0)
 
