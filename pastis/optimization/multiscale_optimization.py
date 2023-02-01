@@ -598,19 +598,18 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
 
 
 def _choose_max_multiscale_factor(lengths, min_beads):
-    """Choose the maximum multiscale factor, given `min_beads`.
-    """
+    """Find the lowest resolution where structures have at least `min_beads`."""
 
     multiscale_factor = 1
-    while decrease_lengths_res(
-            lengths, multiscale_factor * 2).min() >= min_beads:
+    while np.min(decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor * 2)) >= min_beads:
         multiscale_factor *= 2
+
     return multiscale_factor
 
 
 def _choose_max_multiscale_rounds(lengths, min_beads):
-    """Choose the maximum number of multiscale rounds, given `min_beads`.
-    """
+    """Choose the maximum number of multiscale rounds, given min_beads."""
 
     multiscale_factor = _choose_max_multiscale_factor(
         lengths, min_beads=min_beads)
