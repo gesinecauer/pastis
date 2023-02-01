@@ -684,10 +684,10 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
     if multiscale_factor == 1 or multires_naive:
         return bias[row] * bias[col]
     else:
-        (row, col, bad_idx), _ = _get_fullres_counts_index(
+        (row_fullres, col_fullres, bad_idx), _ = _get_fullres_counts_index(
             multiscale_factor=multiscale_factor, lengths=lengths,
             ploidy=ploidy, lowres_idx=(row, col))
-        bias_per_bin = bias[row] * bias[col]
+        bias_per_bin = bias[row_fullres] * bias[col_fullres]
         bias_per_bin = tmp_np.where(bad_idx, 0, bias_per_bin)
         return bias_per_bin.reshape(multiscale_factor ** 2, -1)
 
