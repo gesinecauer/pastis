@@ -703,6 +703,12 @@ _isin_multidim = np.vectorize(
     doc='A multi-dimensional version of numpy.isin')
 
 
+_isin_2d = np.vectorize(
+    lambda arr1, arr2: np.any((arr2[:, 0] == arr1[0]) & (arr2[:, 1] == arr1[1])),
+    signature='(n),(m,n)->()',
+    doc='A 2-dimensional version of numpy.isin')
+
+
 def _idx_isin(idx1, idx2):
     """Whether each (row, col) pair in idx1 (row1, col1) is in idx2 (row2, col2)
     """
@@ -713,7 +719,7 @@ def _idx_isin(idx1, idx2):
         idx2 = np.stack(idx2, axis=1)
 
     mask2 = np.isin(idx2[:, 0], idx1[:, 0]) & np.isin(idx2[:, 1], idx1[:, 1])
-    # print(f"\n*** \tISIN {(~mask2).sum()=}/{mask2.size}", flush=True) # TODO remove?
+    # print(f"\n*** \tISIN {(~mask2).sum()=}/{mask2.size}", flush=True) # TODO remove
     if mask2.sum() == 0:
         return np.full(idx1.shape[0], False)
     idx2 = idx2[mask2]
@@ -722,9 +728,9 @@ def _idx_isin(idx1, idx2):
     if mask1.sum() == 0:
         return mask1
     # print(f"*** \tISIN {(~mask1).sum()=}/{mask1.size}", flush=True) # TODO remove
-    mask1[mask1] = _isin_multidim(idx1[mask1], idx2)
+    mask1[mask1] = _isin_2d(idx1[mask1], idx2)
     return mask1
-    # return _isin_multidim(idx1, idx2) # TODO remove?
+    # return _isin_2d(idx1, idx2) # TODO remove?
 
 
 def _get_nonzero_mask(multiscale_factor, lengths, ploidy, row, col,
@@ -958,13 +964,17 @@ class CountsMatrix(object):
                 np.ones(self.shape, dtype=np.uint8), lengths=lengths_lowres,
                 ploidy=self.ploidy, check_counts=False).astype(np.uint8))
 
-            # Exclude bins that have nonzero counts
             # Exclude loci that have no data in any row/col bin
-            idx_all_mask = ~_idx_isin(
-                (dummy.row, dummy.col),
-                (self.bins_nonzero.row, self.bins_nonzero.col)) & ~np.isin(
-                dummy.row, _empty_idx_lowres) & ~np.isin(
-                dummy.col, _empty_idx_lowres)
+            idx_all_mask = np.isin(
+                dummy.row, _empty_idx_lowres, invert=True) & np.isin(
+                dummy.col, _empty_idx_lowres, invert=True)
+
+            # Exclude bins that have nonzero counts
+            if idx_all_mask.sum() > 0:
+                idx_all_mask[idx_all_mask] = ~_idx_isin(
+                    (dummy.row[idx_all_mask], dummy.col[idx_all_mask]),
+                    (self.bins_nonzero.row, self.bins_nonzero.col))
+
             zero_row = dummy.row[idx_all_mask]
             zero_col = dummy.col[idx_all_mask]
         else:
@@ -974,13 +984,17 @@ class CountsMatrix(object):
                 counts_fullres_shape=(self.lengths.sum(), self.lengths.sum()))
             row_lowres_all, col_lowres_all = idx_lowres_all
 
-            # Exclude low-res bins that contain any nonzero counts
             # Exclude low-res loci that have no data in any low-res row/col bin
-            idx_all_mask = ~_idx_isin(
-                idx_lowres_all,
-                (self.bins_nonzero.row, self.bins_nonzero.col)) & ~np.isin(
-                row_lowres_all, _empty_idx_lowres) & ~np.isin(
-                col_lowres_all, _empty_idx_lowres)
+            idx_all_mask = np.isin(
+                row_lowres_all, _empty_idx_lowres, invert=True) & np.isin(
+                col_lowres_all, _empty_idx_lowres, invert=True)
+
+            # Exclude low-res bins that contain any nonzero counts
+            if idx_all_mask.sum() > 0:
+                idx_all_mask[idx_all_mask] = ~_idx_isin(
+                    (row_lowres_all[idx_all_mask], col_lowres_all[idx_all_mask]),
+                    (self.bins_nonzero.row, self.bins_nonzero.col))
+
             zero_row = row_lowres_all[idx_all_mask]
             zero_col = col_lowres_all[idx_all_mask]
             row_fullres, col_fullres, bad_idx_fullres = [x.reshape(
