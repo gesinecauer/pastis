@@ -16,6 +16,17 @@ if sys.version_info[0] >= 3:
     from topsy.utils.debug import print_array_non0  # TODO remove
 
 
+def idx_isin_correct(idx1, idx2):
+    """Whether each (row, col) pair in idx1 (row1, col1) is in idx2 (row2, col2)
+    """
+
+    if isinstance(idx1, (list, tuple)):
+        idx1 = np.stack(idx1, axis=1)
+    if isinstance(idx2, (list, tuple)):
+        idx2 = np.stack(idx2, axis=1)
+    return (idx1 == idx2[:, None]).all(axis=2).any(axis=0)
+
+
 def compare_counts_bins_objects(bins, bins_correct):
     if bins_correct is None and bins is None:
         return
@@ -375,3 +386,28 @@ def test_set_initial_beta(use_bias):
         counts2, lengths=lengths, ploidy=ploidy, bias=bias, exclude_zeros=False,
         neighboring_beads_only=True)
     assert_allclose(beta_nghbr1, beta_nghbr2, rtol=1e-3)  # Approx eq
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 4, 5])
+def test_idx_isin(seed):
+    high = 100
+    num_total = 1000
+    num_idx1 = 600
+    num_idx2 = 600
+
+    random_state = np.random.RandomState(seed=seed)
+    arr = random_state.randint(low=0, high=high, size=(num_total, 2))
+    idx1 = arr[random_state.choice(num_total, size=num_idx1, replace=False)]
+    idx2 = arr[random_state.choice(num_total, size=num_idx2, replace=True)]
+
+    correct = idx_isin_correct(idx1, idx2)
+    test = counts_py._idx_isin(idx1, idx2)
+
+    print(f'\nidx1... {idx1.shape=}'); print(idx1)
+    print(f'\nidx2... {idx2.shape=}'); print(idx2)
+    print(f'\ncorrect... {correct.shape}'); print(correct)
+    print(f'\ntest... {test.shape}... {(~test).sum()=}'); print(test)
+    print('\nidx1[test != correct]')
+    print(np.stack([idx1[:, 0], idx1[:, 1], correct, test], axis=1)[test != correct])
+
+    assert_array_equal(correct, test)

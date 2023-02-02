@@ -412,6 +412,10 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
 
     counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
 
+    if (filter_threshold is None or filter_threshold == 0) and (
+            not normalize) and (bias is None):
+        return counts, bias
+
     # Optionally filter counts
     if filter_threshold is not None and filter_threshold > 0:
         # If there are multiple counts matrices, filter them together.
@@ -458,12 +462,13 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
     # Normalization is done on ambiguated counts
     if normalize and bias is None:
         if verbose:
-            print('COMPUTING BIAS', flush=True)
+            print('COMPUTING HI-C BIASES', flush=True)
         counts_ambig = ambiguate_counts(counts, lengths=lengths, ploidy=ploidy)
         bias = ICE_normalization(
             counts_ambig, max_iter=300, output_bias=True)[1].flatten()
-    elif bias is not None and verbose:
-        print('USING USER-PROVIDED BIAS', flush=True)
+    elif bias is not None:
+        if verbose:
+            print('USING USER-PROVIDED HI-C BIAS VECTOR', flush=True)
         if bias.size != lengths.sum():
             raise ValueError("Bias size must be equal to the sum of the"
                              f" chromosome lengths ({lengths.sum()}). It is of"
@@ -497,8 +502,8 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
                           f" additional loci (per homolog) from {ambiguity}",
                           " counts", flush=True)
 
-    output_counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
-    return output_counts, bias
+    counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
+    return counts, bias
 
 
 def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
@@ -692,6 +697,12 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
         return bias_per_bin.reshape(multiscale_factor ** 2, -1)
 
 
+_isin_multidim = np.vectorize(
+    lambda arr1, arr2: arr1.tolist() in arr2.tolist(),
+    signature='(n),(m,n)->()',
+    doc='A multi-dimensional version of numpy.isin')
+
+
 def _idx_isin(idx1, idx2):
     """Whether each (row, col) pair in idx1 (row1, col1) is in idx2 (row2, col2)
     """
@@ -700,7 +711,20 @@ def _idx_isin(idx1, idx2):
         idx1 = np.stack(idx1, axis=1)
     if isinstance(idx2, (list, tuple)):
         idx2 = np.stack(idx2, axis=1)
-    return (idx1 == idx2[:, None]).all(axis=2).any(axis=0)
+
+    mask2 = np.isin(idx2[:, 0], idx1[:, 0]) & np.isin(idx2[:, 1], idx1[:, 1])
+    # print(f"\n*** \tISIN {(~mask2).sum()=}/{mask2.size}", flush=True) # TODO remove?
+    if mask2.sum() == 0:
+        return np.full(idx1.shape[0], False)
+    idx2 = idx2[mask2]
+
+    mask1 = np.isin(idx1[:, 0], idx2[:, 0]) & np.isin(idx1[:, 1], idx2[:, 1])
+    if mask1.sum() == 0:
+        return mask1
+    # print(f"*** \tISIN {(~mask1).sum()=}/{mask1.size}", flush=True) # TODO remove
+    mask1[mask1] = _isin_multidim(idx1[mask1], idx2)
+    return mask1
+    # return _isin_multidim(idx1, idx2) # TODO remove?
 
 
 def _get_nonzero_mask(multiscale_factor, lengths, ploidy, row, col,
