@@ -322,7 +322,7 @@ class Callback(object):
             return
 
         info_dict = {'At iterate': ' ' * (6 - len(str(self.iter))) + str(
-            self.iter), 'f= ': '%.6g' % self.obj['obj'],
+            self.iter), 'f= ': '%.6g' % self.obj['obj'],  # TODO fix this, it's junk
             'time= ': self.time}
         if self.epsilon_ is not None:
             info_dict['epsilon= '] = f"{self.epsilon_:.3g}"

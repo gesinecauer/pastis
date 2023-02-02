@@ -522,9 +522,18 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         elif alpha_loop is None:
             _print_code_header([
                 "INFERRING STRUCTURE WITH FIXED ALPHA",
-                f"Fixed alpha = {alpha:.3g}"], max_length=100)
+                f"Alpha = {alpha:.3g}"], max_length=100)
     if alpha is None:
         alpha = alpha_init
+
+    # SETUP CONSTRAINT
+    if data_interchrom is None and (hsc_lambda > 0 and hsc_version == '2022'):
+        # Get inter-chromosomal counts for homolog separating constraint (2022)
+        data_interchrom = get_counts_interchrom(
+            counts, lengths=lengths, ploidy=ploidy,
+            filter_threshold=filter_threshold, normalize=normalize,
+            bias=bias, multiscale_reform=multiscale_reform,
+            multiscale_rounds=multiscale_rounds, verbose=verbose, mods=mods)
 
     # LOAD DATA
     if first_alpha_loop or multiscale_rounds == 1:
@@ -542,13 +551,6 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 beta_init, _ = _set_initial_beta(
                     _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
                     exclude_zeros=exclude_zeros)
-    # Get inter-chromosomal counts (if needed)
-    if data_interchrom is None and (hsc_lambda > 0 and hsc_version == '2022'):
-        data_interchrom = get_counts_interchrom(
-            counts, lengths=lengths, ploidy=ploidy,
-            filter_threshold=filter_threshold, normalize=normalize,
-            bias=bias, multiscale_reform=multiscale_reform,
-            multiscale_rounds=multiscale_rounds, verbose=verbose, mods=mods)
     # No need to repeatedly re-load if inferring with single-res
     if multiscale_rounds == 1:
         counts = _counts

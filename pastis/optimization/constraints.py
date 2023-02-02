@@ -916,17 +916,12 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
     counts_interchrom = counts_interchrom.data
 
     # Get inter-chromosomal ambiguated counts bins... for counts == 0
-    dummy = sparse.coo_matrix(_get_included_counts_bins(
-        np.ones(counts_ambig.shape, dtype=np.uint8), lengths=lengths,
-        ploidy=ploidy, check_counts=False).astype(np.uint8))
+    dummy = _get_included_counts_bins(
+        counts_ambig, lengths=lengths, ploidy=ploidy,
+        check_counts=False).astype(np.uint8)
+    dummy -= counts_ambig.toarray().astype(bool).astype(np.uint8)  # Remove non0
     dummy = _intermol_counts(dummy, lengths_at_res=lengths, ploidy=ploidy)
-    # Exclude bins that have nonzero counts
-    # Exclude loci that have no data in any row/col bin
-    _empty_idx_lowres = find_beads_to_remove(
-        counts_ambig, lengths=lengths, ploidy=ploidy)
-    num_zero_bins_interchrom = np.sum(np.invert(_idx_isin(
-        (dummy.row, dummy.col), (counts_ambig.row, counts_ambig.col)) | np.isin(
-        dummy.row, _empty_idx_lowres) | np.isin(dummy.col, _empty_idx_lowres)))
+    num_zero_bins_interchrom = dummy.nnz
 
     # Get inter-chromosomal ambiguated counts bins... for all counts
     counts_interchrom = np.append(
@@ -978,8 +973,7 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
 
 def _neighboring_bead_indices(lengths, ploidy, multiscale_factor=1,
                               counts=None, include_struct_nan_beads=True):
-    """Return row & col of neighboring beads, along a homolog of a chromosome.
-    """
+    """Return row & col of neighboring beads on the same molecule."""
 
     lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
     nbeads = lengths_lowres.sum() * ploidy

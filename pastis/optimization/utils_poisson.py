@@ -541,19 +541,19 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     lengths_subset, chrom_subset, subset_idx = subset_chromosomes(
         lengths_full=lengths_full, chrom_full=chrom_full,
         chrom_subset=chrom_subset)
-
-    if subset_idx is not None and ploidy == 2:
+    if subset_idx is None:
+        data_subset = {'counts': counts, 'bias': bias, 'struct': structures}
+        return lengths_subset, chrom_subset, data_subset
+    if ploidy == 2:
         subset_idx = np.append(subset_idx, subset_idx + lengths_full.sum())
 
     if counts is not None:
         counts = check_counts(
             counts, lengths=lengths_full, ploidy=ploidy,
             chrom_subset_idx=subset_idx)
-
-    if subset_idx is not None and bias is not None:
+    if bias is not None:
         bias = bias[subset_idx[subset_idx < bias.size]]
-
-    if subset_idx is not None and structures is not None:
+    if structures is not None:
         if isinstance(structures, list):
             for i in range(len(structures)):
                 structures[i] = structures[i].reshape(-1, 3)[subset_idx]
