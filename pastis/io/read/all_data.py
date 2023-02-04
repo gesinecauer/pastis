@@ -12,13 +12,21 @@ def _get_lengths(lengths):
 
     if lengths is None:
         raise ValueError("Must input chromosome lengths.")
-    if isinstance(lengths, str) and os.path.isfile(lengths):
-        lengths = load_lengths(lengths)
-    elif isinstance(lengths, (list, np.ndarray)):
-        lengths = np.asarray(lengths)
-        if lengths.size == 1 and isinstance(lengths[0], str) and os.path.isfile(
-                lengths[0]):
-            lengths = load_lengths(lengths[0])
+
+    if isinstance(lengths, (list, np.ndarray)) and np.asarray(
+            lengths).size == 1 and isinstance(lengths[0], str):
+        lengths = lengths[0]
+
+    if isinstance(lengths, str):
+        try:
+            lengths = int(lengths)
+        except ValueError:
+            if os.path.isfile(lengths):
+                lengths = load_lengths(lengths)
+            else:
+                raise ValueError(
+                    f"Chromosome lengths file not found: {lengths}.")
+
     lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     return lengths
 
@@ -29,13 +37,16 @@ def _get_bias(bias, lengths):
     if bias is None:
         return None
     lengths = _get_lengths(lengths)
-    if isinstance(bias, str) and os.path.isfile(bias):
+
+    if isinstance(bias, (list, np.ndarray)) and np.asarray(
+            bias).size == 1 and isinstance(bias[0], str):
+        bias = bias[0]
+
+    if isinstance(bias, str):
+        if not os.path.isfile(bias):
+            raise ValueError(f"Bias file not found: {bias}.")
         bias = np.loadtxt(bias)
-    elif isinstance(bias, (list, np.ndarray)):
-        bias = np.asarray(bias)
-        if bias.size == 1 and isinstance(bias[0], str) and os.path.isfile(
-                bias[0]):
-            bias = np.loadtxt(bias[0])
+
     bias = np.array(bias, copy=False, ndmin=1, dtype=float).ravel()
 
     if bias.size != lengths.sum():
@@ -51,13 +62,16 @@ def _get_struct(struct, lengths, ploidy):
     if struct is None:
         return None
     lengths = _get_lengths(lengths)
-    if isinstance(struct, str) and os.path.isfile(struct):
+
+    if isinstance(struct, (list, np.ndarray)) and np.asarray(
+            struct).size == 1 and isinstance(struct[0], str):
+        struct = struct[0]
+
+    if isinstance(struct, str):
+        if not os.path.isfile(struct):
+            raise ValueError(f"Structure file not found: {struct}.")
         struct = np.loadtxt(struct)
-    elif isinstance(struct, (list, np.ndarray)):
-        struct = np.asarray(struct)
-        if struct.size == 1 and isinstance(struct[0], str) and os.path.isfile(
-                struct[0]):
-            struct = np.loadtxt(struct[0])
+
     struct = np.array(struct, copy=False, dtype=float)
 
     try:
@@ -74,18 +88,26 @@ def _get_struct(struct, lengths, ploidy):
 def _get_chrom(chrom, lengths=None):
     """Parse chromosome names, load from file if necessary."""
 
-    if isinstance(chrom, str) and os.path.isfile(chrom):
-        chrom = np.loadtxt(chrom, dtype='str')
-    elif chrom is not None and isinstance(chrom, (list, np.ndarray)):
-        chrom = np.asarray(chrom)
-        if chrom.size == 1 and isinstance(chrom[0], str) and os.path.isfile(
-                chrom[0]):
-            chrom = np.loadtxt(chrom[0], dtype='str')
-    else:  # Create chromosome names: num1, num2, num3... etc
+    if isinstance(chrom, (list, np.ndarray)) and np.asarray(
+            chrom).size == 1 and isinstance(chrom[0], str):
+        chrom = chrom[0]
+
+    if isinstance(chrom, str):
+        if os.path.isfile(chrom):
+            chrom = np.loadtxt(chrom, dtype='str')
+        elif '/' in chrom or chrom.endswith('.txt'):
+            raise ValueError(f"Chromosome names file not found: {chrom}.")
+        elif lengths is not None and lengths.size == 1:
+            chrom = [chrom]
+        else:
+            raise ValueError(f"Chromosome names file not found: {chrom}.")
+
+    if chrom is None:  # Create chromosome names: num1, num2, num3... etc
         if lengths is None:
-            raise ValueError("Must supply chromosome lengths")
+            raise ValueError("Must supply chromosome lengths.")
         lengths = _get_lengths(lengths)
         chrom = np.array([f'num{i}' for i in range(1, lengths.size + 1)])
+
     chrom = np.array(chrom, copy=False, ndmin=1, dtype=str).ravel()
 
     if chrom.size != np.unique(chrom).size:
@@ -107,7 +129,7 @@ def _get_counts(counts, lengths, ploidy):
         if isinstance(counts[i], np.ndarray) or sparse.issparse(counts[i]):
             pass
         elif not os.path.isfile(counts[i]):
-            raise ValueError(f"File does not exist: {counts[i]}")
+            raise ValueError(f"Counts file does not exist: {counts[i]}")
         elif counts[i].endswith(".npy") or counts[i].endswith(".npz"):
             counts[i] = np.load(counts[i])
         elif counts[i].endswith(".matrix") or counts[i].endswith(".matrix.gz"):
