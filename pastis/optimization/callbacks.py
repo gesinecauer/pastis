@@ -262,6 +262,9 @@ class Callback(object):
             self.time = current_time[
                 0] + str(float('0.' + current_time[1])).lstrip('0')
 
+        if 'exit_after_i5' in self.mods and self.iter >= 5:
+            exit(0)
+
         self.obj = obj_logs
         if self.obj is not None:
             for k, v in self.obj.items():
