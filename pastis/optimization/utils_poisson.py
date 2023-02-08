@@ -88,6 +88,9 @@ def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
 def _load_infer_param(infer_param_file):
     """Loads a dictionary of values used in or created by inference."""
 
+    if not os.path.isfile(infer_param_file):
+        raise ValueError(f"File not found: {infer_param_file}.")
+
     infer_param = dict(pd.read_csv(
         infer_param_file, sep='\t', header=None, index_col=0,
         dtype=str).squeeze("columns"))
@@ -600,7 +603,15 @@ def distance_between_homologs(structures, lengths, multiscale_factor=1,
     result = []
     for struct in structures:
         mask = np.isfinite(struct[:, 0])
-        struct[~mask] = 0
+
+        # Deal with any NaN values in the structure
+        begin = end = 0
+        for i in range(lengths_lowres.size * 2):
+            end += np.tile(lengths_lowres, 2)[i]
+            if np.any(~mask[begin:end]) and not np.all(~mask[begin:end]):
+                struct[begin:end][~mask[begin:end]] = np.nanmean(
+                    struct[begin:end], axis=0)
+            begin = end
 
         hmlg_sep = _get_homolog_separation(
             struct, lengths=lengths, multiscale_factor=multiscale_factor)._value
@@ -608,7 +619,7 @@ def distance_between_homologs(structures, lengths, multiscale_factor=1,
         # If the entire chromosome is NaN, set homolog separation to NaN
         begin = end = 0
         for i in range(lengths_lowres.size):
-            end = end + lengths_lowres[i]
+            end += lengths_lowres[i]
             if np.all(~mask[begin:end]) or np.all(~mask[(n + begin):(n + end)]):
                 hmlg_sep[i] = np.nan
             begin = end
@@ -659,7 +670,16 @@ def distance_between_molecules(structures, lengths, ploidy,
     result = []
     for struct in structures:
         mask = np.isfinite(struct[:, 0])
-        struct[~mask] = 0
+
+        # Deal with any NaN values in the structure
+        begin = end = 0
+        for i in range(lengths_lowres.size * ploidy):
+            end += np.tile(lengths_lowres, ploidy)[i]
+            if np.any(~mask[begin:end]) and not np.all(~mask[begin:end]):
+                struct[begin:end][~mask[begin:end]] = np.nanmean(
+                    struct[begin:end], axis=0)
+            begin = end
+
         struct_weighted = struct * bead_weights
 
         # Get center of mass of each molecule
