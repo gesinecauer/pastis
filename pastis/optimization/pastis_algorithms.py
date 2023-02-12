@@ -821,6 +821,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         mods = mods.lower().split('.')
     else:
         mods = [x.lower() for x in mods]
+    if 'debug_nan_inf' in mods:
+        _setup_jax(debug_nan_inf=True)
 
     if not isinstance(counts, (list, tuple)):
         counts = [counts]

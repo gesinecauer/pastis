@@ -24,6 +24,7 @@ def _setup_jax(debug_nan_inf=False):
     if debug_nan_inf:
         jax_config.update("jax_debug_nans", True)
         jax_config.update("jax_debug_infs", True)
+        print("Jax: Debugging NaN & Inf", flush=True)
 
 
 _setup_jax()
