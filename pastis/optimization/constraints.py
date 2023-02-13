@@ -670,33 +670,39 @@ class HomologSeparating2022(Constraint):
         # Get inter-molecular indices
         n = self.lengths_lowres.sum()
         row, col = (x.ravel() for x in np.indices((n, n)))
-        mask = col > row
-        if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
-            row_interchrom = col_interchrom = None
+        if 'hsc22_samec_diffh' in self.mods:
+            if self.lengths.size > 1:  # No inter-chrom if only 1 chrom
+                row = row[~var['mask_interchrom']]
+                col = col[~var['mask_interchrom']]
+            idx = [[row, col + n]]
         else:
-            row_interchrom = row[mask & var['mask_interchrom']]
-            col_interchrom = col[mask & var['mask_interchrom']]
-        if 'hsc22_combo' in self.mods:
+            mask = col > row
             if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
-                row_all = row
-                col_all = col + n
+                row_interchrom = col_interchrom = None
             else:
-                row_all = np.concatenate(
-                    [row, row_interchrom, row_interchrom + n])
-                col_all = np.concatenate(
-                    [col + n, col_interchrom, col_interchrom + n])
-            idx = [[row_all, col_all]]
-        else:
-            row = row[mask]
-            col = col[mask]
-            idx_h1h2 = [row, col + n]
-            idx_h2h1 = [row + n, col]
-            if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
-                idx = [idx_h1h2, idx_h2h1]
+                row_interchrom = row[mask & var['mask_interchrom']]
+                col_interchrom = col[mask & var['mask_interchrom']]
+            if 'hsc22_combo' in self.mods:
+                if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
+                    row_all = row
+                    col_all = col + n
+                else:
+                    row_all = np.concatenate(
+                        [row, row_interchrom, row_interchrom + n])
+                    col_all = np.concatenate(
+                        [col + n, col_interchrom, col_interchrom + n])
+                idx = [[row_all, col_all]]
             else:
-                idx_h1h1 = [row_interchrom, col_interchrom]
-                idx_h2h2 = [row_interchrom + n, col_interchrom + n]
-                idx = [idx_h1h2, idx_h2h1, idx_h1h1, idx_h2h2]
+                row = row[mask]
+                col = col[mask]
+                idx_h1h2 = [row, col + n]
+                idx_h2h1 = [row + n, col]
+                if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
+                    idx = [idx_h1h2, idx_h2h1]
+                else:
+                    idx_h1h1 = [row_interchrom, col_interchrom]
+                    idx_h2h2 = [row_interchrom + n, col_interchrom + n]
+                    idx = [idx_h1h2, idx_h2h1, idx_h1h1, idx_h2h2]
 
         # Get KL divergence
         obj = 0
