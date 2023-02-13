@@ -536,6 +536,8 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
             shape=counts_ambig.shape)
 
     # Get number of distance bins associated with revant counts
+    # Note: num_dis_bins != (ploidy * ploidy * counts_ambig.nnz) when setting
+    # exclude_zeros=False and some counts bins are zero
     num_dis_bins = _counts_indices_to_3d_indices(
         counts_ambig, lengths_at_res=lengths, ploidy=ploidy,
         exclude_zeros=exclude_zeros)[0].size
