@@ -537,11 +537,13 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # LOAD DATA
     if first_alpha_loop or multiscale_rounds == 1:
-        _counts, _bias, lengths_subset, chrom_full, _, _, _struct_true = load_data(
+        loaded = load_data(
             counts=counts, lengths_full=lengths, ploidy=ploidy,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
             struct_true=struct_true, verbose=verbose)
+        (_counts, _bias, lengths_subset, chrom_subset, lengths, chrom_full,
+            _struct_true) = loaded
         # Get initial beta
         if first_alpha_loop and beta_init is None:
             if beta is not None:
@@ -558,8 +560,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         struct_true = _struct_true
         filter_threshold = 0  # Counts have already been filtered
         chrom_subset = None  # Chromosomes have already been selected
-        lengths = lengths_subset
-        chrom_full = chrom_subset
+        lengths = lengths_subset  # Chromosomes have already been selected
+        chrom_full = chrom_subset  # Chromosomes have already been selected
 
     # OPTIONALLY INFER ALPHA VIA SINGLERES
     init_ = init
@@ -570,8 +572,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             outdir_1x_alpha = os.path.join(outdir, 'singleres_alpha_inference')
 
-        init_, infer_param = infer(
-            counts=_counts, lengths=lengths, ploidy=ploidy,
+        init_, infer_param = infer(  # Use pre-loaded counts, etc
+            counts=_counts, lengths=lengths_subset, ploidy=ploidy,
             outdir=outdir_1x_alpha, alpha_init=alpha_init, seed=seed,
             filter_threshold=0, normalize=normalize, bias=_bias,
             update_alpha=update_alpha,
@@ -587,8 +589,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
             epsilon_max=epsilon_max, alpha_true=alpha_true,
             struct_true=_struct_true, input_weight=input_weight,
-            exclude_zeros=exclude_zeros, null=null, chrom_full=chrom_full,
-            chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
+            exclude_zeros=exclude_zeros, null=null, chrom_full=chrom_subset,
+            chrom_subset=None, mixture_coefs=mixture_coefs,
             verbose=verbose, mods=mods)
 
         # Do not continue unless inference converged
