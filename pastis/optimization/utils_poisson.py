@@ -66,8 +66,7 @@ def _get_output_files(outdir, seed=None):
 
 def _euclidean_distance(struct, row, col):
     """Get euclidian distances between beads in given row and col of struct."""
-    dis_sq = (jnp.square(struct[row] - struct[col])).sum(axis=1)
-    return jnp.sqrt(dis_sq)
+    return jnp.linalg.norm(struct[row] - struct[col], axis=1)
 
 
 def _print_code_header(header, max_length=80, blank_lines=1, verbose=True):
