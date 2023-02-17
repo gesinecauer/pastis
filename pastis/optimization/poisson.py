@@ -314,16 +314,17 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
     return X, epsilon, mixture_coefs
 
 
+gradient = grad(objective, has_aux=True)
 objective_jit = jit(objective, static_argnames=[
     'counts', 'alpha', 'lengths', 'ploidy', 'constraints', 'reorienter',
     'multiscale_factor', 'multiscale_reform', 'mixture_coefs', 'verbose', 'mods'])
-gradient = grad(objective_jit, has_aux=True)
+gradient_jit = grad(objective_jit, has_aux=True)
 
 
 def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       constraints=None, reorienter=None, multiscale_factor=1,
                       multiscale_reform=False, callback=None, mixture_coefs=None,
-                      verbose=False, mods=()):
+                      jitted=True, verbose=False, mods=()):
     """Objective function wrapper to match scipy.optimize's interface."""
 
     # checked = _check_input(  # TODO remove
@@ -331,7 +332,12 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     #     bias=bias, mixture_coefs=mixture_coefs, mods=mods)
     # (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
-    new_obj, (obj_logs, structures, alpha, epsilon) = objective_jit(
+    if jitted:
+        objective_func = objective_jit
+    else:
+        objective_func = objective
+
+    new_obj, (obj_logs, structures, alpha, epsilon) = objective_func(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
@@ -347,7 +353,7 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
 def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    constraints=None, reorienter=None, multiscale_factor=1,
                    multiscale_reform=False, callback=None, mixture_coefs=None,
-                   verbose=False, mods=()):
+                   jitted=True, verbose=False, mods=()):
     """Gradient function wrapper to match scipy.optimize's interface."""
 
     # checked = _check_input(  # TODO remove
@@ -355,7 +361,12 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
     #     bias=bias, mixture_coefs=mixture_coefs, mods=mods)
     # (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
-    new_grad = np.array(gradient(
+    if jitted:
+        gradient_func = gradient_jit
+    else:
+        gradient_func = gradient
+
+    new_grad = np.array(gradient_func(
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
@@ -419,7 +430,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
                constraints=None, multiscale_factor=1, epsilon=None,
                epsilon_bounds=None, max_iter=30000, max_fun=None,
                factr=1e7, pgtol=1e-05, callback=None, alpha_loop=0,
-               reorienter=None, mixture_coefs=None, verbose=True, mods=()):
+               reorienter=None, mixture_coefs=None, jitted=True, verbose=True,
+               mods=()):
     """Estimates a 3D structure, given current alpha.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -491,11 +503,13 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
               f" precision = {np.finfo(np.float64).eps:.4g}\n", flush=True)
 
     # Compile objective & gradient via Jax JIT; initialize callback
-    _ = fprime_wrapper(
-        x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
-        bias=bias, constraints=constraints, reorienter=reorienter,
-        multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        callback=callback, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+    if jitted:
+        _ = fprime_wrapper(
+            x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
+            bias=bias, constraints=constraints, reorienter=reorienter,
+            multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
+            callback=callback, mixture_coefs=mixture_coefs, jitted=jitted,
+            verbose=verbose, mods=mods)
     if callback is not None:
         callback.on_optimization_begin(
             inferring='structure', alpha_loop=alpha_loop)
@@ -503,7 +517,8 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
         x0, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        callback=callback, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+        callback=callback, mixture_coefs=mixture_coefs, jitted=jitted,
+        verbose=verbose, mods=mods)
 
     if multiscale_reform:
         bounds = np.append(
@@ -525,7 +540,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, bias, constraints,
                   reorienter, multiscale_factor, multiscale_reform, callback,
-                  mixture_coefs, verbose, mods))
+                  mixture_coefs, jitted, (verbose and jitted), mods))
         X, obj, d = results
         converged = d['warnflag'] == 0
         conv_desc = d['task']
@@ -751,6 +766,7 @@ class PastisPM(object):
             alpha_loop=alpha_loop,
             reorienter=self.reorienter,
             mixture_coefs=self.mixture_coefs,
+            jitted=('no_jit' not in self.mods),
             verbose=self.verbose,
             mods=self.mods)
         self.time_elapsed_ += timer() - time_start
