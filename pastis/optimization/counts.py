@@ -550,6 +550,7 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
 
     # Normalize counts (divide by biases for each locus)
     if bias is not None and not np.all(bias == 1):
+        raise NotImplementedError("Biases are wrong here... see manuscript")
         bias_per_bin = bias[counts_ambig.row] * bias[counts_ambig.col]
         counts_ambig = sparse.coo_matrix(
             (counts_ambig.data / bias_per_bin,
@@ -699,12 +700,6 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
         return bias_per_bin.reshape(multiscale_factor ** 2, -1)
 
 
-_isin_multidim = np.vectorize(
-    lambda arr1, arr2: arr1.tolist() in arr2.tolist(),
-    signature='(n),(m,n)->()',
-    doc='A multi-dimensional version of numpy.isin')
-
-
 _isin_2d = np.vectorize(
     lambda arr1, arr2: np.any((arr2[:, 0] == arr1[0]) & (arr2[:, 1] == arr1[1])),
     signature='(n),(m,n)->()',
@@ -721,7 +716,7 @@ def _idx_isin(idx1, idx2):
         idx2 = np.stack(idx2, axis=1)
 
     mask2 = np.isin(idx2[:, 0], idx1[:, 0]) & np.isin(idx2[:, 1], idx1[:, 1])
-    # print(f"\n*** \tISIN {(~mask2).sum()=}/{mask2.size}", flush=True) # TODO remove
+    # print(f"\n\tISIN {(~mask2).sum()=}/{mask2.size}", flush=True) # TODO remove
     if mask2.sum() == 0:
         return np.full(idx1.shape[0], False)
     idx2 = idx2[mask2]
@@ -729,7 +724,7 @@ def _idx_isin(idx1, idx2):
     mask1 = np.isin(idx1[:, 0], idx2[:, 0]) & np.isin(idx1[:, 1], idx2[:, 1])
     if mask1.sum() == 0:
         return mask1
-    # print(f"*** \tISIN {(~mask1).sum()=}/{mask1.size}", flush=True) # TODO remove
+    # print(f"\tISIN {(~mask1).sum()=}/{mask1.size}", flush=True) # TODO remove
     mask1[mask1] = _isin_2d(idx1[mask1], idx2)
     return mask1
     # return _isin_2d(idx1, idx2) # TODO remove?
