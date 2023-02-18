@@ -445,18 +445,20 @@ class BeadChainConnectivity2022(Constraint):
             # If a distance bin has no counts associated with it,
             # set those counts to the mean of all counts
             if counts_nghbr_object.bins_zero is None:
-                mean_counts_nghbr = np.round(np.mean(
-                    counts_nghbr_object.bins_nonzero.data))
+                mean_counts_nghbr = np.mean(
+                    counts_nghbr_object.bins_nonzero.data)
             else:
-                mean_counts_nghbr = np.round(np.mean(np.append(
+                mean_counts_nghbr = np.mean(np.append(
                     counts_nghbr_object.bins_nonzero.data,
-                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int))))
+                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
             if self.multiscale_factor > 1 and self.multires_naive:
                 fullres_per_lowres_dis = self.hparams[
                     'fullres_per_lowres_bead'][row_nghbr_ambig_lowres] * self.hparams[
                     'fullres_per_lowres_bead'][row_nghbr_ambig_lowres + 1]
-                mean_counts_nghbr = (
-                    mean_counts_nghbr * fullres_per_lowres_dis[mask_no_data])
+                tmp = fullres_per_lowres_dis / np.square(self.multiscale_factor)
+                mean_counts_nghbr = mean_counts_nghbr * tmp[mask_no_data]
+            if np.issubdtype(counts_nghbr.dtype, np.integer):
+                mean_counts_nghbr = np.round(mean_counts_nghbr)
             counts_nghbr[mask_no_data] = mean_counts_nghbr
 
         else:
@@ -491,12 +493,14 @@ class BeadChainConnectivity2022(Constraint):
             # If an entire lowres distance bin has no counts associated with it,
             # set those counts to the mean of all high-res counts
             if counts_nghbr_object.bins_zero is None:
-                mean_counts_nghbr = np.round(np.mean(
-                    counts_nghbr_object.bins_nonzero.data))
+                mean_counts_nghbr = np.mean(
+                    counts_nghbr_object.bins_nonzero.data)
             else:
-                mean_counts_nghbr = np.round(np.mean(np.append(
+                mean_counts_nghbr = np.mean(np.append(
                     counts_nghbr_object.bins_nonzero.data,
-                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int))))
+                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
+            if np.issubdtype(counts_nghbr.dtype, np.integer):
+                mean_counts_nghbr = np.round(mean_counts_nghbr)
             counts_nghbr[:, mask_no_data] = mean_counts_nghbr
 
             if counts_nghbr_mask is not None:
