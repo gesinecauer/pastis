@@ -37,7 +37,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  callback_fxns=None, reorienter=None,
                  multiscale_reform=False, alpha_true=None,
                  struct_true=None, input_weight=None, exclude_zeros=False,
-                 null=False, chrom_full=None, chrom_subset=None,
+                 chrom_full=None, chrom_subset=None,
                  mixture_coefs=None, verbose=True, mods=[]):
     """Infer draft 3D structures with PASTIS via Poisson model."""
 
@@ -145,7 +145,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         callback_fxns=callback_fxns, callback_freq=callback_freq,
         reorienter=reorienter, multiscale_reform=multiscale_reform,
         alpha_true=alpha_true, struct_true=struct_true_draft,
-        input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
+        input_weight=input_weight, exclude_zeros=exclude_zeros, null=False,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     if not infer_param_lowres['converged']:
         return None, False
@@ -629,7 +629,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         callback_freq=callback_freq, callback_fxns=callback_fxns,
         reorienter=reorienter, multiscale_reform=multiscale_reform,
         alpha_true=alpha_true, struct_true=struct_true,
-        input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
+        input_weight=input_weight, exclude_zeros=exclude_zeros,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     if not draft_converged:  # Do not continue unless inference converged
