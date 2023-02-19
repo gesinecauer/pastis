@@ -124,6 +124,8 @@ def _get_counts(counts, lengths, ploidy):
     if not isinstance(counts, list):
         counts = [counts]
     lengths = _get_lengths(lengths)
+    if all([isinstance(c, str) for c in counts]):
+        counts = counts[:]
 
     for i in range(len(counts)):
         if isinstance(counts[i], np.ndarray) or sparse.issparse(counts[i]):
