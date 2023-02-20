@@ -683,7 +683,7 @@ class HomologSeparating2022(Constraint):
         # Get inter-molecular indices
         n = self.lengths_lowres.sum()
         row, col = (x.ravel() for x in np.indices((n, n)))
-        if 'hsc22_samec_diffh' in self.mods:
+        if not ('hsc22_combo' in self.mods or 'hsc22_quad' in self.mods):
             if self.lengths.size > 1:  # No inter-chrom if only 1 chrom
                 row = row[~var['mask_interchrom']]
                 col = col[~var['mask_interchrom']]
@@ -705,7 +705,7 @@ class HomologSeparating2022(Constraint):
                     col_all = np.concatenate(
                         [col + n, col_interchrom, col_interchrom + n])
                 idx = [[row_all, col_all]]
-            else:
+            elif 'hsc22_quad' in self.mods:
                 row = row[mask]
                 col = col[mask]
                 idx_h1h2 = [row, col + n]
