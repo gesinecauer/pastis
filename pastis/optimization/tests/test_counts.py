@@ -405,7 +405,7 @@ def test_idx_isin(seed):
 
     print(f'\nidx1... {idx1.shape=}'); print(idx1)
     print(f'\nidx2... {idx2.shape=}'); print(idx2)
-    print(f'\ncorrect... {correct.shape}'); print(correct)
+    print(f'\ncorrect... {correct.shape}... {(~correct).sum()=}'); print(correct)
     print(f'\ntest... {test.shape}... {(~test).sum()=}'); print(test)
     print('\nidx1[test != correct]')
     print(np.stack([idx1[:, 0], idx1[:, 1], correct, test], axis=1)[test != correct])

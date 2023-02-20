@@ -700,10 +700,34 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
         return bias_per_bin.reshape(multiscale_factor ** 2, -1)
 
 
-_isin_2d = np.vectorize(
-    lambda arr1, arr2: np.any((arr2[:, 0] == arr1[0]) & (arr2[:, 1] == arr1[1])),
-    signature='(n),(m,n)->()',
-    doc='A 2-dimensional version of numpy.isin')
+# _isin_2d_good = np.vectorize(
+#     lambda arr1, arr2: np.any((arr2[:, 0] == arr1[0]) & (arr2[:, 1] == arr1[1])),
+#     signature='(n),(m,n)->()',
+#     doc='A 2-dimensional version of numpy.isin')
+
+
+# def _idx_isin_good(idx1, idx2):
+#     """Whether each (row, col) pair in idx1 (row1, col1) is in idx2 (row2, col2)
+#     """
+
+#     if isinstance(idx1, (list, tuple)):
+#         idx1 = np.stack(idx1, axis=1)
+#     if isinstance(idx2, (list, tuple)):
+#         idx2 = np.stack(idx2, axis=1)
+
+#     mask2 = np.isin(idx2[:, 0], idx1[:, 0]) & np.isin(idx2[:, 1], idx1[:, 1])
+#     # print(f"\n\tISIN {(~mask2).sum()=}/{mask2.size}", flush=True) # TODO remove
+#     if mask2.sum() == 0:
+#         return np.full(idx1.shape[0], False)
+#     idx2 = idx2[mask2]
+
+#     mask1 = np.isin(idx1[:, 0], idx2[:, 0]) & np.isin(idx1[:, 1], idx2[:, 1])
+#     if mask1.sum() == 0:
+#         return mask1
+#     # print(f"\tISIN {(~mask1).sum()=}/{mask1.size}", flush=True) # TODO remove
+#     mask1[mask1] = _isin_2d(idx1[mask1], idx2)
+#     return mask1
+#     # return _isin_2d(idx1, idx2) # TODO remove?
 
 
 def _idx_isin(idx1, idx2):
@@ -712,11 +736,15 @@ def _idx_isin(idx1, idx2):
 
     if isinstance(idx1, (list, tuple)):
         idx1 = np.stack(idx1, axis=1)
+    type1 = np.min_scalar_type(idx1.max()).str
+    idx1 = idx1.astype(type1)
+
     if isinstance(idx2, (list, tuple)):
         idx2 = np.stack(idx2, axis=1)
+    type2 = np.min_scalar_type(idx2.max()).str
+    idx2 = idx2.astype(type2)
 
     mask2 = np.isin(idx2[:, 0], idx1[:, 0]) & np.isin(idx2[:, 1], idx1[:, 1])
-    # print(f"\n\tISIN {(~mask2).sum()=}/{mask2.size}", flush=True) # TODO remove
     if mask2.sum() == 0:
         return np.full(idx1.shape[0], False)
     idx2 = idx2[mask2]
@@ -724,10 +752,12 @@ def _idx_isin(idx1, idx2):
     mask1 = np.isin(idx1[:, 0], idx2[:, 0]) & np.isin(idx1[:, 1], idx2[:, 1])
     if mask1.sum() == 0:
         return mask1
-    # print(f"\tISIN {(~mask1).sum()=}/{mask1.size}", flush=True) # TODO remove
-    mask1[mask1] = _isin_2d(idx1[mask1], idx2)
+
+    idx1 = np.array(list((map(tuple, idx1[mask1]))), dtype=f"{type1},{type1}")
+    idx2 = np.array(list((map(tuple, idx2))), dtype=f"{type2},{type2}")
+
+    mask1[mask1] = np.isin(idx1, idx2)
     return mask1
-    # return _isin_2d(idx1, idx2) # TODO remove?
 
 
 def _get_nonzero_mask(multiscale_factor, lengths, ploidy, row, col,
