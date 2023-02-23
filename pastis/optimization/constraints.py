@@ -689,6 +689,7 @@ class HomologSeparating2022(Constraint):
                 col = col[~var['mask_interchrom']]
             idx = [[row, col + n]]
         else:
+            raise ValueError("Not doing this anymore!")
             mask = col > row
             if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
                 row_interchrom = col_interchrom = None
