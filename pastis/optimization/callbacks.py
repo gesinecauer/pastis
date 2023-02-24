@@ -118,7 +118,7 @@ class Callback(object):
                  log=None, analysis_function=None, print_freq=100,
                  log_freq=1000, save_freq=None, directory=None, seed=None,
                  on_optimization_begin=None, struct_true=None,
-                 alpha_true=None, constraints=None,
+                 alpha_true=None, constraints=None, fullres_struct_nan=None,
                  reorienter=None, mixture_coefs=None, verbose=False, mods=[]):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -160,11 +160,15 @@ class Callback(object):
                 if verbose:
                     print(f"True epsilon ({multiscale_factor}x):"
                           f" {self.epsilon_true:.3g}", flush=True)
-            if struct_true.shape[0] > self.lengths_lowres.sum() * ploidy:
-                struct_true = decrease_struct_res(
+            self.struct_true = decrease_struct_res(
+                struct_true, multiscale_factor=multiscale_factor,
+                lengths=lengths, ploidy=ploidy,
+                fullres_struct_nan=fullres_struct_nan)
+            if multiscale_factor > 1:
+                struct_nan_mask = np.isnan(self.struct_true[:, 0])
+                self.struct_true[struct_nan_mask] = decrease_struct_res(
                     struct_true, multiscale_factor=multiscale_factor,
-                    lengths=lengths, ploidy=ploidy)
-            self.struct_true = struct_true
+                    lengths=lengths, ploidy=ploidy)[struct_nan_mask]
             if isinstance(self.struct_true, jnp.ndarray):
                 self.struct_true = self.struct_true._value
         else:

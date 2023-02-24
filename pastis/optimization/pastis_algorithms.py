@@ -261,8 +261,9 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_reform=multiscale_reform,
         directory=outdir, seed=seed, struct_true=struct_true,
         alpha_true=alpha_true, constraints=constraints, beta_init=beta_init,
-        mixture_coefs=mixture_coefs, reorienter=reorienter, **callback_freq,
-        **callback_fxns, verbose=verbose, mods=mods)
+        fullres_struct_nan=fullres_struct_nan, mixture_coefs=mixture_coefs,
+        reorienter=reorienter, **callback_freq, **callback_fxns,
+        verbose=verbose, mods=mods)
 
     return (counts, bias, struct_nan, struct_init, constraints, callback,
             epsilon, ploidy)
