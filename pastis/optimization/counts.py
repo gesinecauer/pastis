@@ -741,6 +741,8 @@ def _idx_isin(idx1, idx2):
 
     if isinstance(idx2, (list, tuple)):
         idx2 = np.stack(idx2, axis=1)
+    if idx2.size == 0:
+        return np.full(idx1.shape[0], False)
     type2 = np.min_scalar_type(idx2.max()).str
     idx2 = idx2.astype(type2)
 
