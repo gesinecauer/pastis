@@ -390,6 +390,23 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
         struct_true=struct_true, verbose=verbose)
 
+    # TEMP
+    if multiscale_factor == 2 and multiscale_reform and ('eps2' in mods):
+        if beta is None:
+            mean_nghbr_dis = 1
+        else:
+            if beta_init is None:
+                beta_init = _ambiguate_beta(
+                    beta, counts=counts, lengths=lengths, ploidy=ploidy)
+            beta_nghbr_1, _ = _set_initial_beta(
+                counts, lengths=lengths, ploidy=ploidy, bias=bias,
+                exclude_zeros=exclude_zeros)
+            mean_nghbr_dis = beta_nghbr_1 / beta_init
+        estimated_epsilon = mean_nghbr_dis / np.sqrt(6)
+        epsilon_max = estimated_epsilon
+        print(f"{beta_nghbr_1=:.3g}\t\t{beta_init=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")
+
+
     # PREP FOR INFERENCE
     prepped = _prep_inference(
         counts, lengths=lengths, ploidy=ploidy, outdir=outdir, alpha=alpha,
