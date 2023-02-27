@@ -444,22 +444,26 @@ class BeadChainConnectivity2022(Constraint):
 
             # If a distance bin has no counts associated with it,
             # set those counts to the mean of all counts
-            if counts_nghbr_object.bins_zero is None:
-                mean_counts_nghbr = np.mean(
-                    counts_nghbr_object.bins_nonzero.data)
-            else:
-                mean_counts_nghbr = np.mean(np.append(
-                    counts_nghbr_object.bins_nonzero.data,
-                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
-            if self.multiscale_factor > 1 and self.multires_naive:
-                fullres_per_lowres_dis = self.hparams[
-                    'fullres_per_lowres_bead'][row_nghbr_ambig_lowres] * self.hparams[
-                    'fullres_per_lowres_bead'][row_nghbr_ambig_lowres + 1]
-                tmp = fullres_per_lowres_dis / np.square(self.multiscale_factor)
-                mean_counts_nghbr = mean_counts_nghbr * tmp[mask_no_data]
-            if np.issubdtype(counts_nghbr.dtype, np.integer):
-                mean_counts_nghbr = np.round(mean_counts_nghbr)
-            counts_nghbr[mask_no_data] = mean_counts_nghbr
+            if mask_no_data.sum() > 0:
+                if counts_nghbr_object.bins_zero is None:
+                    mean_counts_nghbr = np.mean(
+                        counts_nghbr_object.bins_nonzero.data)
+                else:
+                    mean_counts_nghbr = np.mean(np.append(
+                        counts_nghbr_object.bins_nonzero.data,
+                        np.ones(counts_nghbr_object.bins_zero.nbins,
+                            dtype=int)))
+                if self.multiscale_factor > 1 and self.multires_naive:
+                    fullres_per_lowres_dis = self.hparams[
+                        'fullres_per_lowres_bead'][
+                            row_nghbr_ambig_lowres] * self.hparams[
+                        'fullres_per_lowres_bead'][row_nghbr_ambig_lowres + 1]
+                    tmp = fullres_per_lowres_dis / np.square(
+                        self.multiscale_factor)
+                    mean_counts_nghbr = mean_counts_nghbr * tmp[mask_no_data]
+                if np.issubdtype(counts_nghbr.dtype, np.integer):
+                    mean_counts_nghbr = np.round(mean_counts_nghbr).astype(int)
+                counts_nghbr[mask_no_data] = mean_counts_nghbr
 
         else:
             # Get mask associated with neighbor beads
@@ -472,14 +476,9 @@ class BeadChainConnectivity2022(Constraint):
                 counts_nghbr_mask = np.full(
                     (self.multiscale_factor ** 2, row_nghbr_ambig_lowres.size),
                     True)
-            counts_nghbr_mask_no_data = _get_nonzero_mask(
-                multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-                ploidy=self.ploidy, row=row_nghbr_ambig_lowres[mask_no_data],
-                col=row_nghbr_ambig_lowres[mask_no_data] + 1)
-            if counts_nghbr_mask_no_data is None:
-                counts_nghbr_mask[:, mask_no_data] = True
-            else:
-                counts_nghbr_mask[:, mask_no_data] = counts_nghbr_mask_no_data
+            if mask_no_data.sum() > 0:
+                counts_nghbr_mask[:, mask_no_data] = False
+                counts_nghbr_mask[0, mask_no_data] = True
             if np.all(counts_nghbr_mask):
                 counts_nghbr_mask = None
 
@@ -492,16 +491,18 @@ class BeadChainConnectivity2022(Constraint):
 
             # If an entire lowres distance bin has no counts associated with it,
             # set those counts to the mean of all high-res counts
-            if counts_nghbr_object.bins_zero is None:
-                mean_counts_nghbr = np.mean(
-                    counts_nghbr_object.bins_nonzero.data)
-            else:
-                mean_counts_nghbr = np.mean(np.append(
-                    counts_nghbr_object.bins_nonzero.data,
-                    np.ones(counts_nghbr_object.bins_zero.nbins, dtype=int)))
-            if np.issubdtype(counts_nghbr.dtype, np.integer):
-                mean_counts_nghbr = np.round(mean_counts_nghbr)
-            counts_nghbr[:, mask_no_data] = mean_counts_nghbr
+            if mask_no_data.sum() > 0:
+                if counts_nghbr_object.bins_zero is None:
+                    mean_counts_nghbr = np.mean(
+                        counts_nghbr_object.bins_nonzero.data)
+                else:
+                    mean_counts_nghbr = np.mean(np.append(
+                        counts_nghbr_object.bins_nonzero.data,
+                        np.ones(counts_nghbr_object.bins_zero.nbins,
+                            dtype=int)))
+                if np.issubdtype(counts_nghbr.dtype, np.integer):
+                    mean_counts_nghbr = int(np.round(mean_counts_nghbr))
+                counts_nghbr[0, mask_no_data] = mean_counts_nghbr
 
             if counts_nghbr_mask is not None:
                 counts_nghbr[~counts_nghbr_mask] = 0
@@ -865,7 +866,7 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
             fullres_struct_nan=fullres_struct_nan)
 
         # Adjust for low-res beads that would have otherwise been excluded
-        mask0 = (fullres_per_lowres_bead == 0)
+        mask0 = (fullres_per_lowres_bead == 0)  # lowres beads that nan
         fullres_per_lowres_bead[mask0] = _count_fullres_per_lowres_bead(
             multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
             fullres_struct_nan=None)[mask0]
@@ -1009,8 +1010,7 @@ def _neighboring_bead_indices(lengths, ploidy, multiscale_factor=1,
     # Optionally remove beads for which there is no counts data
     if not include_struct_nan_beads:
         if counts is None:
-            raise ValueError(
-                "Counts must be inputted if including struct_nan beads.")
+            raise ValueError("If excluding struct_nan beads, must input counts")
         struct_nan = find_beads_to_remove(
             counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor)
