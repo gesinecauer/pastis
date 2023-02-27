@@ -535,18 +535,19 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
                 (counts_ambig.row[mask], counts_ambig.col[mask])),
             shape=counts_ambig.shape)
 
-    # Get number of distance bins associated with revant counts
-    # Note: num_dis_bins != (ploidy * ploidy * counts_ambig.nnz) when setting
-    # exclude_zeros=False and some counts bins are zero
-    num_dis_bins = _counts_indices_to_3d_indices(
-        counts_ambig, lengths_at_res=lengths, ploidy=ploidy,
-        exclude_zeros=exclude_zeros)[0].size
-    if num_dis_bins == 0:
-        raise ValueError("Cannot compute beta -- no count data is included.")
+    # Get number of distance bins associated with relevant counts
     if neighboring_beads_only:
-        # Intentionally dividing num_dis_bins / 2 for diploid: we assume that
-        # the contribution of inter-hmlg counts to nghbr counts is negligible
-        num_dis_bins /= ploidy
+        # We assume that the contribution of inter-hmlg counts to nghbr counts
+        # is negligible
+        num_dis_bins = ploidy * row_nghbr.size
+    else:
+        # Note: num_dis_bins != (ploidy * ploidy * counts_ambig.nnz) when
+        # some counts bins are zero and exclude_zeros=False
+        num_dis_bins = _counts_indices_to_3d_indices(
+            counts_ambig, lengths_at_res=lengths, ploidy=ploidy,
+            exclude_zeros=exclude_zeros)[0].size
+    if num_dis_bins == 0:
+        raise ValueError("Cannot compute beta -- no counts bins are included.")
 
     # Normalize counts (divide by biases for each locus)
     if bias is not None and not np.all(bias == 1):
@@ -558,6 +559,7 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
             shape=counts_ambig.shape)
 
     # Get universal/ambiguated beta
+    # print('***', counts_ambig.data.size, counts_ambig.sum(), num_dis_bins)  # TODO remove
     beta_ambig = counts_ambig.sum() / num_dis_bins
     if (not np.isfinite(beta_ambig)) or beta_ambig <= 0:
         raise ValueError(f"Beta for ambiguated counts is {beta_ambig}.")
