@@ -527,7 +527,8 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
     counts_ambig = ambiguate_counts(counts, lengths=lengths, ploidy=ploidy)
     if neighboring_beads_only:
         row_nghbr = _neighboring_bead_indices(
-            lengths=lengths, ploidy=1, multiscale_factor=1)
+            lengths=lengths, ploidy=1, multiscale_factor=1,
+            counts=counts, include_struct_nan_beads=False)
         mask = np.isin(counts_ambig.row, row_nghbr) & (
             counts_ambig.col == counts_ambig.row + 1)
         counts_ambig = sparse.coo_matrix(
@@ -559,7 +560,7 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
             shape=counts_ambig.shape)
 
     # Get universal/ambiguated beta
-    # print('***', counts_ambig.data.size, counts_ambig.sum(), num_dis_bins)  # TODO remove
+    print('***', counts_ambig.data.size, counts_ambig.sum(), num_dis_bins)  # TODO remove
     beta_ambig = counts_ambig.sum() / num_dis_bins
     if (not np.isfinite(beta_ambig)) or beta_ambig <= 0:
         raise ValueError(f"Beta for ambiguated counts is {beta_ambig}.")

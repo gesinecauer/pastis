@@ -404,7 +404,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             mean_nghbr_dis = beta_nghbr_1 / beta_init
         estimated_epsilon = mean_nghbr_dis / np.sqrt(6)
         epsilon_max = estimated_epsilon
-        print(f"{beta_nghbr_1=:.3g}\t\t{beta_init=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")
+        print(f"*** {beta_nghbr_1=:.3g}\t\t{beta_init=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")  # TODO remove
 
 
     # PREP FOR INFERENCE
