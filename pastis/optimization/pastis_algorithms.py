@@ -228,8 +228,15 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         reorienter=reorienter, mixture_coefs=mixture_coefs,
         struct_true=struct_true, verbose=verbose, mods=mods)
     if multiscale_reform and multiscale_factor != 1:
-        epsilon = random_state.uniform(
-            low=epsilon_min * 1.1, high=min(1, epsilon_max))
+        if epsilon_min == epsilon_max:
+            epsilon = epsilon_max
+        elif epsilon_min * 1.1 >= min(1, epsilon_max):
+            epsilon = random_state.uniform(
+                low=epsilon_min, high=min(1, epsilon_max))
+        else:
+            epsilon = random_state.uniform(
+                low=epsilon_min * 1.1, high=min(1, epsilon_max))
+        print(f"INITIALIZATION: {epsilon=:.3g}", flush=True)
     else:
         epsilon = None
 
@@ -391,7 +398,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         struct_true=struct_true, verbose=verbose)
 
     # TEMP
-    if multiscale_factor == 2 and multiscale_reform and ('eps2' in mods):
+    if multiscale_factor == 2 and multiscale_reform and ('eps2' in mods or 'eps2mm' in mods):
         if beta is None:
             mean_nghbr_dis = 1
         else:
@@ -405,7 +412,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         estimated_epsilon = mean_nghbr_dis / np.sqrt(6)
         epsilon_max = estimated_epsilon
         print(f"*** {beta_nghbr_1=:.3g}\t\t{beta_init=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")  # TODO remove
-
+        if 'eps2mm' in mods:
+            epsilon_min = estimated_epsilon
 
     # PREP FOR INFERENCE
     prepped = _prep_inference(
@@ -438,8 +446,6 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
         null=null, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     pm.fit_structure(alpha_loop=alpha_loop)
-    struct_ = pm.struct_.reshape(-1, 3)
-    struct_[struct_nan] = np.nan
 
     # OPTIONALLY RE-INFER ALPHA
     alpha_converged_ = None
@@ -460,6 +466,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         rescale_by = beta_init / beta_current
 
     # SAVE RESULTS
+    struct_ = pm.struct_.reshape(-1, 3)
+    struct_[struct_nan] = np.nan
     infer_param = {
         'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_, 'seed': seed,
         'converged': pm.converged_, 'conv_desc': pm.conv_desc_,
