@@ -99,6 +99,8 @@ def _get_chrom(chrom, lengths=None):
             raise ValueError(f"Chromosome names file not found: {chrom}.")
         elif lengths is not None and lengths.size == 1:
             chrom = [chrom]
+        elif len(chrom) < 10:  # TODO decide what to do here
+            chrom = [chrom]
         else:
             raise ValueError(f"Chromosome names file not found: {chrom}.")
 
