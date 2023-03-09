@@ -116,7 +116,7 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
     if beta is None:
         return None
 
-    if not isinstance(beta, (list, tuple)):
+    if not isinstance(beta, (list, tuple, np.ndarray, jnp.ndarray)):
         beta = [beta]
     if ploidy == 1:
         return beta[0]
@@ -127,7 +127,7 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
         raise ValueError(f"Inconsistent number of betas ({len(beta)}) and"
                          f" counts matrices ({len(counts)}).")
 
-    beta_ambig = 0.
+    beta_ambig = 0
     for i in range(len(beta)):
         if counts[i].shape[0] == counts[i].shape[1]:
             beta_ambig += beta[i]
@@ -362,29 +362,6 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         fullres_struct_nan = find_beads_to_remove(
             counts, lengths=lengths, ploidy=ploidy, multiscale_factor=1)
 
-    # Optionally exclude certain counts
-    if excluded_counts is not None:
-        if isinstance(excluded_counts, float):
-            if excluded_counts != int(excluded_counts):
-                raise ValueError("excluded_counts must be an integer.")
-            excluded_counts = int(excluded_counts)
-        if isinstance(excluded_counts, str) and re.match(
-                r'[0-9]+(\.0){0,1}', excluded_counts):
-            excluded_counts = int(excluded_counts)
-        if isinstance(excluded_counts, int):
-            counts = [_counts_near_diag(
-                c, lengths_at_res=lengths, ploidy=ploidy,
-                nbins=excluded_counts) for c in counts]
-        elif excluded_counts.lower() == 'intra':
-            counts = [_intermol_counts(
-                c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
-        elif excluded_counts.lower() == 'inter':
-            counts = [_intramol_counts(
-                c, lengths_at_res=lengths, ploidy=ploidy) for c in counts]
-        else:
-            raise ValueError(
-                "excluded_counts must be an integer, 'inter', 'intra' or None.")
-
     # Format counts as CountsMatrix objects
     counts = _format_counts(
         counts, beta=beta, bias=bias, input_weight=input_weight,
@@ -396,6 +373,35 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
     struct_nan = find_beads_to_remove(
         counts, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor)
+
+    # Optionally exclude certain counts
+    if excluded_counts is not None:
+        if isinstance(excluded_counts, float):
+            if excluded_counts != int(excluded_counts):
+                raise ValueError("excluded_counts must be an integer.")
+            excluded_counts = int(excluded_counts)
+        if isinstance(excluded_counts, str) and re.match(
+                r'[0-9]+(\.0){0,1}', excluded_counts):
+            excluded_counts = int(excluded_counts)
+
+        lengths_lowres = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor)
+
+        if isinstance(excluded_counts, int):
+            counts = [_counts_near_diag(
+                c, lengths_at_res=lengths_lowres, ploidy=ploidy,
+                nbins=excluded_counts, copy=False) for c in counts]
+        elif excluded_counts.lower() == 'intra':
+            counts = [_intermol_counts(
+                c, lengths_at_res=lengths_lowres, ploidy=ploidy,
+                copy=False) for c in counts]
+        elif excluded_counts.lower() == 'inter':
+            counts = [_intramol_counts(
+                c, lengths_at_res=lengths_lowres, ploidy=ploidy,
+                copy=False) for c in counts]
+        else:
+            raise ValueError(
+                "excluded_counts must be an integer, 'inter', 'intra' or None.")
 
     return counts, struct_nan, fullres_struct_nan
 
@@ -528,7 +534,7 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
     if neighboring_beads_only:
         row_nghbr = _neighboring_bead_indices(
             lengths=lengths, ploidy=1, multiscale_factor=1,
-            counts=counts, include_struct_nan_beads=False)
+            counts=counts_ambig, include_struct_nan_beads=False)
         mask = np.isin(counts_ambig.row, row_nghbr) & (
             counts_ambig.col == counts_ambig.row + 1)
         counts_ambig = sparse.coo_matrix(
@@ -748,6 +754,7 @@ def _idx_isin(idx1, idx2):
         return np.full(idx1.shape[0], False)
     type2 = np.min_scalar_type(idx2.max()).str
     idx2 = idx2.astype(type2)
+    idx2 = np.unique(idx2, axis=0)
 
     mask2 = np.isin(idx2[:, 0], idx1[:, 0]) & np.isin(idx2[:, 1], idx1[:, 1])
     if mask2.sum() == 0:
@@ -1382,6 +1389,7 @@ class CountsBins(object):
                 filtered.data = self.data[filter_mask]
             else:
                 filtered.data = self.data[:, filter_mask]
+            filtered._sum = filtered.data.sum()
         if self.mask is not None:
             filtered.mask = self.mask[:, filter_mask]
 
