@@ -257,7 +257,7 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
             constraint_obj = 0
             for struct, mix_coef in zip(structures, mixture_coefs):
                 constraint_obj = constraint_obj + mix_coef * constraint.apply(
-                    struct=struct, alpha=alpha, epsilon=epsilon,
+                    struct=struct, alpha=alpha, beta=beta, epsilon=epsilon,
                     counts=counts, bias=bias, inferring_alpha=inferring_alpha)
             obj_constraints[f"obj_{constraint.abbrev}"] = constraint_obj
 
@@ -722,6 +722,7 @@ class PastisPM(object):
         self.alpha_obj_ = None
         self.epsilon_obj_ = None
         self.converged_ = None
+        self.conv_desc_ = None
         self.alpha_converged_ = None
         self.log_ = None
         self.struct_ = None
