@@ -104,10 +104,12 @@ def _get_chrom(chrom, lengths=None):
         else:
             raise ValueError(f"Chromosome names file not found: {chrom}.")
 
+    if lengths is not None:
+        lengths = _get_lengths(lengths)
+
     if chrom is None:  # Create chromosome names: num1, num2, num3... etc
         if lengths is None:
             raise ValueError("Must supply chromosome lengths.")
-        lengths = _get_lengths(lengths)
         chrom = np.array([f'num{i}' for i in range(1, lengths.size + 1)])
 
     chrom = np.array(chrom, copy=False, ndmin=1, dtype=str).ravel()
