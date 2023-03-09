@@ -128,7 +128,7 @@ class Constraint(object):
         """Set up for applying constraint (not specific to inferred params)"""
         pass
 
-    def apply(self, struct, alpha=None, epsilon=None, counts=None, bias=None,
+    def apply(self, struct, alpha=None, beta=None, epsilon=None, counts=None, bias=None,
               inferring_alpha=False):
 
         """Apply constraint using given structure(s).
@@ -208,7 +208,7 @@ class BeadChainConnectivity2019(Constraint):
             self._var = var
         return var
 
-    def apply(self, struct, alpha=None, epsilon=None, counts=None, bias=None,
+    def apply(self, struct, alpha=None, beta=None, epsilon=None, counts=None, bias=None,
               inferring_alpha=False):
         if self.lambda_val == 0 or (
                 inferring_alpha and not self.during_alpha_infer):
@@ -309,7 +309,7 @@ class HomologSeparating2019(Constraint):
             self._var = var
         return var
 
-    def apply(self, struct, alpha=None, epsilon=None, counts=None, bias=None,
+    def apply(self, struct, alpha=None, beta=None, epsilon=None, counts=None, bias=None,
               inferring_alpha=False):
         if self.lambda_val == 0 or (
                 inferring_alpha and not self.during_alpha_infer):
@@ -328,7 +328,7 @@ class HomologSeparating2019(Constraint):
         if self.hparams['perc_diff'] is None:
             hmlg_sep_diff = relu(hmlg_sep_diff)
         else:
-            hsc_cutoff = np.array(self.hparams['perc_diff'] * self.hparams[
+            hsc_cutoff = jnp.array(self.hparams['perc_diff'] * self.hparams[
                 "est_hmlg_sep"])
             gt0 = hmlg_sep_diff > 0
             hmlg_sep_diff = hmlg_sep_diff.at[gt0].set(relu(
@@ -351,7 +351,7 @@ class BeadChainConnectivity2022(Constraint):
                  lowmem=False, mods=()):
         self.abbrev = "bcc"
         self.name = "Bead-chain connectivity (2022)"
-        self.during_alpha_infer = True
+        self.during_alpha_infer = True and ('no_bcc_alpha' not in mods)
         self.lambda_val = lambda_val
         self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
@@ -398,11 +398,6 @@ class BeadChainConnectivity2022(Constraint):
             return
         if self._var is not None:
             return self._var
-
-        # Beta
-        beta = _ambiguate_beta(
-            [c.beta for c in counts], counts=counts, lengths=self.lengths,
-            ploidy=self.ploidy)
 
         # Get indices of neighboring beads
         row_nghbr = _neighboring_bead_indices(
@@ -508,7 +503,7 @@ class BeadChainConnectivity2022(Constraint):
                 counts_nghbr[~counts_nghbr_mask] = 0
 
         var = {
-            'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr, 'beta': beta,
+            'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
             'counts_nghbr_mask': counts_nghbr_mask}
         if not self._lowmem:
             for k in var.keys():  # Make all arrays C-contiguous for hashing
@@ -517,7 +512,7 @@ class BeadChainConnectivity2022(Constraint):
             self._var = var
         return var
 
-    def apply(self, struct, alpha=None, epsilon=None, counts=None, bias=None,
+    def apply(self, struct, alpha=None, beta=None, epsilon=None, counts=None, bias=None,
               inferring_alpha=False):
         if self.lambda_val == 0 or (
                 inferring_alpha and not self.during_alpha_infer):
@@ -525,6 +520,11 @@ class BeadChainConnectivity2022(Constraint):
         elif alpha is None:
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self.setup(counts=counts, bias=bias)
+
+        # Beta for ambiguated counts
+        beta_ambig = _ambiguate_beta(
+            beta, counts=counts, lengths=self.lengths,
+            ploidy=self.ploidy)
 
         bias_per_bin = _get_bias_per_bin(
             ploidy=self.ploidy, bias=bias, row=var['row_nghbr'],
@@ -538,7 +538,7 @@ class BeadChainConnectivity2022(Constraint):
         if self.multiscale_factor == 1 or self.multires_naive:
             nghbr_dis = _euclidean_distance(
                 struct, row=var['row_nghbr'], col=var['row_nghbr'] + 1)
-            lambda_pois = (2 * var['beta']) * jnp.power(nghbr_dis, alpha)
+            lambda_pois = (2 * beta_ambig) * jnp.power(nghbr_dis, alpha)
             if bias_per_bin is not None:
                 lambda_pois = lambda_pois * bias_per_bin
 
@@ -559,7 +559,7 @@ class BeadChainConnectivity2022(Constraint):
         else:
             gamma_mean, gamma_var = get_gamma_moments(
                 struct=struct, epsilon=epsilon, alpha=alpha,
-                beta=var['beta'], row3d=var['row_nghbr'],
+                beta=beta_ambig, row3d=var['row_nghbr'],
                 col3d=var['row_nghbr'] + 1, inferring_alpha=inferring_alpha, mods=self.mods)
             gamma_mean = gamma_mean * 2
             gamma_var = gamma_var * 4
@@ -600,7 +600,7 @@ class HomologSeparating2022(Constraint):
                  lowmem=False, mods=()):
         self.abbrev = "hsc"
         self.name = "Homolog separating (2022)"
-        self.during_alpha_infer = True
+        self.during_alpha_infer = True and ('no_hsc_alpha' not in mods)
         self.lambda_val = lambda_val
         self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
@@ -648,22 +648,17 @@ class HomologSeparating2022(Constraint):
         if self._var is not None:
             return self._var
 
-        beta = _ambiguate_beta(
-            [c.beta for c in counts], counts=counts, lengths=self.lengths,
-            ploidy=self.ploidy)
-
         bias_lowres = decrease_bias_res(
             bias, multiscale_factor=self.multiscale_factor, lengths=self.lengths)
 
         if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
-            mask_interchrom = None
+            mask_intrachrom = None
         else:
             n = self.lengths_lowres.sum()
-            mask_interchrom = np.invert(_intramol_mask(
-                (n, n), lengths_at_res=self.lengths_lowres))
+            mask_intrachrom = _intramol_mask(
+                (n, n), lengths_at_res=self.lengths_lowres)
 
-        var = {'beta': beta, 'mask_interchrom': mask_interchrom,
-               'bias_lowres': bias_lowres}
+        var = {'mask_intrachrom': mask_intrachrom, 'bias_lowres': bias_lowres}
 
         if not self._lowmem:
             for k in var.keys():  # Make all arrays C-contiguous for hashing
@@ -672,7 +667,7 @@ class HomologSeparating2022(Constraint):
             self._var = var
         return var
 
-    def apply(self, struct, alpha=None, epsilon=None, counts=None, bias=None,
+    def apply(self, struct, alpha=None, beta=None, epsilon=None, counts=None, bias=None,
               inferring_alpha=False):
         if self.lambda_val == 0 or (
                 inferring_alpha and not self.during_alpha_infer):
@@ -681,13 +676,18 @@ class HomologSeparating2022(Constraint):
             raise ValueError(f"Must input alpha for {self.name} constraint.")
         var = self.setup(counts=counts, bias=bias)
 
+        # Beta for ambiguated counts
+        beta_ambig = _ambiguate_beta(
+            beta, counts=counts, lengths=self.lengths,
+            ploidy=self.ploidy)
+
         # Get inter-molecular indices
         n = self.lengths_lowres.sum()
         row, col = (x.ravel() for x in np.indices((n, n)))
         if not ('hsc22_combo' in self.mods or 'hsc22_quad' in self.mods):
             if self.lengths.size > 1:  # No inter-chrom if only 1 chrom
-                row = row[~var['mask_interchrom']]
-                col = col[~var['mask_interchrom']]
+                row = row[var['mask_intrachrom']]
+                col = col[var['mask_intrachrom']]
             idx = [[row, col + n]]
         else:
             raise ValueError("Not doing this anymore!")
@@ -695,8 +695,8 @@ class HomologSeparating2022(Constraint):
             if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
                 row_interchrom = col_interchrom = None
             else:
-                row_interchrom = row[mask & var['mask_interchrom']]
-                col_interchrom = col[mask & var['mask_interchrom']]
+                row_interchrom = row[mask & ~var['mask_intrachrom']]
+                col_interchrom = col[mask & ~var['mask_intrachrom']]
             if 'hsc22_combo' in self.mods:
                 if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
                     row_all = row
@@ -723,7 +723,7 @@ class HomologSeparating2022(Constraint):
         obj = 0
         for row, col in idx:
             n, p = _get_hsc2022_negbinom(
-                struct, row=row, col=col, alpha=alpha, beta=var["beta"],
+                struct, row=row, col=col, alpha=alpha, beta=beta_ambig,
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
                 bias_lowres=var["bias_lowres"],
                 fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'],
@@ -739,7 +739,7 @@ class HomologSeparating2022(Constraint):
             row_all = np.concatenate([row for row, col in idx])
             col_all = np.concatenate([col for row, col in idx])
             n, p = _get_hsc2022_negbinom(
-                struct, row=row_all, col=col_all, alpha=alpha, beta=var["beta"],
+                struct, row=row_all, col=col_all, alpha=alpha, beta=beta_ambig,
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
                 bias_lowres=var["bias_lowres"],
                 fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'],
@@ -747,7 +747,9 @@ class HomologSeparating2022(Constraint):
             nb_mean = (1 - p) * n / p
             nb_var = nb_mean / p
 
-            to_print = f"KL_NB: 𝔼[c]={self.hparams['data_interchrom'][self.multiscale_factor]['mean']:.2g}\t   NBμ={nb_mean:.2g}\t   V[c]={self.hparams['data_interchrom'][self.multiscale_factor]['var']:.2g}\t   NBσ²={nb_var:.2g}"
+            alpha_beta = f"α={alpha:.3g}\tβ={beta_ambig:.3g}\t"
+
+            to_print = f"{alpha_beta}KL_NB: 𝔼[c]={self.hparams['data_interchrom'][self.multiscale_factor]['mean']:.2g}\t   NBμ={nb_mean:.2g}\t   V[c]={self.hparams['data_interchrom'][self.multiscale_factor]['var']:.2g}\t   NBσ²={nb_var:.2g}"
             to_print += f"\t   OBJ={obj:.2g}"
             if epsilon is not None:
                 to_print += f"\t   ε={jnp.asarray(epsilon).mean():.2g}"
