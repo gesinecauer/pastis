@@ -702,13 +702,13 @@ def distance_between_molecules(structures, lengths, ploidy,
     return np.mean(result, axis=0)
 
 
-def _intramol_mask(data, lengths_at_res):
+def _intramol_mask(data, lengths_at_res, nbins=None):
     """Get mask of intra-molecular row/col for given counts/distance data."""
 
     if (isinstance(data, (tuple, list)) and len(data) == 2) or (
             isinstance(data, np.ndarray) and data.size == 2):
         shape = data
-        row, col = (x.flatten() for x in np.indices(shape))
+        row, col = (x.ravel() for x in np.indices(shape))
     else:
         row = data.row
         col = data.col
@@ -736,7 +736,19 @@ def _intramol_mask(data, lengths_at_res):
         row_binned[row_binned >= nchrom] -= nchrom
         col_binned[col_binned >= nchrom] -= nchrom
 
-    return np.equal(row_binned, col_binned)
+    mask_intra = np.equal(row_binned, col_binned)
+
+    if nbins is not None:
+        if shape[0] != shape[1]:
+            row = row.copy()
+            col = col.copy()
+            n = lengths_at_res.sum()
+            row[row >= n] -= n
+            col[col >= n] -= n
+        mask_near_diag = np.abs(row - col) <= nbins
+        mask_intra = mask_intra & mask_near_diag
+
+    return mask_intra
 
 
 def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
@@ -752,22 +764,12 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
 
     counts = _check_counts_matrix(counts, lengths=lengths_at_res, ploidy=ploidy)
 
-    mask_intra = _intramol_mask(counts, lengths_at_res=lengths_at_res)
-    if sections == 'intra':
+    mask_intra = _intramol_mask(
+        counts, lengths_at_res=lengths_at_res, nbins=nbins)
+    if sections in ('intra', 'near diag'):
         mask = mask_intra
     elif sections == 'inter':
         mask = ~mask_intra
-    elif sections == 'near diag':
-        row = counts.row
-        col = counts.col
-        if counts.shape[0] != counts.shape[1]:
-            row = row.copy()
-            col = col.copy()
-            n = lengths_at_res.sum()
-            row[row >= n] -= n
-            col[col >= n] -= n
-        mask_near_diag = np.abs(row - col) <= nbins
-        mask = mask_intra & mask_near_diag
     # elif sections == 'lowres nghbr':  # TODO delete
     #     row = counts.row; col = counts.col
     #     row = row.copy()
@@ -790,22 +792,48 @@ def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
         shape=counts.shape)
 
 
-def _intramol_counts(counts, lengths_at_res, ploidy):
+def _intramol_counts(counts, lengths_at_res, ploidy, copy=True):
     """Return intra-molecular counts."""  # TODO move to counts.py
+    from .counts import CountsMatrix, CountsBins
+
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        row, col = (x.ravel() for x in np.indices(counts.shape))
+        intra_mask = _intramol_mask(counts.shape, lengths_at_res=lengths_at_res)
+        return counts.filter(
+            row=row[intra_mask], col=col[intra_mask], copy=copy)
+
     return _get_counts_sections(
         counts=counts, sections='intra', lengths_at_res=lengths_at_res,
         ploidy=ploidy)
 
 
-def _intermol_counts(counts, lengths_at_res, ploidy):
+def _intermol_counts(counts, lengths_at_res, ploidy, copy=True):
     """Return inter-molecular counts."""  # TODO move to counts.py
+    from .counts import CountsMatrix, CountsBins
+
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        row, col = (x.ravel() for x in np.indices(counts.shape))
+        inter_mask = ~_intramol_mask(
+            counts.shape, lengths_at_res=lengths_at_res)
+        return counts.filter(
+            row=row[inter_mask], col=col[inter_mask], copy=copy)
+
     return _get_counts_sections(
         counts=counts, sections='inter', lengths_at_res=lengths_at_res,
         ploidy=ploidy)
 
 
-def _counts_near_diag(counts, lengths_at_res, ploidy, nbins):
+def _counts_near_diag(counts, lengths_at_res, ploidy, nbins, copy=True):
     """Return intra-molecular counts within nbins of diagonal."""  # TODO move to counts.py
+    from .counts import CountsMatrix, CountsBins
+
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        row, col = (x.ravel() for x in np.indices(counts.shape))
+        intra_mask = _intramol_mask(
+            counts.shape, lengths_at_res=lengths_at_res, nbins=nbins)
+        return counts.filter(
+            row=row[intra_mask], col=col[intra_mask], copy=copy)
+
     return _get_counts_sections(
         counts=counts, sections='near diag', lengths_at_res=lengths_at_res,
         ploidy=ploidy, nbins=nbins)
