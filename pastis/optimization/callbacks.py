@@ -383,3 +383,8 @@ class Callback(object):
                 self.log[k].append(v)
             else:
                 self.log[k] = [v]
+
+        to_log = dict(to_log)
+        for k in self.log.keys():
+            if k not in to_log.keys():
+                self.log[k].append(None)
