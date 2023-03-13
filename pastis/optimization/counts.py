@@ -566,7 +566,6 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
             shape=counts_ambig.shape)
 
     # Get universal/ambiguated beta
-    print('***', counts_ambig.data.size, counts_ambig.sum(), num_dis_bins)  # TODO remove
     beta_ambig = counts_ambig.sum() / num_dis_bins
     if (not np.isfinite(beta_ambig)) or beta_ambig <= 0:
         raise ValueError(f"Beta for ambiguated counts is {beta_ambig}.")

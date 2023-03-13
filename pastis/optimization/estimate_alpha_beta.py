@@ -116,6 +116,10 @@ def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
         if alpha.size > 1:
             raise ValueError("Alpha must be a float or array of size 1.")
 
+    beta = _estimate_beta(
+        X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, bias=bias,
+        reorienter=reorienter, mixture_coefs=mixture_coefs)
+
     return objective(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy, beta=beta,
         bias=bias, constraints=constraints, reorienter=reorienter,
@@ -242,46 +246,6 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
 
     beta_init = {c.ambiguity: c.beta for c in counts}
 
-    if 'alpha_intra_v3' in mods:
-        # print('\n\n*******', [c.nbins for c in counts], counts[0].bins_nonzero.row.size, counts[0].bins_nonzero.row3d.size)
-        # print(f'******* {counts[0].sum()=}')
-        # beta_new = _estimate_beta(
-        #     X, counts, alpha=alpha_init, lengths=lengths, ploidy=ploidy,
-        #     bias=bias, reorienter=reorienter, mixture_coefs=mixture_coefs)
-        # print('******* beta =', beta_new) #, '\n\n')
-        counts_full = counts
-        from .utils_poisson import _intramol_counts
-        counts = [_intramol_counts(
-            c, lengths_at_res=np.array(lengths), ploidy=ploidy,
-            copy=True) for c in counts]
-        # print('*******', [c.nbins for c in counts], counts[0].bins_nonzero.row.size, counts[0].bins_nonzero.row3d.size)
-        # print(f'******* {counts[0].sum()=}')
-        beta_new = _estimate_beta(
-            X, counts, alpha=alpha_init, lengths=lengths, ploidy=ploidy,
-            bias=bias, reorienter=reorienter, mixture_coefs=mixture_coefs)
-        # print('******* beta =', beta_new) #, '\n\n')
-        counts = [counts[i].update_beta(beta_new[i]) for i in range(len(counts))]
-
-    if 'test_alpha_vals' in mods:
-        alpha_vals = [-4, -3.75, -3.5, -3.25, -3, -2.75, -2.5, -2.25, -2, -1.75, -1.5, -1.25, -1]
-        print('\n\nall counts')
-        for alpha_tmp in alpha_vals:
-            objective_wrapper_alpha(
-                alpha=alpha_tmp, counts=counts, X=X.flatten(), lengths=lengths,
-                ploidy=ploidy, bias=bias, constraints=constraints,
-                reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)
-        print('\n\nintra-counts')
-        from .utils_poisson import _intramol_counts
-        counts_intra = [_intramol_counts(
-            c, lengths_at_res=np.array(lengths), ploidy=ploidy,
-            copy=True) for c in counts]
-        for alpha_tmp in alpha_vals:
-            objective_wrapper_alpha(
-                alpha=alpha_tmp, counts=counts_intra, X=X.flatten(), lengths=lengths,
-                ploidy=ploidy, bias=bias, constraints=constraints,
-                reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)
-        exit(0)
-
     if callback is not None:
         callback.on_optimization_begin(inferring='alpha', alpha_loop=alpha_loop)
         objective_wrapper_alpha(
@@ -316,9 +280,6 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     conv_desc = d['task']
     if isinstance(conv_desc, bytes):
         conv_desc = conv_desc.decode('utf8')
-
-    if 'alpha_intra_v3' in mods:
-        counts = counts_full
 
     beta_new = _estimate_beta(
         X, counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
