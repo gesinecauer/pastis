@@ -400,7 +400,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         outfiles = None
 
     # LOAD DATA
-    counts, bias, lengths, _, _, _, struct_true = load_data(
+    counts, bias, lengths, chromosomes, _, _, struct_true = load_data(
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
@@ -480,8 +480,6 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     # SAVE RESULTS
     struct_ = pm.struct_.reshape(-1, 3)
-    if 'dont_mask_nan' not in mods:
-        struct_[struct_nan] = np.nan
     infer_param = {
         'alpha': pm.alpha_, 'beta': pm.beta_, 'obj': pm.obj_, 'seed': seed,
         'converged': pm.converged_, 'conv_desc': pm.conv_desc_,
@@ -489,11 +487,6 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         'alpha_obj': pm.alpha_obj_, 'alpha_converged': alpha_converged_,
         'alpha_loop': alpha_loop, 'rescale_by': rescale_by,
         'est_hmlg_sep': est_hmlg_sep}
-    # if constraints is not None:  # TODO remove
-    #     hsc19 = [x for x in constraints if (
-    #         isinstance(x, HomologSeparating2019) and x.lambda_val > 0)]
-    #     if len(hsc19) == 1:
-    #         infer_param['est_hmlg_sep'] = hsc19[0].hparams['est_hmlg_sep']
     if reorienter is not None and reorienter.reorient:
         infer_param['orient'] = pm.orientation_.flatten()
 
@@ -514,6 +507,18 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     outfiles['log'], sep='\t', index=False)
         else:
             np.savetxt(outfiles['struct_nonconv'], struct_)
+
+        bead_desc = pd.DataFrame()
+        bead_desc['homolog'] = np.repeat(np.arange(ploidy), lengths.sum())
+        bead_desc['chromosome'] = np.tile(
+            np.repeat(chromosomes, lengths), ploidy)
+        bead_desc['bin'] = np.concatenate(
+            [np.arange(x) for x in np.tile(lengths, ploidy)])
+        mask = np.full(lengths.sum() * ploidy, True)
+        mask[struct_nan] = False
+        bead_desc['mask'] = mask
+        pd.DataFrame(bead_desc).to_csv(
+            os.path.join(outdir, 'bead_desc.txt'), sep='\t', index=False)
 
     if pm.converged_:
         return struct_, infer_param
@@ -605,15 +610,14 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
     if 'exclude_inter' in mods:
         excluded_counts = 'inter'
-
     # OPTIONALLY INFER ALPHA VIA SINGLERES
     start_alpha_big_chrom = ('alpha1chr' in mods)
     start_alpha_big_chrom = start_alpha_big_chrom and first_alpha_loop and (
         lengths_subset.size > 1)
     init_ = init
     est_hmlg_sep_ = est_hmlg_sep
-    if first_alpha_loop and ((
-            multiscale_rounds > 1 and 'alpha_multi' not in mods) or start_alpha_big_chrom):
+    if first_alpha_loop and (start_alpha_big_chrom or (
+            multiscale_rounds > 1 and 'alpha_multi' not in mods)):
 
         if start_alpha_big_chrom:
             if beta is None:
@@ -704,7 +708,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     for multiscale_factor in all_multiscale_factors:
         _print_code_header(
             f'MULTIRES FACTOR {multiscale_factor}', max_length=60,
-            blank_lines=1, verbose=verbose and len(all_multiscale_factors) > 1)
+            blank_lines=1, verbose=verbose and multiscale_rounds > 1)
         if outdir_ is None or multiscale_factor == 1:
             outdir_multires = outdir_
         else:
@@ -736,7 +740,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         # Do not continue unless inference converged
         if not infer_param['converged']:
             return struct_, infer_param
-        if update_alpha and multiscale_factor == 1 and (
+        if update_alpha and ('alpha_converged' in infer_param) and (
+                infer_param['alpha_converged'] is not None) and (
                 not infer_param['alpha_converged']):
             return struct_, infer_param
 
