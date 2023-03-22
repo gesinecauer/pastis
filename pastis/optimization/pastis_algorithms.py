@@ -333,7 +333,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     multiscale_rounds : int, optional
         The number of resolutions at which a structure should be inferred
         during multiscale optimization. Values of 1 or 0 disable multiscale
-        optimization. # TODO move to infer()
+        optimization. # TODO move to infer fxn
     beta_init : float, optional
         TODO update
     init : optional
@@ -531,7 +531,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
           max_alpha_loop=20, beta=None, multiscale_rounds=1,
           alpha_loop=None, update_alpha=False, prev_alpha_obj=None,
           beta_init=None, init='mds', max_iter=30000,
-          factr=1e7, pgtol=1e-05, alpha_factr=1e12,
+          factr=1e7, pgtol=1e-05, alpha_factr=1e12, infer_alpha_intra=True,
           bcc_lambda=0, hsc_lambda=0, bcc_version='2019', hsc_version='2019',
           data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
           hsc_perc_diff=None, excluded_counts=None,
@@ -551,11 +551,6 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             alpha_init = random_state.uniform(low=-4, high=-1)
     if update_alpha and alpha_loop is None:
         alpha_loop = 1
-    if update_alpha and outdir is not None:
-        outdir_ = os.path.join(
-            outdir, f"alpha_coord_descent.try{alpha_loop:03d}")
-    else:
-        outdir_ = outdir
     first_alpha_loop = update_alpha and alpha_loop == 1
     if multiscale_rounds <= 0:
         multiscale_rounds = 1
@@ -598,63 +593,69 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 beta_init, beta = _set_initial_beta(
                     _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
                     exclude_zeros=exclude_zeros)
-    # No need to repeatedly re-load if inferring with single-res
-    if multiscale_rounds == 1:
-        counts = _counts
-        bias = _bias
-        struct_true = _struct_true
-        filter_threshold = 0  # Counts have already been filtered
-        chrom_subset = None  # Chromosomes have already been selected
-        lengths = lengths_subset  # Chromosomes have already been selected
-        chrom_full = chrom_subset_  # Chromosomes have already been selected
+        # No need to repeatedly re-load if inferring with single-res
+        if multiscale_rounds == 1:
+            counts = _counts
+            bias = _bias
+            struct_true = _struct_true
+            filter_threshold = 0  # Counts have already been filtered
+            chrom_subset = None  # Chromosomes have already been selected
+            lengths = lengths_subset  # Chromosomes have already been selected
+            chrom_full = chrom_subset_  # Chromosomes have already been selected
 
-    if 'exclude_inter' in mods:
-        excluded_counts = 'inter'
     # OPTIONALLY INFER ALPHA VIA SINGLERES
-    start_alpha_big_chrom = ('alpha1chr' in mods)
-    start_alpha_big_chrom = start_alpha_big_chrom and first_alpha_loop and (
+    init_alpha_1chrom = 'init_alpha_1chrom' in mods
+    init_alpha_1chrom = init_alpha_1chrom and first_alpha_loop and (
+        lengths_subset.size > 1)
+    infer_alpha_intra = infer_alpha_intra and first_alpha_loop and (
         lengths_subset.size > 1)
     init_ = init
     est_hmlg_sep_ = est_hmlg_sep
-    if first_alpha_loop and (start_alpha_big_chrom or (
-            multiscale_rounds > 1 and 'alpha_multi' not in mods)):
+    if first_alpha_loop and (infer_alpha_intra or init_alpha_1chrom or multiscale_rounds > 1):
+        if beta is None:
+            _, beta = _set_initial_beta(
+                _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
+                exclude_zeros=exclude_zeros)
 
-        if start_alpha_big_chrom:
-            if beta is None:
-                _, beta = _set_initial_beta(
-                    _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
-                    exclude_zeros=exclude_zeros)
-            chrom_subset_alpha_start = chrom_subset_[np.argmax(lengths_subset)]
+        if init_alpha_1chrom:
+            chrom_subset_init_alpha = chrom_subset_[np.argmax(lengths_subset)]
         else:
-            chrom_subset_alpha_start = None
+            chrom_subset_init_alpha = None
+        if infer_alpha_intra:
+            excluded_counts_infer_alpha = 'inter'
+        else:
+            excluded_counts_infer_alpha = excluded_counts
 
         if outdir is None:
-            outdir_tmp_alpha = None
+            outdir_init_alpha = None
         else:
-            outdir_tmp_alpha = os.path.join(outdir, 'initial_alpha_inference')
-            if start_alpha_big_chrom:
-                outdir_tmp_alpha += '.' + chrom_subset_alpha_start.replace(
+            outdir_init_alpha = os.path.join(outdir, 'initial_alpha_inference')
+            if infer_alpha_intra:
+                outdir_init_alpha += '.intra-chromosomal'
+            if init_alpha_1chrom:
+                outdir_init_alpha += '.' + chrom_subset_init_alpha.replace(
                     ' ', '_')
 
         struct_, infer_param = infer(  # Use pre-loaded counts, etc
             counts=_counts, lengths=lengths_subset, ploidy=ploidy,
-            outdir=outdir_tmp_alpha, alpha_init=alpha_init, seed=seed,
+            outdir=outdir_init_alpha, alpha_init=alpha_init, seed=seed,
             filter_threshold=0, normalize=normalize, bias=_bias,
             update_alpha=update_alpha,
             beta_init=beta_init, max_alpha_loop=max_alpha_loop,
             beta=beta, multiscale_rounds=1, init=init,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
-            alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-            hsc_lambda=hsc_lambda, bcc_version=bcc_version, hsc_version=hsc_version,
+            alpha_factr=alpha_factr, infer_alpha_intra=False,
+            bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
+            bcc_version=bcc_version, hsc_version=hsc_version,
             data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
             hsc_min_beads=hsc_min_beads, hsc_perc_diff=hsc_perc_diff,
-            excluded_counts=excluded_counts, callback_freq=callback_freq,
+            excluded_counts=excluded_counts_infer_alpha, callback_freq=callback_freq,
             callback_fxns=callback_fxns, reorienter=reorienter,
             multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
             epsilon_max=epsilon_max, alpha_true=alpha_true,
             struct_true=_struct_true, input_weight=input_weight,
             exclude_zeros=exclude_zeros, null=null, chrom_full=chrom_subset_,
-            chrom_subset=chrom_subset_alpha_start, mixture_coefs=mixture_coefs,
+            chrom_subset=chrom_subset_init_alpha, mixture_coefs=mixture_coefs,
             verbose=verbose, mods=mods)
 
         # Do not continue unless inference converged
@@ -665,26 +666,33 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 not infer_param['alpha_converged']):
             return struct_, infer_param
 
-        if not start_alpha_big_chrom:
+        if not infer_alpha_intra and not init_alpha_1chrom:
             init_ = struct_
+        if not init_alpha_1chrom:
             if 'est_hmlg_sep' in infer_param:
                 est_hmlg_sep_ = infer_param['est_hmlg_sep']
 
         alpha = infer_param['alpha']
         beta = infer_param['beta']
         alpha_loop = infer_param['alpha_loop']
-        if outdir is not None:
-            outdir_ = os.path.join(
-                outdir, f"alpha_coord_descent.try{alpha_loop:03d}")
         prev_alpha_obj = None
         first_alpha_loop = False
+        if infer_alpha_intra:
+            update_alpha = False
+        infer_alpha_intra = False
 
+    # MORE SETUP
+    if update_alpha and outdir is not None:
+        outdir_ = os.path.join(
+            outdir, f"alpha_coord_descent.try{alpha_loop:03d}")
+    else:
+        outdir_ = outdir
     _print_code_header([
         "Jointly inferring structure & alpha",
         f"Inferring STRUCTURE #{alpha_loop}"], max_length=80,
         verbose=verbose and alpha_loop is not None)
 
-    # INFER DRAFT STRUCTURES (to obtain est_hmlg_sep for hsc2019)
+    # INFER DRAFT STRUCTURES (to obtain est_hmlg_sep for hsc2019, if applicable)
     est_hmlg_sep_, draft_converged = _infer_draft(
         counts, lengths=lengths, ploidy=ploidy, outdir=outdir_,
         alpha=alpha, seed=seed, filter_threshold=filter_threshold,
@@ -759,21 +767,37 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # RE-INFER WITH NEW ALPHA
     if not update_alpha:
         return struct_, infer_param
+
+    if prev_alpha_obj is None:
+        prev_alpha_obj = [None, None, None]
+    alpha_obj_conv = _convergence_criteria(
+        f_k=prev_alpha_obj[0], f_kplus1=infer_param['alpha_obj'],
+        factr=alpha_factr)
+    stuct_obj_conv = _convergence_criteria(
+        f_k=prev_alpha_obj[1], f_kplus1=infer_param['obj'],
+        factr=alpha_factr)
+    alpha_conv = _convergence_criteria(
+        f_k=prev_alpha_obj[2], f_kplus1=infer_param['alpha'],
+        factr=alpha_factr)
+    print(f"{alpha_obj_conv=}    {stuct_obj_conv=}    {alpha_conv=}")
+
     if (alpha_loop >= max_alpha_loop) or _convergence_criteria(
-            f_k=prev_alpha_obj, f_kplus1=infer_param['alpha_obj'],
+            f_k=prev_alpha_obj[0], f_kplus1=infer_param['alpha_obj'],
             factr=alpha_factr):
         update_alpha = False
     return infer(
         counts=counts, lengths=lengths, ploidy=ploidy,
         outdir=outdir, alpha=infer_param['alpha'], seed=seed,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        update_alpha=update_alpha, prev_alpha_obj=infer_param['alpha_obj'],
+        update_alpha=update_alpha,
+        prev_alpha_obj=[infer_param['alpha_obj'], infer_param['obj'], infer_param['alpha']],
         beta_init=beta_init,
         alpha_loop=alpha_loop + 1, max_alpha_loop=max_alpha_loop,
         beta=infer_param['beta'], multiscale_rounds=multiscale_rounds,
         init=init_, max_iter=max_iter, factr=factr, pgtol=pgtol,
-        alpha_factr=alpha_factr, bcc_lambda=bcc_lambda,
-        hsc_lambda=hsc_lambda, bcc_version=bcc_version, hsc_version=hsc_version,
+        alpha_factr=alpha_factr, infer_alpha_intra=infer_alpha_intra,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
+        hsc_version=hsc_version,
         data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
         hsc_min_beads=hsc_min_beads, hsc_perc_diff=hsc_perc_diff,
         excluded_counts=excluded_counts, callback_freq=callback_freq,
@@ -791,8 +815,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    alpha_init=None, max_alpha_loop=20,
                    beta=None, multiscale_rounds=1,
                    max_iter=30000, factr=1e7, pgtol=1e-05,
-                   alpha_factr=1e12, bcc_lambda=0, hsc_lambda=0,
-                   bcc_version='2019', hsc_version='2019',
+                   alpha_factr=1e12, infer_alpha_intra=True, bcc_lambda=0,
+                   hsc_lambda=0, bcc_version='2019', hsc_version='2019',
                    data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
                    hsc_perc_diff=None,
                    callback_fxns=None, print_freq=100, log_freq=1000,
@@ -943,7 +967,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             alpha_init=alpha_init, max_alpha_loop=max_alpha_loop, beta=beta,
             multiscale_rounds=multiscale_rounds,
             init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
-            alpha_factr=alpha_factr, bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
+            alpha_factr=alpha_factr, infer_alpha_intra=infer_alpha_intra,
+            bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
             bcc_version=bcc_version, hsc_version=hsc_version,
             data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
             hsc_min_beads=hsc_min_beads, hsc_perc_diff=hsc_perc_diff,
