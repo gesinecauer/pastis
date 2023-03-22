@@ -724,6 +724,7 @@ class PastisPM(object):
         self.converged_ = None
         self.conv_desc_ = None
         self.alpha_converged_ = None
+        self.alpha_conv_desc_ = None
         self.log_ = None
         self.struct_ = None
         self.orientation_ = None
@@ -799,7 +800,7 @@ class PastisPM(object):
                 "Alpha can only be inferred using full-resolution structures.")
 
         time_start = timer()
-        self.alpha_, self.alpha_obj_, self.alpha_converged_, self.log_, self.conv_desc_ = estimate_alpha(
+        self.alpha_, self.alpha_obj_, self.alpha_converged_, self.log_, self.alpha_conv_desc_ = estimate_alpha(
             counts=self.counts,
             X=self.X_.ravel(),
             alpha_init=self.alpha_,

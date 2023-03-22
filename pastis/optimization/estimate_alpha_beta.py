@@ -144,7 +144,7 @@ def objective_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
         ploidy=ploidy, bias=bias, constraints=constraints,
         reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)
 
-    print(f"α={float(alpha):.3g}\tβ={float(beta_new[0]):.3g}\tobj={new_obj:.5g}\tmain={obj_logs['obj_main']:.5g}\tbcc={obj_logs['obj_bcc']:.5g}\thsc={obj_logs['obj_hsc']:.3g}")
+    # print(f"α={float(alpha):.3g}\tβ={float(beta_new[0]):.3g}\tobj={new_obj:.5g}\tmain={obj_logs['obj_main']:.5g}\tbcc={obj_logs['obj_bcc']:.5g}\thsc={obj_logs['obj_hsc']:.3g}")
 
     if callback is not None:
         callback.on_iter_end(

@@ -384,7 +384,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     not infer_param['alpha_converged']):
                 if verbose:
                     print("OPTIMIZATION DID NOT CONVERGE\n"
-                          f"{infer_param['conv_desc']}\n", flush=True)
+                          f"{infer_param['alpha_conv_desc_']}\n", flush=True)
                 struct_ = None
             elif os.path.isfile(outfiles['struct_infer']):
                 if verbose:
@@ -412,15 +412,17 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             mean_nghbr_dis = 1
         else:
             if beta_init is None:
-                beta_init = _ambiguate_beta(
+                beta_init_tmp = _ambiguate_beta(
                     beta, counts=counts, lengths=lengths, ploidy=ploidy)
+            else:
+                beta_init_tmp = beta_init
             beta_nghbr_1, _ = _set_initial_beta(
                 counts, lengths=lengths, ploidy=ploidy, bias=bias,
                 exclude_zeros=exclude_zeros)
-            mean_nghbr_dis = beta_nghbr_1 / beta_init
+            mean_nghbr_dis = beta_nghbr_1 / beta_init_tmp
         estimated_epsilon = mean_nghbr_dis / np.sqrt(6)
         epsilon_max = estimated_epsilon
-        print(f"*** {beta_nghbr_1=:.3g}\t\t{beta_init=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")  # TODO remove
+        print(f"*** {beta_nghbr_1=:.3g}\t\t{beta_init_tmp=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")  # TODO remove
         if 'eps2mm' in mods:
             epsilon_min = estimated_epsilon
 
@@ -461,7 +463,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         pm.fit_structure(alpha_loop=alpha_loop)
 
     # OPTIONALLY RE-INFER ALPHA
-    alpha_converged_ = None
+    alpha_converged_ = alpha_conv_desc_ = None
     if update_alpha and multiscale_factor == 1:
         _print_code_header([
             "Jointly inferring structure & alpha",
@@ -469,6 +471,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             verbose=verbose and alpha_loop is not None)
         pm.fit_alpha(alpha_loop=alpha_loop)
         alpha_converged_ = pm.alpha_converged_
+        alpha_conv_desc_ = pm.alpha_conv_desc_
 
     # GET RESCALING FACTOR: RE-SCALES STRUCTURE TO MATCH ORIGINAL BETA
     beta_current = _ambiguate_beta(
@@ -485,8 +488,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         'converged': pm.converged_, 'conv_desc': pm.conv_desc_,
         'time': pm.time_elapsed_, 'epsilon': pm.epsilon_,
         'alpha_obj': pm.alpha_obj_, 'alpha_converged': alpha_converged_,
-        'alpha_loop': alpha_loop, 'rescale_by': rescale_by,
-        'est_hmlg_sep': est_hmlg_sep}
+        'alpha_conv_desc': alpha_conv_desc_, 'alpha_loop': alpha_loop,
+        'rescale_by': rescale_by, 'est_hmlg_sep': est_hmlg_sep}
     if reorienter is not None and reorienter.reorient:
         infer_param['orient'] = pm.orientation_.flatten()
 
@@ -593,15 +596,15 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 beta_init, beta = _set_initial_beta(
                     _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
                     exclude_zeros=exclude_zeros)
-        # No need to repeatedly re-load if inferring with single-res
-        if multiscale_rounds == 1:
-            counts = _counts
-            bias = _bias
-            struct_true = _struct_true
-            filter_threshold = 0  # Counts have already been filtered
-            chrom_subset = None  # Chromosomes have already been selected
-            lengths = lengths_subset  # Chromosomes have already been selected
-            chrom_full = chrom_subset_  # Chromosomes have already been selected
+        # # No need to repeatedly re-load if inferring with single-res
+        # if multiscale_rounds == 1:
+        #     counts = _counts
+        #     bias = _bias
+        #     struct_true = _struct_true
+        #     filter_threshold = 0  # Counts have already been filtered
+        #     chrom_subset = None  # Chromosomes have already been selected
+        #     lengths = lengths_subset  # Chromosomes have already been selected
+        #     chrom_full = chrom_subset_  # Chromosomes have already been selected
 
     # OPTIONALLY INFER ALPHA VIA SINGLERES
     init_alpha_1chrom = 'init_alpha_1chrom' in mods
@@ -668,9 +671,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
         if not infer_alpha_intra and not init_alpha_1chrom:
             init_ = struct_
-        if not init_alpha_1chrom:
-            if 'est_hmlg_sep' in infer_param:
-                est_hmlg_sep_ = infer_param['est_hmlg_sep']
+        if (not init_alpha_1chrom) and 'est_hmlg_sep' in infer_param:
+            est_hmlg_sep_ = infer_param['est_hmlg_sep']
 
         alpha = infer_param['alpha']
         beta = infer_param['beta']
