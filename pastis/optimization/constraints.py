@@ -234,7 +234,7 @@ class HomologSeparating2019(Constraint):
                  multires_naive=False, hparams=None, fullres_struct_nan=None,
                  lowmem=False, mods=()):
         self.abbrev = "hsc"
-        self.name = "Homolog separating (2019)"
+        self.name = "Homolog separation (2019)"
         self.during_alpha_infer = False
         self.lambda_val = lambda_val
         self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
@@ -599,8 +599,8 @@ class HomologSeparating2022(Constraint):
                  multires_naive=False, hparams=None, fullres_struct_nan=None,
                  lowmem=False, mods=()):
         self.abbrev = "hsc"
-        self.name = "Homolog separating (2022)"
-        self.during_alpha_infer = True and ('no_hsc_alpha' not in mods)
+        self.name = "Homolog separation (2022)"
+        self.during_alpha_infer = False or ('hsc_alpha' in mods)  # See 2023 manuscript for explanation
         self.lambda_val = lambda_val
         self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
@@ -684,7 +684,11 @@ class HomologSeparating2022(Constraint):
         # Get inter-molecular indices
         n = self.lengths_lowres.sum()
         row, col = (x.ravel() for x in np.indices((n, n)))
-        if not ('hsc22_combo' in self.mods or 'hsc22_quad' in self.mods):
+        if 'hsc_diag' in self.mods:
+            row = np.concatenate([np.arange(n - 1), np.arange(n - 1) + 1])
+            col = np.concatenate([np.arange(n - 1) + 1, np.arange(n - 1)])
+            idx = [[row, col + n]]
+        elif not ('hsc22_combo' in self.mods or 'hsc22_quad' in self.mods):
             if self.lengths.size > 1:  # No inter-chrom if only 1 chrom
                 row = row[var['mask_intrachrom']]
                 col = col[var['mask_intrachrom']]
