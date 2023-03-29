@@ -157,12 +157,13 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
     for i in range(len(counts)):
         if counts[i].sum() == 0:
             continue
+        counts_ambig_i = ambiguate_counts(
+            counts[i], lengths=lengths, ploidy=ploidy)
         if bias is not None and not np.all(bias == 1):  # Divide by locus biases
-            bias = np.tile(bias.ravel(), ploidy)
-            bias_per_bin = bias[counts[i].row] * bias[counts[i].col]
-            counts_sums[i] = np.sum(counts[i].data / bias_per_bin)
+            bias_per_bin = bias[counts_ambig_i.row] * bias[counts_ambig_i.col]
+            counts_sums[i] = np.sum(counts_ambig_i.data / bias_per_bin)
         else:
-            counts_sums[i] = counts[i].sum()
+            counts_sums[i] = counts_ambig_i.sum()
 
     beta = counts_sums / counts_sums.sum() * beta_ambig
 
@@ -542,31 +543,33 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
                 (counts_ambig.row[mask], counts_ambig.col[mask])),
             shape=counts_ambig.shape)
 
-    # Get number of distance bins associated with relevant counts
+    # Get indices of distance bins associated with relevant counts
     if neighboring_beads_only:
         # We assume that the contribution of inter-hmlg counts to nghbr counts
         # is negligible
-        num_dis_bins = ploidy * row_nghbr.size
+        if exclude_zeros:
+            row3d = np.tile(counts_ambig.row, ploidy) + np.repeat(
+                np.arange(ploidy) * lengths.sum(), counts_ambig.row.size)
+        else:
+            row3d = np.tile(row_nghbr, ploidy) + np.repeat(
+                np.arange(ploidy) * lengths.sum(), row_nghbr.size)
+        col3d = row3d + 1
     else:
-        # Note: num_dis_bins != (ploidy * ploidy * counts_ambig.nnz) when
-        # some counts bins are zero and exclude_zeros=False
-        num_dis_bins = _counts_indices_to_3d_indices(
+        row3d, col3d = _counts_indices_to_3d_indices(
             counts_ambig, lengths_at_res=lengths, ploidy=ploidy,
-            exclude_zeros=exclude_zeros)[0].size
-    if num_dis_bins == 0:
+            exclude_zeros=exclude_zeros)
+    if row3d.size == 0:
         raise ValueError("Cannot compute beta -- no counts bins are included.")
 
-    # Normalize counts (divide by biases for each locus)
+    # Get denominator: sum of normalized distance bins
     if bias is not None and not np.all(bias == 1):
-        raise NotImplementedError("Biases are wrong here... see manuscript")
-        bias_per_bin = bias[counts_ambig.row] * bias[counts_ambig.col]
-        counts_ambig = sparse.coo_matrix(
-            (counts_ambig.data / bias_per_bin,
-                (counts_ambig.row, counts_ambig.col)),
-            shape=counts_ambig.shape)
+        bias_tiled = np.tile(bias.ravel(), ploidy)
+        denominator = (bias_tiled[col3d] * bias_tiled[col3d]).sum()
+    else:
+        denominator = row3d.size
 
     # Get universal/ambiguated beta
-    beta_ambig = counts_ambig.sum() / num_dis_bins
+    beta_ambig = counts_ambig.sum() / denominator
     if (not np.isfinite(beta_ambig)) or beta_ambig <= 0:
         raise ValueError(f"Beta for ambiguated counts is {beta_ambig}.")
 
