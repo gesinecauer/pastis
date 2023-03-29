@@ -479,7 +479,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if beta_init is None:
         rescale_by = None
     else:
-        rescale_by = beta_init / beta_current
+        rescale_by = beta_current / beta_init
+        # print(f">>>>>> alpha={pm.alpha_:.3g}\t{rescale_by=:.3g}\t{beta_init=:.3g}\t{beta_current=:.3g}")
 
     # SAVE RESULTS
     struct_ = pm.struct_.reshape(-1, 3)
@@ -669,13 +670,13 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 not infer_param['alpha_converged']):
             return struct_, infer_param
 
-        if not infer_alpha_intra and not init_alpha_1chrom:
+        if (not infer_alpha_intra) and (not init_alpha_1chrom):
             init_ = struct_
+            beta = infer_param['beta']  # FIXME not sure about the beta situation
         if (not init_alpha_1chrom) and 'est_hmlg_sep' in infer_param:
             est_hmlg_sep_ = infer_param['est_hmlg_sep']
 
         alpha = infer_param['alpha']
-        beta = infer_param['beta']
         alpha_loop = infer_param['alpha_loop']
         prev_alpha_obj = None
         first_alpha_loop = False
