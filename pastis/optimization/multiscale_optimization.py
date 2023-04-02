@@ -506,8 +506,10 @@ def decrease_bias_res(bias, multiscale_factor, lengths):
         bad_idx.ravel(), np.nan, bias[idx.ravel()]).reshape(
         multiscale_factor, -1)
 
-    bias_lowres = np.nanmean(grouped_bias, axis=0)
-    bias_lowres[np.isnan(bias_lowres)] = 0
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning,
+                                message="Mean of empty slice")
+        bias_lowres = np.nanmean(grouped_bias, axis=0)
 
     return bias_lowres
 
