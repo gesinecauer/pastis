@@ -160,6 +160,12 @@ class Constraint(object):
         """
         pass
 
+    def _check_output(self, obj):
+        """Check current constraint objective for invalid values."""
+        if type(obj).__name__ in ('DeviceArray', 'ndarray'):
+            if (not jnp.isfinite(obj)) or obj == 0:
+                raise ValueError(f"{self.name} constraint is {obj}.")
+
 
 class BeadChainConnectivity2019(Constraint):
     """TODO"""
@@ -222,8 +228,7 @@ class BeadChainConnectivity2019(Constraint):
             nghbr_dis).sum() / jnp.square(nghbr_dis.sum())
         obj = nghbr_dis_var - 1.
 
-        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
-            raise ValueError(f"{self.name} constraint is {obj}.")
+        self._check_output(obj)
         return self.lambda_val * obj
 
 
@@ -338,8 +343,7 @@ class HomologSeparating2019(Constraint):
         hmlg_sep_diff_sq = jnp.square(hmlg_sep_diff)
         obj = jnp.mean(hmlg_sep_diff_sq)
 
-        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
-            raise ValueError(f"{self.name} constraint is {obj}.")
+        self._check_output(obj)
         return self.lambda_val * obj
 
 
@@ -587,10 +591,9 @@ class BeadChainConnectivity2022(Constraint):
                 to_print += f"\t   σ²NB={(gamma_mean + gamma_var).mean():.2g}\t   ε={jnp.asarray(epsilon).mean():.2g}"
             to_print = to_print + f"\t   OBJ={obj:.2g}"
             import jax.debug as jax_debug
-            jax_debug.print(to_print)
+            print(to_print)
 
-        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
-            raise ValueError(f"{self.name} constraint is {obj}.")
+        self._check_output(obj)
         return self.lambda_val * obj
 
 
@@ -772,8 +775,7 @@ class HomologSeparating2022(Constraint):
             import jax.debug as jax_debug
             print(to_print)
 
-        if type(obj).__name__ in ('DeviceArray', 'ndarray') and not jnp.isfinite(obj):
-            raise ValueError(f"{self.name} constraint is {obj}.")
+        self._check_output(obj)
         return self.lambda_val * obj
 
 
