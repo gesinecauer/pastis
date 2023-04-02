@@ -292,11 +292,10 @@ def _format_X(X, lengths, ploidy, multiscale_factor=1,
         epsilon = None
 
     # Reshape into 3D coordinates
-    try:
-        X = X.reshape(-1, 3)
-    except ValueError:
+    if X.size % 3 != 0:
         raise ValueError("Structures should be composed of 3D bead coordinates,"
                          f" {X.shape=}.")
+    X = X.reshape(-1, 3)
 
     # Get list of structures, one per mix_coef
     num_mix = len(mixture_coefs)
@@ -327,11 +326,6 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                       jitted=True, verbose=False, mods=()):
     """Objective function wrapper to match scipy.optimize's interface."""
 
-    # checked = _check_input(  # TODO remove
-    #     lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
-    #     bias=bias, mixture_coefs=mixture_coefs, mods=mods)
-    # (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
-
     if jitted:
         objective_func = objective_jit
     else:
@@ -347,6 +341,9 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         callback.on_iter_end(obj_logs=obj_logs, structures=structures,
                              alpha=alpha, X=X, epsilon=epsilon)
 
+    if not np.isfinite(new_obj):
+        raise ValueError(f"Objective is {new_obj}.")
+
     return new_obj
 
 
@@ -355,11 +352,6 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
                    multiscale_reform=False, callback=None, mixture_coefs=None,
                    jitted=True, verbose=False, mods=()):
     """Gradient function wrapper to match scipy.optimize's interface."""
-
-    # checked = _check_input(  # TODO remove
-    #     lengths=lengths, alpha=alpha, counts=counts, constraints=constraints,
-    #     bias=bias, mixture_coefs=mixture_coefs, mods=mods)
-    # (lengths, alpha, counts, constraints, bias, mixture_coefs, mods) = checked
 
     if jitted:
         gradient_func = gradient_jit
@@ -371,6 +363,12 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)[0]).flatten()
+
+    if (~np.isfinite(new_grad)).sum() > 0:
+        num_nan = np.isnan(new_grad).sum()
+        num_inf = (~np.isfinite(new_grad)).sum() - num_nan
+        raise ValueError(f"Gradient is invalid: {num_nan}/{new_grad.size} items"
+                         f" are NaN, {num_inf}/{new_grad.size} items are Inf.")
 
     return new_grad
 
