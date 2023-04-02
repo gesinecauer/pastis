@@ -388,6 +388,9 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
 
+        if ploidy == 1 or any([c.ambiguity == 'ua' for c in counts]):
+                raise NotImplementedError
+
         if isinstance(excluded_counts, int):
             counts = [_counts_near_diag(
                 c, lengths_at_res=lengths_lowres, ploidy=ploidy,
@@ -400,6 +403,8 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
             counts = [_intramol_counts(
                 c, lengths_at_res=lengths_lowres, ploidy=ploidy,
                 copy=False) for c in counts]
+            # n = lengths_lowres.sum()
+            # print(counts[0].tocoo().toarray()[:n, n:].sum()); exit(0)
         else:
             raise ValueError(
                 "excluded_counts must be an integer, 'inter', 'intra' or None.")
@@ -489,6 +494,9 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
                 counts[i], lengths=lengths, ploidy=ploidy)
             num0_initial = find_beads_to_remove(
                 counts_ambig_i, lengths=lengths, ploidy=1).size
+
+            # If bias is 0, set to NaN
+            bias = np.where(bias == 0, np.nan, bias)
 
             # Remove beads with bias=NaN from counts
             bias_is_finite = np.where(np.isfinite(np.tile(bias, ploidy)))[0]
