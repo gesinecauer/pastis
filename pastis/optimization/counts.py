@@ -715,8 +715,10 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
             multiscale_factor=multiscale_factor, lengths=lengths,
             ploidy=ploidy, lowres_idx=(row, col))
         bias_per_bin = bias[row_fullres] * bias[col_fullres]
-        bias_per_bin = tmp_np.where(bad_idx, 0, bias_per_bin)
-        return bias_per_bin.reshape(multiscale_factor ** 2, -1)
+        bias_per_bin = tmp_np.where(
+            bad_idx | (~np.isfinite(bias_per_bin)), 0, bias_per_bin)
+        bias_per_bin = bias_per_bin.reshape(multiscale_factor ** 2, -1)
+        return bias_per_bin
 
 
 # _isin_2d_good = np.vectorize(
