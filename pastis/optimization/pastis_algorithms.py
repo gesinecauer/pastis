@@ -16,7 +16,7 @@ from .utils_poisson import _print_code_header, _get_output_files
 from .utils_poisson import _output_subdir, _load_infer_param, _format_structures
 from .utils_poisson import distance_between_homologs, distance_between_molecules
 from .counts import preprocess_counts, _ambiguate_beta, ambiguate_counts
-from .counts import _set_initial_beta
+from .counts import _set_initial_beta, _get_counts_ambiguity, _disambiguate_beta
 from .initialization import initialize
 from .callbacks import Callback
 from .constraints import prep_constraints
@@ -558,38 +558,31 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     first_alpha_loop = update_alpha and alpha_loop == 1
     if multiscale_rounds <= 0:
         multiscale_rounds = 1
-    if verbose:
-        if first_alpha_loop and alpha is None and multiscale_rounds == 1:
-            _print_code_header([
-                "JOINTLY INFERRING STRUCTURE + ALPHA",
-                f"Initial alpha = {alpha_init:.3g}"], max_length=100)
-        elif alpha_loop is None:
-            _print_code_header([
-                "INFERRING STRUCTURE WITH FIXED ALPHA",
-                f"Alpha = {alpha:.3g}"], max_length=100)
     if alpha is None:
         alpha = alpha_init
-
-    # SETUP CONSTRAINT
+    # Get inter-chromosomal counts for homolog separating constraint (2022)
     if data_interchrom is None and (hsc_lambda > 0 and hsc_version == '2022'):
-        # Get inter-chromosomal counts for homolog separating constraint (2022)
         data_interchrom = get_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
             filter_threshold=filter_threshold, normalize=normalize,
             bias=bias, multiscale_reform=multiscale_reform,
             multiscale_rounds=multiscale_rounds, verbose=verbose, mods=mods)
 
-    # LOAD DATA
-    if first_alpha_loop or multiscale_rounds == 1:
+    # OPTIONALLY INFER ALPHA
+    init_ = init
+    est_hmlg_sep_ = est_hmlg_sep
+    if first_alpha_loop:
+        # Load data
         loaded = load_data(
             counts=counts, lengths_full=lengths, ploidy=ploidy,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-            struct_true=struct_true, verbose=verbose)
+            struct_true=struct_true, verbose=False)
         (_counts, _bias, lengths_subset, chrom_subset_, lengths, chrom_full,
             _struct_true) = loaded
+
         # Get initial beta
-        if first_alpha_loop and beta_init is None:
+        if beta_init is None:
             if beta is not None:
                 beta_init = _ambiguate_beta(
                     beta, counts=_counts, lengths=lengths_subset, ploidy=ploidy)
@@ -597,30 +590,26 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 beta_init, beta = _set_initial_beta(
                     _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
                     exclude_zeros=exclude_zeros)
-        # # No need to repeatedly re-load if inferring with single-res
-        # if multiscale_rounds == 1:
-        #     counts = _counts
-        #     bias = _bias
-        #     struct_true = _struct_true
-        #     filter_threshold = 0  # Counts have already been filtered
-        #     chrom_subset = None  # Chromosomes have already been selected
-        #     lengths = lengths_subset  # Chromosomes have already been selected
-        #     chrom_full = chrom_subset_  # Chromosomes have already been selected
+        elif beta is None:
+            beta = _disambiguate_beta(
+                beta_init, counts=_counts, lengths=lengths_subset,
+                ploidy=ploidy, bias=_bias)
 
-    # OPTIONALLY INFER ALPHA VIA SINGLERES
-    init_alpha_1chrom = 'init_alpha_1chrom' in mods
-    init_alpha_1chrom = init_alpha_1chrom and first_alpha_loop and (
-        lengths_subset.size > 1)
-    infer_alpha_intra = infer_alpha_intra and first_alpha_loop and (
-        lengths_subset.size > 1)
-    init_ = init
-    est_hmlg_sep_ = est_hmlg_sep
-    if first_alpha_loop and (infer_alpha_intra or init_alpha_1chrom or multiscale_rounds > 1):
-        if beta is None:
-            _, beta = _set_initial_beta(
-                _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
-                exclude_zeros=exclude_zeros)
 
+        init_alpha_1chrom = 'init_alpha_1chrom' in mods and (
+            lengths_subset.size > 1)
+        ambiguities = [_get_counts_ambiguity(
+            c.shape, nbeads=lengths_subset.sum() * ploidy) for c in _counts]
+        if isinstance(infer_alpha_intra, str) and infer_alpha_intra.lower(
+                ) == 'auto':
+            infer_alpha_intra = set(ambiguities) != {"ua"}
+        infer_alpha_intra = infer_alpha_intra and (
+            lengths_subset.size > 1)
+    else:
+        init_alpha_1chrom = False
+        infer_alpha_intra = False
+
+    if first_alpha_loop and (multiscale_rounds > 1 or infer_alpha_intra or init_alpha_1chrom):
         if init_alpha_1chrom:
             chrom_subset_init_alpha = chrom_subset_[np.argmax(lengths_subset)]
         else:
@@ -631,14 +620,16 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             excluded_counts_infer_alpha = excluded_counts
 
         if outdir is None:
-            outdir_init_alpha = None
+            outdir_init_alpha = outdir
         else:
-            outdir_init_alpha = os.path.join(outdir, 'initial_alpha_inference')
+            outdir_tmp = 'initial_alpha_inference'
+            if multiscale_rounds > 1:
+                outdir_tmp += '.singleres'
             if infer_alpha_intra:
-                outdir_init_alpha += '.intra-chromosomal'
+                outdir_tmp += '.intra-chromosomal'
             if init_alpha_1chrom:
-                outdir_init_alpha += '.' + chrom_subset_init_alpha.replace(
-                    ' ', '_')
+                outdir_tmp += '.' + chrom_subset_init_alpha.replace(' ', '_')
+            outdir_init_alpha = os.path.join(outdir, outdir_tmp)
 
         struct_, infer_param = infer(  # Use pre-loaded counts, etc
             counts=_counts, lengths=lengths_subset, ploidy=ploidy,
@@ -690,10 +681,19 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             outdir, f"alpha_coord_descent.try{alpha_loop:03d}")
     else:
         outdir_ = outdir
-    _print_code_header([
-        "Jointly inferring structure & alpha",
-        f"Inferring STRUCTURE #{alpha_loop}"], max_length=80,
-        verbose=verbose and alpha_loop is not None)
+    if verbose:
+        if alpha_loop is None:
+            _print_code_header([
+                "INFERRING STRUCTURE WITH FIXED ALPHA",
+                f"Alpha = {alpha:.3g}"], max_length=100)
+        else:
+            if first_alpha_loop:
+                _print_code_header([
+                    "JOINTLY INFERRING STRUCTURE + ALPHA",
+                    f"Initial alpha = {alpha_init:.3g}"], max_length=100)
+            _print_code_header([
+                "Jointly inferring structure & alpha",
+                f"Inferring STRUCTURE #{alpha_loop}"], max_length=80)
 
     # INFER DRAFT STRUCTURES (to obtain est_hmlg_sep for hsc2019, if applicable)
     est_hmlg_sep_, draft_converged = _infer_draft(
@@ -818,7 +818,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    alpha_init=None, max_alpha_loop=20,
                    beta=None, multiscale_rounds=1,
                    max_iter=30000, factr=1e7, pgtol=1e-05,
-                   alpha_factr=1e12, infer_alpha_intra=True, bcc_lambda=0,
+                   alpha_factr=1e12, infer_alpha_intra='auto', bcc_lambda=0,
                    hsc_lambda=0, bcc_version='2019', hsc_version='2019',
                    data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
                    hsc_perc_diff=None,
