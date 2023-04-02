@@ -526,10 +526,12 @@ class BeadChainConnectivity2022(Constraint):
             beta, counts=counts, lengths=self.lengths,
             ploidy=self.ploidy)
 
+        bias = jnp.where(jnp.isnan(bias), 1, bias)  # NaN bins are included here
         bias_per_bin = _get_bias_per_bin(
             ploidy=self.ploidy, bias=bias, row=var['row_nghbr'],
             col=var['row_nghbr'] + 1, multiscale_factor=self.multiscale_factor,
             lengths=self.lengths, multires_naive=self.multires_naive)
+
         if var['counts_nghbr_mask'] is None:
             counts_nghbr_mask = None
         else:
@@ -648,6 +650,7 @@ class HomologSeparating2022(Constraint):
         if self._var is not None:
             return self._var
 
+        bias = np.where(np.isnan(bias), 1, bias)  # NaN bins are included here
         bias_lowres = decrease_bias_res(
             bias, multiscale_factor=self.multiscale_factor, lengths=self.lengths)
 
