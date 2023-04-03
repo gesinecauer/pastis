@@ -5,6 +5,7 @@ from iced.io import load_lengths
 from .hiclib import load_hiclib_counts
 from ...optimization.utils_poisson import subset_chrom_of_data
 from ...optimization.counts import _prep_counts, _check_counts_matrix
+from ...optimization.counts import CountsMatrix
 
 
 def _get_lengths(lengths):
@@ -132,6 +133,9 @@ def _get_counts(counts, lengths, ploidy):
         counts = counts[:]
 
     for i in range(len(counts)):
+        if isinstance(counts[i], CountsMatrix):
+            continue  # Don't check counts matrix
+
         if isinstance(counts[i], np.ndarray) or sparse.issparse(counts[i]):
             pass
         elif not os.path.isfile(counts[i]):
@@ -220,10 +224,23 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     struct_true = data_subset['struct']
 
     # Filter counts and compute bias
-    counts, bias = _prep_counts(
-        counts, lengths=lengths_subset, ploidy=ploidy,
-        filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        verbose=verbose)
+    counts_are_prepped = False
+    counts_tmp = counts
+    if all([isinstance(c, CountsMatrix) and (
+            c.multiscale_factor == 1) for c in counts]):
+        if filter_threshold is None or filter_threshold == 0:
+            if bias is not None:
+                counts_are_prepped = True
+                bias[bias == 0] = np.nan
+            elif not normalize:
+                counts_are_prepped = True
+            else:
+                counts_tmp = [c.tocoo() for c in counts]
+    if not counts_are_prepped:
+        counts, bias = _prep_counts(
+            counts_tmp, lengths=lengths_subset, ploidy=ploidy,
+            filter_threshold=filter_threshold, normalize=normalize, bias=bias,
+            verbose=verbose)
 
     return (counts, bias, lengths_subset, chrom_subset, lengths_full,
             chrom_full, struct_true)

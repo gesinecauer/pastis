@@ -495,8 +495,8 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
             num0_initial = find_beads_to_remove(
                 counts_ambig_i, lengths=lengths, ploidy=1).size
 
-            # If bias is 0, set to NaN
-            bias = np.where(bias == 0, np.nan, bias)
+            # Set zeros in bias vector to NaN
+            bias[bias == 0] = np.nan
 
             # Remove beads with bias=NaN from counts
             bias_is_finite = np.where(np.isfinite(np.tile(bias, ploidy)))[0]
@@ -595,20 +595,8 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
     """
 
     # Check input
-    counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
-
-    if beta is None:
-        _, beta = _set_initial_beta(
-            counts, lengths=lengths, ploidy=ploidy, bias=bias,
-            exclude_zeros=exclude_zeros)
-    else:
-        if not isinstance(beta, (list, tuple, np.ndarray)):
-            beta = [beta]
-        if len(beta) != len(counts):
-            raise ValueError(
-                "Beta needs to contain as many values as there are counts"
-                f" matrices ({len(counts)}). It is of size {len(beta)}.")
-
+    if not isinstance(counts, (tuple, list)):
+        counts = [counts]
     if input_weight is None:
         input_weight = [1] * len(counts)
     else:
@@ -621,6 +609,36 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
         input_weight = np.array(input_weight)
         if input_weight.sum() not in (0, 1):
             input_weight *= len(input_weight) / input_weight.sum()
+    if beta is not None:
+        if not isinstance(beta, (list, tuple, np.ndarray)):
+            beta = [beta]
+        if len(beta) != len(counts):
+            raise ValueError(
+                "Beta needs to contain as many values as there are counts"
+                f" matrices ({len(counts)}). It is of size {len(beta)}.")
+
+    # If counts are already formatted as CountsMatrix instances
+    if all([isinstance(c, CountsMatrix) for c in counts]):
+        if any([c.multiscale_factor != multiscale_factor for c in counts]):
+            raise ValueError(f"CountsMatrix does not match {multiscale_factor=}.")
+        if any([c.multires_naive != (not multiscale_reform) for c in counts]):
+            raise ValueError(f"CountsMatrix does not match {multiscale_reform=}.")
+        if any([c.exclude_zeros != exclude_zeros for c in counts]):
+            raise ValueError(f"CountsMatrix does not match {exclude_zeros=}.")
+        if any([c.ploidy != ploidy for c in counts]):
+            raise ValueError(f"CountsMatrix does not match {ploidy=}.")
+        if any([not np.array_equal(c.lengths, lengths) for c in counts]):
+            raise ValueError(f"CountsMatrix does not match {lengths=}.")
+        if beta is not None:
+            counts = [counts[i].update_beta(beta[i]) for i in range(len(beta))]
+        return tuple(counts)
+
+    # Prepare for formatting as CountsMatrix instance
+    counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
+    if beta is None:
+        _, beta = _set_initial_beta(
+            counts, lengths=lengths, ploidy=ploidy, bias=bias,
+            exclude_zeros=exclude_zeros)
 
     # Reformat counts as CountsMatrix instance
     counts_reformatted = []
@@ -716,7 +734,7 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
             ploidy=ploidy, lowres_idx=(row, col))
         bias_per_bin = bias[row_fullres] * bias[col_fullres]
         bias_per_bin = tmp_np.where(
-            bad_idx | (~np.isfinite(bias_per_bin)), 0, bias_per_bin)
+            bad_idx | (~tmp_np.isfinite(bias_per_bin)), 0, bias_per_bin)
         bias_per_bin = bias_per_bin.reshape(multiscale_factor ** 2, -1)
         return bias_per_bin
 
