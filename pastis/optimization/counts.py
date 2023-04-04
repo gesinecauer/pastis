@@ -18,7 +18,8 @@ _setup_jax()
 import jax.numpy as jnp
 
 from .utils_poisson import find_beads_to_remove
-from .utils_poisson import _intramol_counts, _intermol_counts, _counts_near_diag
+from .utils_poisson import _intramol_counts, _intermol_counts
+from .utils_poisson import _intrachrom_counts, _interchrom_counts
 from .utils_poisson import _dict_is_equal, _dict_to_hash
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import _group_counts_multiscale
@@ -343,7 +344,7 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         Scaling parameter that determines the size of the structure, relative to
         each counts matrix. There should be one beta per counts matrix. If None,
         the optimal beta will be estimated.
-    excluded_counts : {"inter", "intra"}, optional
+    excluded_counts : str, optional
         Whether to exclude inter- or intra-chromosomal counts from optimization. # TODO update
 
     Returns
@@ -388,26 +389,30 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
 
-        if ploidy == 1 or any([c.ambiguity == 'ua' for c in counts]):
-                raise NotImplementedError
-
         if isinstance(excluded_counts, int):
-            counts = [_counts_near_diag(
+            counts = [_intramol_counts(
                 c, lengths_at_res=lengths_lowres, ploidy=ploidy,
                 nbins=excluded_counts, copy=False) for c in counts]
-        elif excluded_counts.lower() == 'intra':
+        elif excluded_counts.lower() == 'intra-molecular':
             counts = [_intermol_counts(
                 c, lengths_at_res=lengths_lowres, ploidy=ploidy,
                 copy=False) for c in counts]
-        elif excluded_counts.lower() == 'inter':
+        elif excluded_counts.lower() == 'inter-molecular':
             counts = [_intramol_counts(
                 c, lengths_at_res=lengths_lowres, ploidy=ploidy,
                 copy=False) for c in counts]
-            # n = lengths_lowres.sum()
-            # print(counts[0].tocoo().toarray()[:n, n:].sum()); exit(0)
+        elif excluded_counts.lower() == 'intra-chromosomal':
+            counts = [_interchrom_counts(
+                c, lengths_at_res=lengths_lowres, ploidy=ploidy,
+                copy=False) for c in counts]
+        elif excluded_counts.lower() == 'inter-chromosomal':
+            counts = [_intrachrom_counts(
+                c, lengths_at_res=lengths_lowres, ploidy=ploidy,
+                copy=False) for c in counts]
         else:
-            raise ValueError(
-                "excluded_counts must be an integer, 'inter', 'intra' or None.")
+            raise ValueError("Options for excluded_counts: None, integer,"
+                             " 'inter-molecular', 'intra-molecular',"
+                             " 'inter-chromosomal', 'intra-chromosomal'.")
 
     return counts, struct_nan, fullres_struct_nan
 

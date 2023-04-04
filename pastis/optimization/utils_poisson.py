@@ -702,7 +702,7 @@ def distance_between_molecules(structures, lengths, ploidy,
     return np.mean(result, axis=0)
 
 
-def _intramol_mask(data, lengths_at_res, nbins=None):
+def _intramol_mask(data, lengths_at_res, nbins=None, intrachrom_interhmlg=False):
     """Get mask of intra-molecular row/col for given counts/distance data."""
 
     if (isinstance(data, (tuple, list)) and len(data) == 2) or (
@@ -714,6 +714,8 @@ def _intramol_mask(data, lengths_at_res, nbins=None):
         col = data.col
         shape = data.shape
 
+    lengths_at_res = np.array(
+        lengths_at_res, copy=False, ndmin=1, dtype=int).ravel()
     n = lengths_at_res.sum()
     if set(shape) not in ({n}, {n * 2}, {n, n * 2}):
         raise ValueError(
@@ -731,7 +733,7 @@ def _intramol_mask(data, lengths_at_res, nbins=None):
     row_binned = np.digitize(row, bins_for_row)
     col_binned = np.digitize(col, bins_for_col)
 
-    if shape[0] != shape[1]:
+    if shape[0] != shape[1] or intrachrom_interhmlg:
         nchrom = lengths_at_res.shape[0]
         row_binned[row_binned >= nchrom] -= nchrom
         col_binned[col_binned >= nchrom] -= nchrom
@@ -751,92 +753,99 @@ def _intramol_mask(data, lengths_at_res, nbins=None):
     return mask_intra
 
 
-def _get_counts_sections(counts, sections, lengths_at_res, ploidy, nbins=None):
-    """Set counts outside the given section to zero."""  # TODO move to counts.py
-    from .counts import _check_counts_matrix
-
-    sections = sections.lower()
-    options = ['inter', 'intra', 'near diag']
-    if sections not in options:
-        raise ValueError(f"Options: {', '.join(options)}.")
-    if sections == 'near diag' and nbins is None:
-        raise ValueError("Must input nbins.")
-
-    counts = _check_counts_matrix(counts, lengths=lengths_at_res, ploidy=ploidy)
-
-    mask_intra = _intramol_mask(
-        counts, lengths_at_res=lengths_at_res, nbins=nbins)
-    if sections in ('intra', 'near diag'):
-        mask = mask_intra
-    elif sections == 'inter':
-        mask = ~mask_intra
-    # elif sections == 'lowres nghbr':  # TODO delete
-    #     row = counts.row; col = counts.col
-    #     row = row.copy()
-    #     col = col.copy()
-    #     if counts.shape[0] != counts.shape[1]:
-    #         n = lengths_at_res.sum()
-    #         row[row >= n] -= n
-    #         col[col >= n] -= n
-    #     lengths_tiled = np.tile(lengths_at_res, ploidy)
-    #     for i in np.flip(np.arange(1, lengths_tiled.size)):
-    #         l = lengths_tiled[:i].sum()
-    #         row[row >= l] -= lengths_tiled[i - 1]
-    #         col[col >= l] -= lengths_tiled[i - 1]
-    #     mask_lowres_nghbr = np.abs(np.floor(row / nbins) - np.floor(
-    #         col / nbins)) == 1
-    #     mask = mask_intra & mask_lowres_nghbr
-
-    return sparse.coo_matrix(
-        (counts.data[mask], (counts.row[mask], counts.col[mask])),
-        shape=counts.shape)
-
-
-def _intramol_counts(counts, lengths_at_res, ploidy, copy=True):
+def _intramol_counts(counts, lengths_at_res, ploidy, nbins=None, copy=True):
     """Return intra-molecular counts."""  # TODO move to counts.py
-    from .counts import CountsMatrix, CountsBins
+    from .counts import _check_counts_matrix, CountsMatrix, CountsBins
+
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        tmp = counts.shape
+    else:
+        counts = _check_counts_matrix(
+            counts, lengths=lengths_at_res, ploidy=ploidy, copy=copy)
+        tmp = counts
+
+    mask = _intramol_mask(tmp, lengths_at_res=lengths_at_res, nbins=nbins)
 
     if isinstance(counts, (CountsMatrix, CountsBins)):
         row, col = (x.ravel() for x in np.indices(counts.shape))
-        intra_mask = _intramol_mask(counts.shape, lengths_at_res=lengths_at_res)
         return counts.filter(
-            row=row[intra_mask], col=col[intra_mask], copy=copy)
-
-    return _get_counts_sections(
-        counts=counts, sections='intra', lengths_at_res=lengths_at_res,
-        ploidy=ploidy)
+            row=row[mask], col=col[mask], copy=copy)
+    else:
+        return sparse.coo_matrix(
+            (counts.data[mask], (counts.row[mask], counts.col[mask])),
+            shape=counts.shape)
 
 
 def _intermol_counts(counts, lengths_at_res, ploidy, copy=True):
     """Return inter-molecular counts."""  # TODO move to counts.py
-    from .counts import CountsMatrix, CountsBins
+    from .counts import _check_counts_matrix, CountsMatrix, CountsBins
+
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        tmp = counts.shape
+    else:
+        counts = _check_counts_matrix(
+            counts, lengths=lengths_at_res, ploidy=ploidy, copy=copy)
+        tmp = counts
+
+    mask = ~_intramol_mask(tmp, lengths_at_res=lengths_at_res)
 
     if isinstance(counts, (CountsMatrix, CountsBins)):
         row, col = (x.ravel() for x in np.indices(counts.shape))
-        inter_mask = ~_intramol_mask(
-            counts.shape, lengths_at_res=lengths_at_res)
         return counts.filter(
-            row=row[inter_mask], col=col[inter_mask], copy=copy)
+            row=row[mask], col=col[mask], copy=copy)
+    else:
+        return sparse.coo_matrix(
+            (counts.data[mask], (counts.row[mask], counts.col[mask])),
+            shape=counts.shape)
 
-    return _get_counts_sections(
-        counts=counts, sections='inter', lengths_at_res=lengths_at_res,
-        ploidy=ploidy)
 
+def _intrachrom_counts(counts, lengths_at_res, ploidy, nbins=None, copy=True):
+    """Return intra-chromosomal counts, both inter- and intra-homolog."""  # TODO move to counts.py
+    from .counts import _check_counts_matrix, CountsMatrix, CountsBins
 
-def _counts_near_diag(counts, lengths_at_res, ploidy, nbins, copy=True):
-    """Return intra-molecular counts within nbins of diagonal."""  # TODO move to counts.py
-    from .counts import CountsMatrix, CountsBins
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        tmp = counts.shape
+    else:
+        counts = _check_counts_matrix(
+            counts, lengths=lengths_at_res, ploidy=ploidy, copy=copy)
+        tmp = counts
+
+    mask = _intramol_mask(
+        tmp, lengths_at_res=lengths_at_res, intrachrom_interhmlg=True,
+        nbins=nbins)
 
     if isinstance(counts, (CountsMatrix, CountsBins)):
         row, col = (x.ravel() for x in np.indices(counts.shape))
-        intra_mask = _intramol_mask(
-            counts.shape, lengths_at_res=lengths_at_res, nbins=nbins)
         return counts.filter(
-            row=row[intra_mask], col=col[intra_mask], copy=copy)
+            row=row[mask], col=col[mask], copy=copy)
+    else:
+        return sparse.coo_matrix(
+            (counts.data[mask], (counts.row[mask], counts.col[mask])),
+            shape=counts.shape)
 
-    return _get_counts_sections(
-        counts=counts, sections='near diag', lengths_at_res=lengths_at_res,
-        ploidy=ploidy, nbins=nbins)
+
+def _interchrom_counts(counts, lengths_at_res, ploidy, copy=True):
+    """Return inter-chromosomal counts, both inter- and intra-homolog."""  # TODO move to counts.py
+    from .counts import _check_counts_matrix, CountsMatrix, CountsBins
+
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        tmp = counts.shape
+    else:
+        counts = _check_counts_matrix(
+            counts, lengths=lengths_at_res, ploidy=ploidy, copy=copy)
+        tmp = counts
+
+    mask = ~_intramol_mask(
+        tmp, lengths_at_res=lengths_at_res, intrachrom_interhmlg=True)
+
+    if isinstance(counts, (CountsMatrix, CountsBins)):
+        row, col = (x.ravel() for x in np.indices(counts.shape))
+        return counts.filter(
+            row=row[mask], col=col[mask], copy=copy)
+    else:
+        return sparse.coo_matrix(
+            (counts.data[mask], (counts.row[mask], counts.col[mask])),
+            shape=counts.shape)
 
 
 def _dict_is_equal(d1, d2, verbose=False):

@@ -362,7 +362,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         structure from which `est_hmlg_sep` is estimated.
     hsc_perc_diff : float, optional
         For diploid organisms: TODO
-    excluded_counts : {"inter", "intra"}, optional
+    excluded_counts : str, optional
         Whether to exclude inter- or intra-chromosomal counts from optimization.
 
     Returns
@@ -616,7 +616,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             chrom_subset_init_alpha = chrom_subset_
         if infer_alpha_intra:
-            excluded_counts_infer_alpha = 'inter'
+            excluded_counts_infer_alpha = 'inter-chromosomal'
         else:
             excluded_counts_infer_alpha = excluded_counts
 

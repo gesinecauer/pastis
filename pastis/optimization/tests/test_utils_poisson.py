@@ -292,6 +292,39 @@ def test_distance_between_molecules(multiscale_factor):
 
 
 @pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
+def test_interchrom_counts(ambiguity):
+    lengths = np.array([21, 34, 16])
+    ploidy = 2
+    seed = 0
+    val = 10000  # Value for counts bins that will be excluded by function
+
+    random_state = np.random.RandomState(seed=seed)
+    n = lengths.sum()
+    nbeads = n * ploidy
+    counts = random_state.uniform(low=0.0, high=1.0, size=(nbeads, nbeads))
+    begin = end = 0
+    for l in lengths:  # Set intra-chromosomal counts to val
+        end += l
+        counts[begin:end, begin:end] = val
+        counts[(begin + n):(end + n), (begin + n):(end + n)] = val
+        counts[begin:end, (begin + n):(end + n)] = val
+        counts[(begin + n):(end + n), begin:end] = val
+        begin = end
+    counts = set_counts_ambiguity(
+        counts, lengths=lengths, ploidy=ploidy, ambiguity=ambiguity).toarray()
+    counts[(counts != 0) & (counts % val == 0)] = val
+    counts[counts > val] = 0
+
+    counts_inter_correct = counts.copy()
+    counts_inter_correct[counts_inter_correct == val] = 0
+
+    counts_inter_test = utils_poisson._interchrom_counts(
+        counts, lengths_at_res=lengths, ploidy=ploidy).toarray()
+
+    assert_array_equal(counts_inter_correct, counts_inter_test)
+
+
+@pytest.mark.parametrize("ambiguity", ["ua", "ambig", "pa"])
 def test_intermol_counts(ambiguity):
     lengths = np.array([21, 34, 16])
     ploidy = 2
@@ -344,7 +377,7 @@ def test_counts_near_diag(ambiguity):
     counts_nghbr_correct = counts.copy()
     counts_nghbr_correct[counts_nghbr_correct == val] = 0
 
-    counts_nghbr_test = utils_poisson._counts_near_diag(
+    counts_nghbr_test = utils_poisson._intramol_counts(
         counts, lengths_at_res=lengths, ploidy=ploidy, nbins=1).toarray()
 
     assert_array_equal(counts_nghbr_correct, counts_nghbr_test)
