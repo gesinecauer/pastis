@@ -780,15 +780,15 @@ def _idx_isin(idx1, idx2):
 
     if isinstance(idx1, (list, tuple)):
         idx1 = np.stack(idx1, axis=1)
-    type1 = np.min_scalar_type(idx1.max()).str
-    idx1 = idx1.astype(type1)
 
     if isinstance(idx2, (list, tuple)):
         idx2 = np.stack(idx2, axis=1)
     if idx2.size == 0:
         return np.full(idx1.shape[0], False)
-    type2 = np.min_scalar_type(idx2.max()).str
-    idx2 = idx2.astype(type2)
+
+    dtype = np.min_scalar_type(max(idx1.max(), idx2.max())).str
+    idx1 = idx1.astype(dtype)
+    idx2 = idx2.astype(dtype)
     idx2 = np.unique(idx2, axis=0)
 
     mask2 = np.isin(idx2[:, 0], idx1[:, 0]) & np.isin(idx2[:, 1], idx1[:, 1])
@@ -800,8 +800,8 @@ def _idx_isin(idx1, idx2):
     if mask1.sum() == 0:
         return mask1
 
-    idx1 = np.array(list((map(tuple, idx1[mask1]))), dtype=f"{type1},{type1}")
-    idx2 = np.array(list((map(tuple, idx2))), dtype=f"{type2},{type2}")
+    idx1 = np.array(list((map(tuple, idx1[mask1]))), dtype=f"{dtype},{dtype}")
+    idx2 = np.array(list((map(tuple, idx2))), dtype=f"{dtype},{dtype}")
 
     mask1[mask1] = np.isin(idx1, idx2)
     return mask1

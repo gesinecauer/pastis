@@ -163,7 +163,7 @@ class Constraint(object):
     def _check_output(self, obj):
         """Check current constraint objective for invalid values."""
         if type(obj).__name__ in ('DeviceArray', 'ndarray'):
-            if (not jnp.isfinite(obj)) or obj == 0:
+            if not jnp.isfinite(obj):
                 raise ValueError(f"{self.name} constraint is {obj}.")
 
 

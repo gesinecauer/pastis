@@ -126,8 +126,9 @@ def _get_chrom(chrom, lengths=None):
 def _get_counts(counts, lengths, ploidy):
     """Parse counts matrix, load from file if necessary."""
 
-    if not isinstance(counts, list):
+    if not isinstance(counts, (list, tuple, np.ndarray)):
         counts = [counts]
+    counts = list(counts)
     lengths = _get_lengths(lengths)
     if all([isinstance(c, str) for c in counts]):
         counts = counts[:]
