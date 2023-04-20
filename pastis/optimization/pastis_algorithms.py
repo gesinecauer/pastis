@@ -479,7 +479,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if beta_init is None:
         rescale_by = None
     else:
-        rescale_by = beta_current / beta_init
+        # rescale_by = beta_current / beta_init
+        rescale_by = np.power(beta_current / beta_init, 1 / pm.alpha_)
         # print(f">>>>>> alpha={pm.alpha_:.3g}\t{rescale_by=:.3g}\t{beta_init=:.3g}\t{beta_current=:.3g}")
 
     # SAVE RESULTS
@@ -671,10 +672,10 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
         alpha = infer_param['alpha']
         alpha_loop = infer_param['alpha_loop']
-        if infer_alpha_intra or init_alpha_1chrom:
-            alpha_loop += 1
         prev_alpha_obj = None
         first_alpha_loop = False
+        if infer_alpha_intra or init_alpha_1chrom:
+            alpha_loop += 1
         if infer_alpha_intra:
             update_alpha = False
         infer_alpha_intra = False
