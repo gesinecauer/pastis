@@ -500,7 +500,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         with open(outfiles['infer_param'], 'w') as f:
             for k, v in infer_param.items():
                 if isinstance(v, (np.ndarray, list, tuple)):
-                    f.write(f"{k}\t{' '.join([f'{x:g}' for x in v])}\n")
+                    f.write(f"{k}\t{' '.join(map(str, v))}\n")
                 elif v is not None:
                     f.write(f'{k}\t{v}\n')
         if reorienter is not None and reorienter.reorient:

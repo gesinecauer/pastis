@@ -225,21 +225,18 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     struct_true = data_subset['struct']
 
     # Filter counts and compute bias
-    counts_are_prepped = False
-    counts_tmp = counts
-    if all([isinstance(c, CountsMatrix) and (
-            c.multiscale_factor == 1) for c in counts]):
-        if filter_threshold is None or filter_threshold == 0:
-            if bias is not None:
-                counts_are_prepped = True
-                bias[bias == 0] = np.nan
-            elif not normalize:
-                counts_are_prepped = True
-            else:
-                counts_tmp = [c.tocoo() for c in counts]
-    if not counts_are_prepped:
+    if all([isinstance(c, CountsMatrix) for c in counts]):
+        if (filter_threshold is not None and filter_threshold != 0) or any(
+                [c.multiscale_factor > 1 for c in counts]) or (
+                normalize and bias is None):
+            raise ValueError(
+                "CountsMatrix must be single-resolution, pre-filtered and (if"
+                " applicable) inputted alongside bias vector.")
+        if bias is not None:
+            bias[bias == 0] = np.nan
+    else:
         counts, bias = _prep_counts(
-            counts_tmp, lengths=lengths_subset, ploidy=ploidy,
+            counts, lengths=lengths_subset, ploidy=ploidy,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
             verbose=verbose)
 

@@ -453,7 +453,7 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
 
         # Filter ambiguated counts, and get mask of beads that are NaN
         counts_ambig = filter_low_counts(
-            counts_ambig, sparsity=False,
+            counts_ambig.astype(float), sparsity=False,
             percentage=filter_threshold + perc0_initial).tocoo()
         if verbose:
             if num0_initial > 0:
