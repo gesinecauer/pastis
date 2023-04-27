@@ -140,41 +140,61 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
 def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
     """Derive beta for each counts matrix from ambiguated beta.
     """
+
+    if not isinstance(counts, (list, tuple)):
+        counts = [counts]
+
     if beta_ambig is None:
         return None
-    if ploidy == 1:
-        return [beta_ambig]
+    if ploidy == 1 or (
+            len(counts) == 1 and counts[0].shape[0] == counts[0].shape[1]):
+        if isinstance(beta_ambig, (jnp.float64, jnp.ndarray)):
+            return jnp.array([beta_ambig])
+        else:
+            return [beta_ambig]
 
     if bias is not None and bias.size != lengths.sum():
         raise ValueError("Bias size must be equal to the sum of the chromosome "
                          f"lengths ({lengths.sum()}). It is of size"
                          f" {bias.size}.")
 
-    if not isinstance(counts, (list, tuple)):
-        counts = [counts]
-
     # Get sum of each (normalized) counts matrix
     counts_sums = np.zeros(len(counts))
     for i in range(len(counts)):
         if counts[i].sum() == 0:
             continue
-        counts_ambig_i = ambiguate_counts(
-            counts[i], lengths=lengths, ploidy=ploidy)
-        if bias is not None and not np.all(bias == 1):  # Divide by locus biases
-            bias_per_bin = bias[counts_ambig_i.row] * bias[counts_ambig_i.col]
-            counts_sums[i] = np.sum(counts_ambig_i.data / bias_per_bin)
+        if isinstance(counts[i], CountsMatrix):
+            tmp = counts[i].bins_nonzero
         else:
-            counts_sums[i] = counts_ambig_i.sum()
+            tmp = counts[i]
 
+        # Ambiguated beta is set using ambiguated counts, which don't include
+        # bins that have the same genomic locus but are on different homologs.
+        # So, to disambiguate beta, we also ignore these bins.
+        # mask = np.abs(tmp.row - tmp.col) != lengths.sum()
+        mask = np.maximum(tmp.row, tmp.col) - np.minimum(
+            tmp.row, tmp.col) != lengths.sum()
+
+        # Sum the (normalized) counts data
+        if bias is not None and not np.all(bias == 1):  # Divide by locus biases
+            bias_per_bin = _get_bias_per_bin(
+                ploidy=ploidy, bias=bias, row=tmp.row[mask], col=tmp.col[mask],
+                lengths=lengths)
+            counts_sums[i] = (tmp.data[mask] / bias_per_bin).sum()
+        else:
+            counts_sums[i] = tmp.data[mask].sum()
+
+    # Get beta for each counts matrix
     beta = counts_sums / counts_sums.sum() * beta_ambig
 
     # Adjust beta for partially ambiguous: divide by 2
-    for i in range(len(counts)):
-        if counts[i].shape[0] != counts[i].shape[1]:
-            beta[i] /= 2
+    divide_by = np.array([1 if c.shape[0] == c.shape[1] else 2 for c in counts])
+    beta = beta / divide_by
 
-    beta = beta.tolist()
-    return beta
+    if isinstance(beta_ambig, (jnp.float64, jnp.ndarray)):
+        return beta
+    else:
+        return beta.tolist()
 
 
 def _get_included_counts_bins(counts, lengths, ploidy, check_counts=True,
@@ -624,19 +644,26 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
 
     # If counts are already formatted as CountsMatrix instances
     if all([isinstance(c, CountsMatrix) for c in counts]):
-        if any([c.multiscale_factor != multiscale_factor for c in counts]):
-            raise ValueError(f"CountsMatrix does not match {multiscale_factor=}.")
-        if any([c.multires_naive != (not multiscale_reform) for c in counts]):
-            raise ValueError(f"CountsMatrix does not match {multiscale_reform=}.")
-        if any([c.exclude_zeros != exclude_zeros for c in counts]):
-            raise ValueError(f"CountsMatrix does not match {exclude_zeros=}.")
-        if any([c.ploidy != ploidy for c in counts]):
-            raise ValueError(f"CountsMatrix does not match {ploidy=}.")
         if any([not np.array_equal(c.lengths, lengths) for c in counts]):
             raise ValueError(f"CountsMatrix does not match {lengths=}.")
-        if beta is not None:
-            counts = [counts[i].update_beta(beta[i]) for i in range(len(beta))]
-        return tuple(counts)
+
+        counts_multiscale_factor = set([c.multiscale_factor for c in counts])
+        if counts_multiscale_factor not in ({1}, {multiscale_factor}):
+            raise ValueError(f"CountsMatrix does not match {multiscale_factor=}.")
+        if counts_multiscale_factor != {multiscale_factor}:
+            counts = [c.tocoo() for c in counts]  # Counts are full-res
+        else:
+            if any([c.multires_naive != (not multiscale_reform) for c in counts]):
+                raise ValueError(f"CountsMatrix does not match {multiscale_reform=}.")
+            if any([c.exclude_zeros != exclude_zeros for c in counts]):
+                raise ValueError(
+                    f"CountsMatrix does not match {exclude_zeros=}.")
+            if any([c.ploidy != ploidy for c in counts]):
+                raise ValueError(f"CountsMatrix does not match {ploidy=}.")
+            if beta is not None:
+                counts = [counts[i].update_beta(
+                    beta[i]) for i in range(len(beta))]
+            return tuple(counts)
 
     # Prepare for formatting as CountsMatrix instance
     counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
@@ -707,7 +734,7 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
 
 def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
                       multires_naive=False):
-    """Determines bias corresponding to each bin of the distance matrix."""
+    """Determines bias corresponding to each bin of a given matrix."""
     if bias is None or (isinstance(bias, np.ndarray) and np.all(bias == 1)):
         return None
 

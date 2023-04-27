@@ -300,6 +300,7 @@ def test_3d_indices_diploid_partially_ambig():
 @pytest.mark.parametrize("ambiguities,use_bias", [
     ("ua", False), ("ambig", False), ("pa", False),
     ("ua", True), ("ambig", True), ("pa", True),
+    (["ua", "ambig"], False), (["ua", "ambig"], True),
     (["ua", "ambig", "pa"], False), (["ua", "ambig", "pa"], True)])
 def test_ambiguate_beta(ambiguities, use_bias):
     lengths = np.array([20])
@@ -324,15 +325,6 @@ def test_ambiguate_beta(ambiguities, use_bias):
             beta=beta[i], ambiguity=ambiguities[i], struct_nan=struct_nan,
             random_state=random_state, use_poisson=False, bias=bias))
 
-    # Confirm that beta MLE is working
-    counts_objects, _, _ = counts_py.preprocess_counts(
-        counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias,
-        verbose=False)
-    beta_mle = _estimate_beta(
-        struct_true, counts=counts_objects, alpha=alpha, lengths=lengths,
-        ploidy=ploidy, bias=bias)._value
-    assert_allclose(beta, beta_mle)
-
     # Test _ambiguate_beta
     counts_ambig = ambiguate_counts_correct(
         counts, lengths=lengths, ploidy=ploidy)
@@ -351,6 +343,15 @@ def test_ambiguate_beta(ambiguities, use_bias):
         beta_ambig_correct, counts=counts, lengths=lengths, ploidy=ploidy,
         bias=bias)
     assert_allclose(beta, beta_disambig)
+
+    # Confirm that beta MLE is working
+    counts_objects, _, _ = counts_py.preprocess_counts(
+        counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias,
+        verbose=False)
+    beta_mle = _estimate_beta(
+        struct_true, counts=counts_objects, alpha=alpha, lengths=lengths,
+        ploidy=ploidy, bias=bias)._value
+    assert_allclose(beta, beta_mle)
 
 
 @pytest.mark.parametrize("use_bias", [False, True])

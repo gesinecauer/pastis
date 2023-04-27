@@ -57,7 +57,7 @@ def _get_bias(bias, lengths):
     return bias
 
 
-def _get_struct(struct, lengths, ploidy):
+def _get_struct(struct, lengths, ploidy, num_struct=1, concatenate=True):
     """Parse structure, load from file if necessary."""
 
     if struct is None:
@@ -80,9 +80,20 @@ def _get_struct(struct, lengths, ploidy):
     except ValueError:
         raise ValueError("Structure should be composed of 3D bead coordinates,"
                          f" {struct.shape=}")
-    if struct.shape[0] != lengths.sum() * ploidy:
-        raise ValueError(f"The structure must contain {lengths.sum() * ploidy}"
+
+    nbeads = lengths.sum() * ploidy
+    if num_struct is None:
+        num_struct = struct.shape[0] / nbeads
+        if num_struct != int(num_struct):
+            raise ValueError("Structure data must be composed of 1 or more 3D"
+                             f" structure(s), each with {nbeads} beads.")
+    elif struct.shape[0] != nbeads * num_struct:
+        raise ValueError(f"Structure data must contain {nbeads * num_struct}"
                          f" beads. It contains {struct.shape[0]} beads.")
+
+    if not concatenate:
+        struct = np.split(struct, int(num_struct), axis=0)
+
     return struct
 
 
@@ -213,7 +224,9 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
         chrom_subset = _get_chrom(chrom_subset)
     counts = _get_counts(counts, lengths=lengths_full, ploidy=ploidy)
     bias = _get_bias(bias, lengths=lengths_full)
-    struct_true = _get_struct(struct_true, lengths=lengths_full, ploidy=ploidy)
+    struct_true = _get_struct(
+        struct_true, lengths=lengths_full, ploidy=ploidy, num_struct=None,
+        concatenate=False)
 
     # Optionally limit the data to the specified chromosomes
     lengths_subset, chrom_subset, data_subset = subset_chrom_of_data(

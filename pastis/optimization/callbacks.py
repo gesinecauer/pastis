@@ -152,25 +152,30 @@ class Callback(object):
 
         self.epsilon_true = None
         if struct_true is not None:
-            struct_true = struct_true.reshape(-1, 3)
+            self.struct_true = [x.reshape(-1, 3) for x in struct_true]
+            struct_true_fullres = [x.copy() for x in self.struct_true]
+
             if multiscale_factor != 1 and multiscale_reform:
-                self.epsilon_true = get_epsilon_from_struct(
-                    struct_true, lengths=lengths, ploidy=ploidy,
-                    multiscale_factor=multiscale_factor, verbose=False)
+                self.epsilon_true = [get_epsilon_from_struct(
+                    x, lengths=lengths, ploidy=ploidy,
+                    multiscale_factor=multiscale_factor,
+                    verbose=False) for x in struct_true_fullres]
                 if verbose:
                     print(f"True epsilon ({multiscale_factor}x):"
-                          f" {self.epsilon_true:.3g}", flush=True)
-            self.struct_true = decrease_struct_res(
-                struct_true, multiscale_factor=multiscale_factor,
-                lengths=lengths, ploidy=ploidy,
-                fullres_struct_nan=fullres_struct_nan)
-            if multiscale_factor > 1:
-                struct_nan_mask = np.isnan(self.struct_true[:, 0])
-                self.struct_true[struct_nan_mask] = decrease_struct_res(
-                    struct_true, multiscale_factor=multiscale_factor,
-                    lengths=lengths, ploidy=ploidy)[struct_nan_mask]
-            if isinstance(self.struct_true, jnp.ndarray):
-                self.struct_true = self.struct_true._value
+                          f" {np.mean(self.epsilon_true):.3g}", flush=True)
+
+            for i in range(len(self.struct_true)):
+                self.struct_true[i] = decrease_struct_res(
+                    struct_true_fullres[i], multiscale_factor=multiscale_factor,
+                    lengths=lengths, ploidy=ploidy,
+                    fullres_struct_nan=fullres_struct_nan)
+                if multiscale_factor > 1:
+                    struct_nan_mask = np.isnan(self.struct_true[i][:, 0])
+                    self.struct_true[i][struct_nan_mask] = decrease_struct_res(
+                        struct_true_fullres[i], multiscale_factor=multiscale_factor,
+                        lengths=lengths, ploidy=ploidy)[struct_nan_mask]
+                if isinstance(self.struct_true[i], jnp.ndarray):
+                    self.struct_true[i] = self.struct_true[i]._value
         else:
             self.struct_true = None
         self.alpha_true = alpha_true

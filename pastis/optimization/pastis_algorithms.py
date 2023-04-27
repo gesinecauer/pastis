@@ -112,11 +112,14 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         counts_draft = [ambiguate_counts(
             counts=counts, lengths=lengths, ploidy=2)]
         if struct_true_draft is not None:
-            struct_true_draft = struct_true_draft.reshape(-1, 3)
-            struct_true_draft = np.nanmean(  # FIXME is this even correct?
-                [struct_true_draft[:int(struct_true_draft.shape[0] / 2)],
-                 struct_true_draft[int(struct_true_draft.shape[0] / 2):]],
-                axis=0)
+            struct_true_draft = [x.reshape(-1, 3) for x in struct_true_draft]
+            struct_true_draft = [np.nanmean(  # FIXME is this even correct?
+                [x[:lengths.sum()], x[lengths.sum():]],
+                axis=0) for x in struct_true_draft]
+            # struct_true_draft = np.nanmean(  # FIXME is this even correct?
+            #     [struct_true_draft[:int(struct_true_draft.shape[0] / 2)],
+            #      struct_true_draft[int(struct_true_draft.shape[0] / 2):]],
+            #     axis=0)
 
         # Convert initialization to "simplified" diploid (if necessary)
         if isinstance(init_draft, list):
@@ -164,8 +167,8 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         print("Estimated distances between homolog centers of mass:"
               " " + " ".join([f'{x:.2g}' for x in est_hmlg_sep]), flush=True)
         if struct_true is not None:
-            true_hmlg_sep = distance_between_homologs(
-                structures=struct_true, lengths=lengths)
+            true_hmlg_sep = np.mean([distance_between_homologs(
+                structures=x, lengths=lengths) for x in struct_true], axis=0)
             print("   > TRUE distances between homolog centers of mass:"
                   " " + " ".join([f'{x:.2g}' for x in true_hmlg_sep]),
                   flush=True)
@@ -536,7 +539,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
           max_alpha_loop=20, beta=None, multiscale_rounds=1,
           alpha_loop=None, update_alpha=False, prev_alpha_obj=None,
           beta_init=None, init='mds', max_iter=30000,
-          factr=1e7, pgtol=1e-05, alpha_factr=1e12, infer_alpha_intra='auto',
+          factr=1e7, pgtol=1e-05, alpha_factr=1e12, infer_alpha_intra=True,
           struct_at_final_alpha=True,
           bcc_lambda=0, hsc_lambda=0, bcc_version='2019', hsc_version='2019',
           data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
@@ -597,16 +600,9 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 beta_init, counts=_counts, lengths=lengths_subset,
                 ploidy=ploidy, bias=_bias)
 
-
         init_alpha_1chrom = 'init_alpha_1chrom' in mods and (
             lengths_subset.size > 1)
-        ambiguities = [_get_counts_ambiguity(
-            c.shape, nbeads=lengths_subset.sum() * ploidy) for c in _counts]
-        if isinstance(infer_alpha_intra, str) and infer_alpha_intra.lower(
-                ) == 'auto':
-            infer_alpha_intra = set(ambiguities) != {"ua"}
-        infer_alpha_intra = infer_alpha_intra and (
-            lengths_subset.size > 1)
+        infer_alpha_intra = infer_alpha_intra and lengths_subset.size > 1
     else:
         init_alpha_1chrom = False
         infer_alpha_intra = False
@@ -679,6 +675,20 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         if infer_alpha_intra:
             update_alpha = False
         infer_alpha_intra = False
+    elif first_alpha_loop and multiscale_rounds == 1:
+        # No need to repeatedly re-load if inferring with single-res
+        bias = _bias
+        struct_true = _struct_true
+        filter_threshold = 0  # Counts have already been filtered (_counts)
+        chrom_subset = None  # Chromosomes have already been selected
+        lengths = lengths_subset  # Chromosomes have already been selected
+        chrom_full = chrom_subset_  # Chromosomes have already been selected
+        counts, _, _ = preprocess_counts(
+            counts=_counts, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=1, exclude_zeros=exclude_zeros,
+            beta=beta, bias=bias, input_weight=input_weight, verbose=verbose,
+            excluded_counts=excluded_counts, multiscale_reform=multiscale_reform,
+            mods=mods)
 
     # MORE SETUP
     if verbose:
@@ -699,20 +709,6 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             outdir, f"alpha_coord_descent.try{alpha_loop:03d}")
     else:
         outdir_ = outdir
-    if first_alpha_loop and multiscale_rounds == 1:
-        # No need to repeatedly re-load if inferring with single-res
-        bias = _bias
-        struct_true = _struct_true
-        filter_threshold = 0  # Counts have already been filtered (_counts)
-        chrom_subset = None  # Chromosomes have already been selected
-        lengths = lengths_subset  # Chromosomes have already been selected
-        chrom_full = chrom_subset_  # Chromosomes have already been selected
-        counts, _, _ = preprocess_counts(
-            counts=_counts, lengths=lengths, ploidy=ploidy,
-            multiscale_factor=1, exclude_zeros=exclude_zeros,
-            beta=beta, bias=bias, input_weight=input_weight, verbose=verbose,
-            excluded_counts=excluded_counts, multiscale_reform=multiscale_reform,
-            mods=mods)
 
     # INFER DRAFT STRUCTURES (to obtain est_hmlg_sep for hsc2019, if applicable)
     est_hmlg_sep_, draft_converged = _infer_draft(
@@ -840,7 +836,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    alpha_init=None, max_alpha_loop=20,
                    beta=None, multiscale_rounds=1,
                    max_iter=30000, factr=1e7, pgtol=1e-05,
-                   alpha_factr=1e12, infer_alpha_intra='auto',
+                   alpha_factr=1e12, infer_alpha_intra=True,
                    struct_at_final_alpha=True, bcc_lambda=0,
                    hsc_lambda=0, bcc_version='2019', hsc_version='2019',
                    data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,

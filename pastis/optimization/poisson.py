@@ -133,12 +133,12 @@ def _obj_single(structures, counts, alpha, lengths, ploidy, beta, bias=None,
     if (not np.isfinite(counts.weight)) or counts.weight <= 0:
         raise ValueError(f"Counts weight may not be {counts.weight}.")
 
-    if mixture_coefs is not None and len(structures) != len(mixture_coefs):
+    if mixture_coefs is None:
+        mixture_coefs = [1]
+    if len(structures) != len(mixture_coefs):
         raise ValueError(
             f"The number of structures ({len(structures)}) and of mixture"
             f" coefficents ({len(mixture_coefs)}) should be identical.")
-    elif mixture_coefs is None:
-        mixture_coefs = [1]
 
     if epsilon is None or multiscale_factor == 1:
         obj = _poisson_obj(

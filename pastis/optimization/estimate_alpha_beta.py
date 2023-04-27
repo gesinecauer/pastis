@@ -14,42 +14,7 @@ from jax import grad
 
 from .poisson import _format_X, objective, _check_input
 from .utils_poisson import _euclidean_distance
-
-
-def _estimate_beta_single(structures, counts, alpha, lengths, ploidy, bias=None,
-                          mixture_coefs=None):
-    """Estimate beta for a single counts matrix."""
-
-    # Check format of input
-    if isinstance(alpha, (np.ndarray, jnp.ndarray)):
-        if alpha.size > 1:
-            raise ValueError("Alpha must be a float or array of size 1.")
-
-    if mixture_coefs is not None and len(structures) != len(mixture_coefs):
-        raise ValueError(
-            f"The number of structures ({len(structures)}) and of mixture"
-            f" coefficents ({len(mixture_coefs)}) should be identical.")
-    elif mixture_coefs is None:
-        mixture_coefs = [1]
-
-    lambda_pois_sum = 0
-    for counts_bins in counts.bins:
-        for struct, mix_coef in zip(structures, mixture_coefs):
-            dis = _euclidean_distance(
-                struct, row=counts_bins.row3d, col=counts_bins.col3d)
-            tmp = jnp.power(dis, alpha).reshape(
-                -1, counts_bins.nbins).sum(axis=0)
-            if bias is not None:
-                tmp = tmp * counts_bins.bias_per_bin(bias)
-            lambda_pois_sum = lambda_pois_sum + jnp.sum(mix_coef * tmp)
-
-    beta = counts.sum() / lambda_pois_sum
-
-    if type(beta).__name__ in ('DeviceArray', 'ndarray') and (
-            (not jnp.isfinite(beta)) or beta <= 0):
-        raise ValueError(f"Beta for {counts.ambiguity} counts is {beta}.")
-
-    return beta
+from .counts import _disambiguate_beta
 
 
 def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
@@ -65,21 +30,43 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     if not isinstance(lengths, (tuple, np.ndarray, jnp.ndarray)):
         lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
 
+    # Format X
     structures, _, mixture_coefs = _format_X(
         X, lengths=lengths, ploidy=ploidy, multiscale_factor=1,
         mixture_coefs=mixture_coefs)
-
+    if len(structures) != len(mixture_coefs):
+        raise ValueError(
+            f"The number of structures ({len(structures)}) and of mixture"
+            f" coefficents ({len(mixture_coefs)}) should be identical.")
     if reorienter is not None and reorienter.reorient:
         structures = reorienter.translate_and_rotate(X)
 
-    # Estimate beta for each counts matrix
-    betas = jnp.zeros(len(counts))
-    for i in range(len(counts)):
-        beta_i = _estimate_beta_single(
-            structures, counts=counts[i], alpha=alpha, lengths=lengths,
-            ploidy=ploidy, bias=bias, mixture_coefs=mixture_coefs)
-        betas = betas.at[i].set(beta_i)
-    return betas
+    # Get universal/ambiguated beta
+    lambda_pois_sum = 0
+    counts_ambig = sum([c.ambiguate() for c in counts])
+    # for i in range(len(counts)):
+    # for counts_bins in counts[i].bins:
+    for counts_bins in counts_ambig.bins:
+        for struct, mix_coef in zip(structures, mixture_coefs):
+            dis = _euclidean_distance(
+                struct, row=counts_bins.row3d, col=counts_bins.col3d)
+            tmp = jnp.power(dis, alpha).reshape(
+                -1, counts_bins.nbins).sum(axis=0)
+            if bias is not None:
+                tmp = tmp * counts_bins.bias_per_bin(bias)
+            lambda_pois_sum = lambda_pois_sum + mix_coef * jnp.sum(tmp)
+    # beta_ambig = sum([c.sum() for c in counts]) / lambda_pois_sum
+    beta_ambig = counts_ambig.sum() / lambda_pois_sum
+
+    if type(beta_ambig).__name__ in ('DeviceArray', 'ndarray') and (
+            (not jnp.isfinite(beta_ambig)) or beta_ambig <= 0):
+        raise ValueError(f"Beta is {beta_ambig}.")
+
+    # If diploid, disambiguate the universal/ambiguated beta
+    beta = _disambiguate_beta(
+        beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias)
+
+    return beta
 
 
 def objective_alpha(alpha, beta, counts, X, lengths, ploidy, bias=None,
