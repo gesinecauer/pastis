@@ -5,7 +5,7 @@ from iced.io import load_lengths
 from .hiclib import load_hiclib_counts
 from ...optimization.utils_poisson import subset_chrom_of_data
 from ...optimization.counts import _prep_counts, _check_counts_matrix
-from ...optimization.counts import CountsMatrix
+from ...optimization.counts import CountsMatrix, check_bias_size
 
 
 def _get_lengths(lengths):
@@ -32,7 +32,7 @@ def _get_lengths(lengths):
     return lengths
 
 
-def _get_bias(bias, lengths):
+def _get_bias(bias, lengths, bias_per_hmlg=None):
     """Parse bias, load from file if necessary."""
 
     if bias is None:
@@ -50,10 +50,7 @@ def _get_bias(bias, lengths):
 
     bias = np.array(bias, copy=False, ndmin=1, dtype=float).ravel()
 
-    if bias.size != lengths.sum():
-        raise ValueError("Bias size must be equal to the sum of the chromosome "
-                         f"lengths ({lengths.sum()}). It is of size"
-                         f" {bias.size}.")
+    bias = check_bias_size(bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg)
     return bias
 
 
@@ -169,7 +166,7 @@ def _get_counts(counts, lengths, ploidy):
 
 def load_data(counts, lengths_full, ploidy, chrom_full=None,
               chrom_subset=None, filter_threshold=0.04, normalize=True,
-              bias=None, struct_true=None, verbose=False):
+              bias=None, struct_true=None, bias_per_hmlg=False, verbose=False):
     """Load all input data from files, and/or reformat data objects.
 
     If files are provided, load data from files. Also reformats data objects.
@@ -223,7 +220,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     if chrom_subset is not None:
         chrom_subset = _get_chrom(chrom_subset)
     counts = _get_counts(counts, lengths=lengths_full, ploidy=ploidy)
-    bias = _get_bias(bias, lengths=lengths_full)
+    bias = _get_bias(bias, lengths=lengths_full, bias_per_hmlg=bias_per_hmlg)
     struct_true = _get_struct(
         struct_true, lengths=lengths_full, ploidy=ploidy, num_struct=None,
         concatenate=False)
@@ -232,7 +229,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
     lengths_subset, chrom_subset, data_subset = subset_chrom_of_data(
         ploidy=ploidy, lengths_full=lengths_full, chrom_full=chrom_full,
         chrom_subset=chrom_subset, counts=counts, bias=bias,
-        structures=struct_true)
+        structures=struct_true, bias_per_hmlg=bias_per_hmlg)
     counts = data_subset['counts']
     bias = data_subset['bias']
     struct_true = data_subset['struct']
@@ -251,7 +248,7 @@ def load_data(counts, lengths_full, ploidy, chrom_full=None,
         counts, bias = _prep_counts(
             counts, lengths=lengths_subset, ploidy=ploidy,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-            verbose=verbose)
+            bias_per_hmlg=bias_per_hmlg, verbose=verbose)
 
     return (counts, bias, lengths_subset, chrom_subset, lengths_full,
             chrom_full, struct_true)

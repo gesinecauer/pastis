@@ -25,6 +25,7 @@ from .poisson import PastisPM, _convergence_criteria
 from .multiscale_optimization import _choose_max_multiscale_factor
 from .multiscale_optimization import decrease_lengths_res
 from .multiscale_optimization import decrease_bias_res
+from .multiscale_optimization import get_epsilon_from_struct
 from ..io.read import load_data
 
 
@@ -37,7 +38,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                  callback_fxns=None, reorienter=None,
                  multiscale_reform=False, alpha_true=None,
                  struct_true=None, input_weight=None, exclude_zeros=False,
-                 chrom_full=None, chrom_subset=None,
+                 chrom_full=None, chrom_subset=None, bias_per_hmlg=False,
                  mixture_coefs=None, verbose=True, mods=[]):
     """Infer draft 3D structures with PASTIS via Poisson model."""
 
@@ -55,7 +56,9 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        struct_true=struct_true, verbose=False)
+        struct_true=struct_true, bias_per_hmlg=bias_per_hmlg, verbose=False)
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {lengths.sum() * ploidy}
 
     multires_factor_draft = _choose_max_multiscale_factor(
         lengths=lengths, min_beads=hsc_min_beads)
@@ -75,7 +78,7 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
     if beta is None:
         _, beta = _set_initial_beta(
             counts, lengths=lengths, ploidy=ploidy, bias=bias,
-            exclude_zeros=exclude_zeros)
+            exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg)
     elif isinstance(beta, (float, int)):
         beta = [beta]
     ua_index = [i for i in range(len(
@@ -103,7 +106,8 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                              " estimate est_hmlg_sep from ambiguous data.")
         ploidy_draft = 1
 
-        # Convert counts & betas & struct_true to "simplified" diploid
+
+        # Convert counts, betas, bias, & struct_true to "simplified" diploid
         beta_ambig = _ambiguate_beta(
             beta, counts=counts, lengths=lengths, ploidy=2)
         beta_draft = 2 * beta_ambig
@@ -120,6 +124,11 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
             #     [struct_true_draft[:int(struct_true_draft.shape[0] / 2)],
             #      struct_true_draft[int(struct_true_draft.shape[0] / 2):]],
             #     axis=0)
+        if np.all(bias == 1):
+            bias is None
+        if bias_per_hmlg and bias is not None:
+            bias = np.mean([bias[:lengths.sum()], bias[lengths.sum():]])
+
 
         # Convert initialization to "simplified" diploid (if necessary)
         if isinstance(init_draft, list):
@@ -149,7 +158,8 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
         reorienter=reorienter, multiscale_reform=multiscale_reform,
         alpha_true=alpha_true, struct_true=struct_true_draft,
         input_weight=input_weight, exclude_zeros=exclude_zeros, null=False,
-        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+        bias_per_hmlg=bias_per_hmlg, mixture_coefs=mixture_coefs,
+        verbose=verbose, mods=mods)
     if not infer_param_lowres['converged']:
         return None, False
 
@@ -193,7 +203,7 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                     multiscale_reform=False,
                     alpha_true=None, struct_true=None, input_weight=None,
                     exclude_zeros=False, null=False, chrom_full=None, chrom_subset=None,
-                    mixture_coefs=None,
+                    bias_per_hmlg=False, mixture_coefs=None,
                     outfiles=None, verbose=True, mods=[]):
     """TODO"""
 
@@ -203,7 +213,9 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_factor=multiscale_factor, exclude_zeros=exclude_zeros,
         beta=beta, bias=bias, input_weight=input_weight, verbose=verbose,
         excluded_counts=excluded_counts, multiscale_reform=multiscale_reform,
-        mods=mods)
+        bias_per_hmlg=bias_per_hmlg, mods=mods)
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {lengths.sum() * ploidy}
 
     # PRINT INFERENCE INFORMATION
     if verbose:
@@ -219,7 +231,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # REDUCE RESOLUTION OF BIAS, IF NEEDED
     if multiscale_factor > 1 and not multiscale_reform:
         bias = decrease_bias_res(
-            bias, multiscale_factor=multiscale_factor, lengths=lengths)
+            bias, multiscale_factor=multiscale_factor, lengths=lengths,
+            bias_per_hmlg=bias_per_hmlg)
 
     # INITIALIZATION
     random_state = np.random.RandomState(seed)
@@ -229,7 +242,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha=(alpha_init if alpha is None else alpha),
         bias=bias, multiscale_factor=multiscale_factor,
         reorienter=reorienter, mixture_coefs=mixture_coefs,
-        struct_true=struct_true, verbose=verbose, mods=mods)
+        struct_true=struct_true, bias_per_hmlg=bias_per_hmlg, verbose=verbose,
+        mods=mods)
     if multiscale_reform and multiscale_factor != 1:
         if epsilon_min == epsilon_max:
             epsilon = epsilon_max
@@ -256,7 +270,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
         hsc_version=hsc_version, data_interchrom=data_interchrom,
         est_hmlg_sep=est_hmlg_sep, hsc_perc_diff=hsc_perc_diff,
-        fullres_struct_nan=fullres_struct_nan, verbose=verbose, mods=mods)
+        fullres_struct_nan=fullres_struct_nan, bias_per_hmlg=bias_per_hmlg,
+        verbose=verbose, mods=mods)
     [x.setup(counts=counts, bias=bias) for x in constraints]  # For jax jit
     constraints = tuple(constraints)
 
@@ -292,7 +307,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                    multiscale_reform=False, epsilon_min=1e-2, epsilon_max=1e6,
                    alpha_true=None, struct_true=None, input_weight=None,
                    exclude_zeros=False, null=False,
-                   chrom_full=None, chrom_subset=None, mixture_coefs=None, verbose=True,
+                   chrom_full=None, chrom_subset=None, bias_per_hmlg=False,
+                   mixture_coefs=None, verbose=True,
                    mods=[]):
     """Infer 3D structures with PASTIS via Poisson model.
 
@@ -391,7 +407,12 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 struct_ = None
             elif os.path.isfile(outfiles['struct_infer']):
                 if verbose:
-                    print('CONVERGED\n', flush=True)
+                    if ('alpha_converged' in infer_param) and (
+                            infer_param['alpha_converged'] is not None):
+                        alpha_desc = f" (alpha={infer_param['alpha']:.3g})"
+                    else:
+                        alpha_desc = ""
+                    print(f'CONVERGED{alpha_desc}\n', flush=True)
                 struct_ = np.loadtxt(outfiles['struct_infer'])
             elif os.path.isfile(outfiles['struct_nonconv']):
                 if verbose:
@@ -407,10 +428,12 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        struct_true=struct_true, verbose=verbose)
+        struct_true=struct_true, bias_per_hmlg=bias_per_hmlg, verbose=verbose)
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {lengths.sum() * ploidy}
 
-    # TEMP
-    if multiscale_factor == 2 and multiscale_reform and ('eps2' in mods or 'eps2mm' in mods):
+    # SET BOUNDS ON EPSILON
+    if multiscale_reform and multiscale_factor > 1:
         if beta is None:
             mean_nghbr_dis = 1
         else:
@@ -421,13 +444,23 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 beta_init_tmp = beta_init
             beta_nghbr_1, _ = _set_initial_beta(
                 counts, lengths=lengths, ploidy=ploidy, bias=bias,
-                exclude_zeros=exclude_zeros)
+                exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg)
             mean_nghbr_dis = beta_nghbr_1 / beta_init_tmp
-        estimated_epsilon = mean_nghbr_dis / np.sqrt(6)
-        epsilon_max = estimated_epsilon
-        # print(f"*** {beta_nghbr_1=:.3g}\t\t{beta_init_tmp=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")  # TODO remove
-        if 'eps2mm' in mods:
-            epsilon_min = estimated_epsilon
+        if multiscale_factor == 2 and ('eps2' in mods or 'eps2mm' in mods):
+            estimated_epsilon = mean_nghbr_dis / np.sqrt(6)
+            epsilon_max = estimated_epsilon
+            # print(f"*** {beta_nghbr_1=:.3g}\t\t{beta_init_tmp=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")  # TODO remove
+            if 'eps2mm' in mods:
+                epsilon_min = estimated_epsilon
+        elif 'epsmax' in mods:
+            struct_epsilon_max = mean_nghbr_dis * np.concatenate([
+                np.arange(multiscale_factor).reshape(-1, 1),
+                np.zeros((multiscale_factor, 2))], axis=1)
+            est_epsilon_max = get_epsilon_from_struct(
+                struct_epsilon_max, lengths=multiscale_factor,
+                ploidy=1, multiscale_factor=multiscale_factor, verbose=False)
+            print(f">>>>>>>> {epsilon_max=:.3g}\t{est_epsilon_max=:.3g}", flush=True)
+            epsilon_max = min(epsilon_max, est_epsilon_max)
 
     # PREP FOR INFERENCE
     prepped = _prep_inference(
@@ -445,7 +478,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         multiscale_reform=multiscale_reform,
         alpha_true=alpha_true, struct_true=struct_true, input_weight=input_weight,
         exclude_zeros=exclude_zeros, null=null,
-        chrom_full=chrom_full, chrom_subset=chrom_subset, mixture_coefs=mixture_coefs,
+        chrom_full=chrom_full, chrom_subset=chrom_subset,
+        bias_per_hmlg=bias_per_hmlg, mixture_coefs=mixture_coefs,
         outfiles=outfiles, verbose=verbose, mods=mods)
     (counts, bias, struct_nan, struct_init, constraints, callback, epsilon,
         ploidy) = prepped
@@ -458,7 +492,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         epsilon_bounds=[epsilon_min, epsilon_max], alpha_init=alpha_init,
         max_alpha_loop=max_alpha_loop, max_iter=max_iter, factr=factr,
         pgtol=pgtol, alpha_factr=alpha_factr, reorienter=reorienter,
-        null=null, mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+        null=null, bias_per_hmlg=bias_per_hmlg,
+        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
     if 'skip_struct' in mods and ploidy == 2 and alpha_loop == 1:
         pm.struct_ = struct_init
         pm.converged_ = True
@@ -548,9 +583,12 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
           multiscale_reform=False, epsilon_min=1e-2, epsilon_max=1e6,
           alpha_true=None, struct_true=None,
           input_weight=None, exclude_zeros=False, null=False,
-          chrom_full=None, chrom_subset=None,
+          chrom_full=None, chrom_subset=None, bias_per_hmlg=False,
           mixture_coefs=None, verbose=True, mods=[]):
     """TODO"""
+
+    # if 'exclude_inter' in mods:
+    #     excluded_counts = 'inter-chromosomal'
 
     # SETUP
     if alpha is None:
@@ -566,12 +604,15 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     if alpha is None:
         alpha = alpha_init
     # Get inter-chromosomal counts for homolog separating constraint (2022)
-    if data_interchrom is None and (hsc_lambda > 0 and hsc_version == '2022'):
+    if hsc_lambda > 0 and hsc_version == '2022' and (
+            data_interchrom is None or isinstance(data_interchrom, str)):
         data_interchrom = get_counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
             filter_threshold=filter_threshold, normalize=normalize,
             bias=bias, multiscale_reform=multiscale_reform,
-            multiscale_rounds=multiscale_rounds, verbose=verbose, mods=mods)
+            multiscale_rounds=multiscale_rounds,
+            data_interchrom=data_interchrom, bias_per_hmlg=bias_per_hmlg,
+            verbose=verbose, mods=mods)
 
     # OPTIONALLY INFER ALPHA
     init_ = init
@@ -582,7 +623,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             counts=counts, lengths_full=lengths, ploidy=ploidy,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
             filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-            struct_true=struct_true, verbose=False)
+            struct_true=struct_true, bias_per_hmlg=bias_per_hmlg, verbose=verbose)
         (_counts, _bias, lengths_subset, chrom_subset_, lengths, chrom_full,
             _struct_true) = loaded
 
@@ -594,11 +635,11 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             else:
                 beta_init, beta = _set_initial_beta(
                     _counts, lengths=lengths_subset, ploidy=ploidy, bias=_bias,
-                    exclude_zeros=exclude_zeros)
+                    exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg)
         elif beta is None:
             beta = _disambiguate_beta(
                 beta_init, counts=_counts, lengths=lengths_subset,
-                ploidy=ploidy, bias=_bias)
+                ploidy=ploidy, bias=_bias, bias_per_hmlg=bias_per_hmlg)
 
         init_alpha_1chrom = 'init_alpha_1chrom' in mods and (
             lengths_subset.size > 1)
@@ -649,8 +690,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             epsilon_max=epsilon_max, alpha_true=alpha_true,
             struct_true=struct_true, input_weight=input_weight,
             exclude_zeros=exclude_zeros, null=null, chrom_full=chrom_full,
-            chrom_subset=chrom_subset_init_alpha, mixture_coefs=mixture_coefs,
-            verbose=verbose, mods=mods)
+            chrom_subset=chrom_subset_init_alpha, bias_per_hmlg=bias_per_hmlg,
+            mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
 
         # Do not continue unless inference converged
         if not infer_param['converged']:
@@ -686,9 +727,9 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts, _, _ = preprocess_counts(
             counts=_counts, lengths=lengths, ploidy=ploidy,
             multiscale_factor=1, exclude_zeros=exclude_zeros,
-            beta=beta, bias=bias, input_weight=input_weight, verbose=verbose,
+            beta=beta, bias=bias, input_weight=input_weight, verbose=False,
             excluded_counts=excluded_counts, multiscale_reform=multiscale_reform,
-            mods=mods)
+            bias_per_hmlg=bias_per_hmlg, mods=mods)
 
     # MORE SETUP
     if verbose:
@@ -724,7 +765,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_true=alpha_true, struct_true=struct_true,
         input_weight=input_weight, exclude_zeros=exclude_zeros,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
-        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+        bias_per_hmlg=bias_per_hmlg, mixture_coefs=mixture_coefs,
+        verbose=verbose, mods=mods)
     if not draft_converged:  # Do not continue unless inference converged
         return None, {'seed': seed, 'converged': draft_converged}
 
@@ -761,7 +803,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             struct_true=struct_true, input_weight=input_weight,
             exclude_zeros=exclude_zeros, null=null,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
-            mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+            bias_per_hmlg=bias_per_hmlg, mixture_coefs=mixture_coefs,
+            verbose=verbose, mods=mods)
 
         # Do not continue unless inference converged
         if not infer_param['converged']:
@@ -778,7 +821,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         if 'epsilon' in infer_param and infer_param['epsilon'] is not None:
             # Epsilon for the next-highest resolution should be smaller than
             # the previous resolution's epsilon... but allow some wiggle room
-            epsilon_max_ = infer_param['epsilon'] * 1.5
+            epsilon_max_ = infer_param['epsilon'] * 1.1
         if 'lowres_exit' in mods:
             exit(0)
 
@@ -797,7 +840,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     alpha_conv = _convergence_criteria(
         f_k=prev_alpha_obj[2], f_kplus1=infer_param['alpha'],
         factr=alpha_factr)
-    print(f"{alpha_obj_conv=}    {stuct_obj_conv=}    {alpha_conv=}")
+    print(f"alpha={infer_param['alpha']:.3g}    {alpha_obj_conv=}    {stuct_obj_conv=}    {alpha_conv=}")
 
     if (alpha_loop >= max_alpha_loop) or _convergence_criteria(
             f_k=prev_alpha_obj[0], f_kplus1=infer_param['alpha_obj'],
@@ -827,7 +870,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         epsilon_max=epsilon_max, alpha_true=alpha_true, struct_true=struct_true,
         input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
         chrom_full=chrom_full, chrom_subset=chrom_subset,
-        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+        bias_per_hmlg=bias_per_hmlg, mixture_coefs=mixture_coefs,
+        verbose=verbose, mods=mods)
 
 
 def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
@@ -849,8 +893,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    piecewise_step1_accuracy=1,
                    multiscale_reform=False, epsilon_min=1e-2, epsilon_max=1e6,
                    alpha_true=None, struct_true=None, init='mds', input_weight=None,
-                   exclude_zeros=False, null=False, mixture_coefs=None,
-                   verbose=True, mods=[]):
+                   exclude_zeros=False, null=False, bias_per_hmlg=False,
+                   mixture_coefs=None, verbose=True, mods=[]):
     """Infer 3D structures with PASTIS via Poisson model.
 
     Infer 3D structure from Hi-C contact counts data for haploid or diploid
@@ -939,6 +983,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
         mods = [x.lower() for x in mods]
     if 'debug_nan_inf' in mods:
         _setup_jax(debug_nan_inf=True)
+    if 'bias_per_hmlg' in mods:
+        bias_per_hmlg = True
 
     if not isinstance(counts, (list, tuple)):
         counts = [counts]
@@ -1000,7 +1046,8 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             epsilon_max=epsilon_max, alpha_true=alpha_true, struct_true=struct_true,
             input_weight=input_weight, exclude_zeros=exclude_zeros, null=null,
             chrom_full=chromosomes, chrom_subset=chrom_subset,
-            mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)
+            bias_per_hmlg=bias_per_hmlg, mixture_coefs=mixture_coefs,
+            verbose=verbose, mods=mods)
 
     if verbose:
         if ('alpha_converged' in infer_param) and (

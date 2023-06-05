@@ -6,6 +6,7 @@ if sys.version_info[0] < 3:
 import numpy as np
 from scipy import sparse
 import warnings
+import pandas as pd
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -378,6 +379,11 @@ class BeadChainConnectivity2022(Constraint):
         if self.lambda_val < 0:
             raise ValueError("Constraint lambda may not be < 0.")
 
+        if self.hparams is None:
+            self.hparams = {'bias_per_hmlg': False}
+        if 'bias_per_hmlg' not in self.hparams:
+            self.hparams['bias_per_hmlg'] = False
+
         if 'bcc22_c_inter' in self.mods:
             if self.hparams is None or 'data_interchrom' not in self.hparams or (
                     self.hparams['data_interchrom'] is None):
@@ -419,6 +425,7 @@ class BeadChainConnectivity2022(Constraint):
         mask_bin_nonzero = np.isin(
             row_nghbr_ambig_lowres, counts_nghbr_object.bins_nonzero.row)
         if counts_nghbr_object.bins_zero is None:
+            mask_bin_zero = None
             mask_no_data = ~mask_bin_nonzero
         else:
             mask_bin_zero = np.isin(
@@ -503,8 +510,20 @@ class BeadChainConnectivity2022(Constraint):
                     mean_counts_nghbr = int(np.round(mean_counts_nghbr))
                 counts_nghbr[0, mask_no_data] = mean_counts_nghbr
 
-            if counts_nghbr_mask is not None:
+            if counts_nghbr_mask is not None:  # Make sure excluded counts are 0
                 counts_nghbr[~counts_nghbr_mask] = 0
+
+        if 'bcc_nan_only' in self.mods:
+            if mask_no_data.sum() == 0:
+                raise ValueError("Can't use bcc_nan_only mod - no NaN beads")
+            if self.multiscale_factor == 1 or self.multires_naive:
+                counts_nghbr = counts_nghbr[mask_no_data]
+                row_nghbr = row_nghbr[np.tile(mask_no_data, self.ploidy)]
+            else:
+                raise NotImplementedError("idk about getting row_nghbr here")
+                counts_nghbr = counts_nghbr[:, mask_no_data]
+                if counts_nghbr_mask is not None:
+                    counts_nghbr_mask = counts_nghbr_mask[:, mask_no_data]
 
         var = {
             'row_nghbr': row_nghbr, 'counts_nghbr': counts_nghbr,
@@ -534,7 +553,8 @@ class BeadChainConnectivity2022(Constraint):
         bias_per_bin = _get_bias_per_bin(
             ploidy=self.ploidy, bias=bias, row=var['row_nghbr'],
             col=var['row_nghbr'] + 1, multiscale_factor=self.multiscale_factor,
-            lengths=self.lengths, multires_naive=self.multires_naive)
+            lengths=self.lengths, multires_naive=self.multires_naive,
+            bias_per_hmlg=self.hparams['bias_per_hmlg'])
 
         if var['counts_nghbr_mask'] is None:
             counts_nghbr_mask = None
@@ -628,6 +648,11 @@ class HomologSeparating2022(Constraint):
         if self.lambda_val < 0:
             raise ValueError("Constraint lambda may not be < 0.")
 
+        if self.hparams is None:
+            self.hparams = {'bias_per_hmlg': False}
+        if 'bias_per_hmlg' not in self.hparams:
+            self.hparams['bias_per_hmlg'] = False
+
         # Hyperparam: data_interchrom
         if self.hparams is None or 'data_interchrom' not in self.hparams or (
                 self.hparams['data_interchrom'] is None):
@@ -655,7 +680,8 @@ class HomologSeparating2022(Constraint):
 
         bias = np.where(np.isnan(bias), 1, bias)  # NaN bins are included here
         bias_lowres = decrease_bias_res(
-            bias, multiscale_factor=self.multiscale_factor, lengths=self.lengths)
+            bias, multiscale_factor=self.multiscale_factor, lengths=self.lengths,
+            bias_per_hmlg=self.hparams['bias_per_hmlg'])
 
         if self.lengths.size == 1:  # No inter-chrom if only 1 chrom
             mask_intrachrom = None
@@ -737,7 +763,8 @@ class HomologSeparating2022(Constraint):
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
                 bias_lowres=var["bias_lowres"],
                 fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'],
-                inferring_alpha=inferring_alpha, mods=self.mods)
+                inferring_alpha=inferring_alpha,
+                bias_per_hmlg=self.hparams['bias_per_hmlg'], mods=self.mods)
             log_lambda_pmf = logpmf_negbinom(
                 self.hparams['data_interchrom'][self.multiscale_factor]['x'],
                 n=n, p=p)
@@ -753,7 +780,8 @@ class HomologSeparating2022(Constraint):
                 multiscale_factor=self.multiscale_factor, epsilon=epsilon,
                 bias_lowres=var["bias_lowres"],
                 fullres_per_lowres_bead=self.hparams['fullres_per_lowres_bead'],
-                inferring_alpha=inferring_alpha, mods=self.mods)
+                inferring_alpha=inferring_alpha,
+                bias_per_hmlg=self.hparams['bias_per_hmlg'], mods=self.mods)
             nb_mean = (1 - p) * n / p
             nb_var = nb_mean / p
 
@@ -782,7 +810,7 @@ class HomologSeparating2022(Constraint):
 def _get_hsc2022_negbinom(struct, row, col, alpha, beta, multiscale_factor=1,
                           epsilon=None, bias_lowres=None,
                           fullres_per_lowres_bead=None,
-                          inferring_alpha=False, mods=()):
+                          inferring_alpha=False, bias_per_hmlg=False, mods=()):
     """TODO"""
 
     if multiscale_factor > 1 and epsilon is not None:
@@ -802,7 +830,8 @@ def _get_hsc2022_negbinom(struct, row, col, alpha, beta, multiscale_factor=1,
     # Multiply gamma distrib by bias
     if bias_lowres is not None and not np.all(bias_lowres == 1):
         bias_per_bin = _get_bias_per_bin(
-            ploidy=2, bias=bias_lowres, row=row, col=col)
+            ploidy=2, bias=bias_lowres, row=row, col=col,
+            bias_per_hmlg=bias_per_hmlg)
         lambda_mean = lambda_mean * bias_per_bin
         if lambda_mixture_var is not None:
             lambda_mixture_var = lambda_mixture_var * np.square(bias_per_bin)
@@ -853,7 +882,8 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
                      bcc_lambda=0, hsc_lambda=0, bcc_version='2019',
                      hsc_version='2019', data_interchrom=None,
                      est_hmlg_sep=None, hsc_perc_diff=None,
-                     fullres_struct_nan=None, verbose=True, mods=()):
+                     fullres_struct_nan=None, bias_per_hmlg=False,
+                     verbose=True, mods=()):
     """TODO"""
 
     if mods is None:
@@ -892,11 +922,13 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
     bcc_hparams = {
         '2019': None,
         '2022': {'fullres_per_lowres_bead': fullres_per_lowres_bead,
-                 'data_interchrom': data_interchrom}}
+                 'data_interchrom': data_interchrom,
+                 'bias_per_hmlg': bias_per_hmlg}}
     hsc_hparams = {
         '2019': {'est_hmlg_sep': est_hmlg_sep, 'perc_diff': hsc_perc_diff},
         '2022': {'data_interchrom': data_interchrom,
-                 'fullres_per_lowres_bead': fullres_per_lowres_bead}}
+                 'fullres_per_lowres_bead': fullres_per_lowres_bead,
+                 'bias_per_hmlg': bias_per_hmlg}}
     constraints = []
     if bcc_lambda != 0:
         constraints.append(bcc_class[bcc_version](
@@ -920,13 +952,13 @@ def prep_constraints(lengths, ploidy, multiscale_factor=1, multiscale_reform=Tru
 
 def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
                        normalize=True, bias=None, multiscale_reform=True,
-                       multiscale_factor=1, verbose=True, mods=()):
+                       multiscale_factor=1, bias_per_hmlg=False, verbose=True, mods=()):
     """TODO"""
 
     counts, bias, lengths, _, _, _, _ = load_data(
         counts=counts, lengths_full=lengths, ploidy=ploidy,
         filter_threshold=filter_threshold, normalize=normalize, bias=bias,
-        verbose=False)
+        bias_per_hmlg=bias_per_hmlg, verbose=False)
     if lengths.size == 1:
         raise ValueError(
             "Must input counts_interchrom if inferring a single chromosome.")
@@ -935,9 +967,11 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
         raise ValueError("Counts must be integer-valued to get PMF of"
                          " inter-chromosomal data.")
 
-    # Reduce resolution (should only be done when using naive multires approach)
+    # "Ambiguate" counts - hide any available phasing information
     counts_ambig = ambiguate_counts(
         counts=counts, lengths=lengths, ploidy=ploidy)
+
+    # Reduce resolution (should only be done when using naive multires approach)
     if not multiscale_reform:
         counts_ambig = decrease_counts_res(
             counts_ambig, multiscale_factor=multiscale_factor, lengths=lengths,
@@ -984,17 +1018,40 @@ def _counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
 
 def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
                           normalize=True, bias=None, multiscale_reform=True,
-                          multiscale_rounds=1, verbose=True, mods=()):
+                          multiscale_rounds=1, data_interchrom=None,
+                          bias_per_hmlg=False, verbose=True, mods=()):
     """TODO"""
 
     all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))
+
+    if data_interchrom is not None and isinstance(data_interchrom, str):
+        df = pd.read_csv(
+            data_interchrom, sep='\t', index_col='multiscale_factor')
+        if not ('x' in df.columns or 'y' in df.columns):
+            raise ValueError(
+                "Unable to load inter-chromosomal counts data from file.")
+        df.x = [np.fromstring(x.strip('[] ').replace(
+            ',', ' '), dtype=int, sep=' ') for x in df.x]
+        df.y = [np.fromstring(y.strip('[] ').replace(
+            ',', ' '), dtype=float, sep=' ') for y in df.y]
+        data_interchrom = df.T.to_dict()
+        if 1 in data_interchrom and multiscale_reform:
+            for multiscale_factor in all_multiscale_factors:
+                if multiscale_factor not in data_interchrom:
+                    data_interchrom[multiscale_factor] = data_interchrom[1]
+        if set(data_interchrom.keys()) != set(all_multiscale_factors):
+            raise ValueError("Must input inter-chromosomal counts data for all"
+                             " resolutions.")
+        if verbose:
+            print(f"INTER-CHROM COUNTS: loaded from file", flush=True)
+        return data_interchrom
 
     if multiscale_reform:
         fullres_interchrom = _counts_interchrom(
             counts, lengths=lengths, ploidy=ploidy,
             filter_threshold=filter_threshold, normalize=normalize,
             bias=bias, multiscale_reform=multiscale_reform,
-            multiscale_factor=1, verbose=verbose, mods=mods)
+            multiscale_factor=1, bias_per_hmlg=bias_per_hmlg, verbose=verbose, mods=mods)
         data_interchrom = {
             x: fullres_interchrom for x in all_multiscale_factors}
     else:
@@ -1004,7 +1061,8 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
                 counts, lengths=lengths, ploidy=ploidy,
                 filter_threshold=filter_threshold, normalize=normalize,
                 bias=bias, multiscale_reform=multiscale_reform,
-                multiscale_factor=multiscale_factor, verbose=verbose, mods=mods)
+                multiscale_factor=multiscale_factor,
+                bias_per_hmlg=bias_per_hmlg, verbose=verbose, mods=mods)
 
     return data_interchrom
 

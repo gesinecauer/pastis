@@ -18,6 +18,7 @@ from .multiscale_optimization import decrease_lengths_res
 from .utils_poisson import _euclidean_distance
 from .polynomial import _approx_ln_f
 from .likelihoods import gamma_poisson_nll, poisson_nll
+from .counts import check_bias_size
 
 
 def get_gamma_moments(struct, epsilon, alpha, beta, row3d, col3d,
@@ -532,8 +533,9 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
     else:
         if max_fun is None:
             max_fun = max_iter
+
         results = optimize.fmin_l_bfgs_b(
-            objective_wrapper, x0=x0, fprime=fprime_wrapper, iprint=0,
+            objective_wrapper, x0=x0, fprime=fprime_wrapper, iprint=-1,
             maxiter=max_iter, maxfun=max_fun, pgtol=pgtol, factr=factr,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, bias, constraints,
@@ -646,9 +648,16 @@ class PastisPM(object):
                  epsilon=None, epsilon_bounds=None, alpha_init=None,
                  max_alpha_loop=20, max_iter=30000, factr=1e7, pgtol=1e-05,
                  alpha_factr=1e12, reorienter=None, null=False,
-                 mixture_coefs=None, verbose=True, mods=()):
+                 bias_per_hmlg=False, mixture_coefs=None, verbose=True, mods=()):
 
         # Check input
+        if not isinstance(counts, (list, tuple)):
+            counts = (counts,)
+        bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(
+            counts) == 1 and set(counts[0].shape) == {lengths.sum() * ploidy}
+        bias = check_bias_size(
+            bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg,
+            multiscale_factor=multiscale_factor, multires_naive=epsilon is None)
         checked = _check_input(
             lengths=lengths, alpha=alpha, counts=counts,
             constraints=constraints, bias=bias, mixture_coefs=mixture_coefs, mods=mods)
@@ -657,19 +666,6 @@ class PastisPM(object):
         if alpha_init is not None and (alpha_init > -1 or alpha_init < -4):
             raise ValueError(
                 f"Alpha must be between -4 and -1, {alpha_init=:.3g}.")
-        if bias is not None:
-            if multiscale_factor > 1 and (epsilon is None):
-                lengths_lowres = decrease_lengths_res(
-                    lengths, multiscale_factor=multiscale_factor)
-                if bias.size != lengths_lowres.sum():
-                    raise ValueError(
-                        "Bias size must be equal to the sum of low-res"
-                        f" chromosome lengths ({lengths_lowres.sum()})."
-                        f" It is of size {bias.size}.")
-            elif bias.size != sum(lengths):
-                raise ValueError("Bias size must be equal to the sum of the"
-                                 f" chromosome lengths ({sum(lengths)}). It is"
-                                 f" of size {bias.size}.")
 
         if reorienter is not None:
             reorienter.set_multiscale_factor(multiscale_factor)

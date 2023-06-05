@@ -137,12 +137,25 @@ def _ambiguate_beta(beta, counts, lengths, ploidy):
     return beta_ambig
 
 
-def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
+def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None,
+                       bias_per_hmlg=False):
     """Derive beta for each counts matrix from ambiguated beta.
     """
 
     if not isinstance(counts, (list, tuple)):
         counts = [counts]
+
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {sum(lengths) * ploidy}
+
+    bias = check_bias_size(bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg)
+
+    # If bias_per_hmlg=True and only unambiguous counts are available, the bias
+    # vector is of size lengths.sum() * ploidy rather than lengths.sum(). To
+    # faciliate this usage, treat the diploid data as haploid in this function.
+    if bias_per_hmlg:
+        ploidy = 1
+        lengths = np.tile(lengths, 2)
 
     if beta_ambig is None:
         return None
@@ -152,11 +165,6 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
             return jnp.array([beta_ambig])
         else:
             return [beta_ambig]
-
-    if bias is not None and bias.size != lengths.sum():
-        raise ValueError("Bias size must be equal to the sum of the chromosome "
-                         f"lengths ({lengths.sum()}). It is of size"
-                         f" {bias.size}.")
 
     # Get sum of each (normalized) counts matrix
     counts_sums = np.zeros(len(counts))
@@ -173,7 +181,7 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None):
         # So, to disambiguate beta, we also ignore these bins.
         # mask = np.abs(tmp.row - tmp.col) != lengths.sum()
         mask = np.maximum(tmp.row, tmp.col) - np.minimum(
-            tmp.row, tmp.col) != lengths.sum()
+            tmp.row, tmp.col) != sum(lengths)
 
         # Sum the (normalized) counts data
         if bias is not None and not np.all(bias == 1):  # Divide by locus biases
@@ -343,7 +351,7 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
 def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
                       beta=None, bias=None, excluded_counts=None,
                       exclude_zeros=False, multiscale_reform=True,
-                      input_weight=None, verbose=True, mods=[]):
+                      input_weight=None, bias_per_hmlg=False, verbose=True, mods=[]):
     """Check counts, reformat.
 
     Counts are also checked and reformatted
@@ -389,7 +397,7 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
         counts, beta=beta, bias=bias, input_weight=input_weight,
         lengths=lengths, ploidy=ploidy, exclude_zeros=exclude_zeros,
         multiscale_factor=multiscale_factor,
-        multiscale_reform=multiscale_reform)
+        multiscale_reform=multiscale_reform, bias_per_hmlg=bias_per_hmlg)
 
     # Identify beads to be removed from the final structure
     struct_nan = find_beads_to_remove(
@@ -408,6 +416,13 @@ def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,
 
         lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
+
+        if verbose:
+            if isinstance(excluded_counts, int):
+                print(f"EXCLUDED COUNTS: >{excluded_counts} bins from the"
+                      " diagonal", flush=True)
+            else:
+                print(f"EXCLUDED COUNTS: {excluded_counts}", flush=True)
 
         if isinstance(excluded_counts, int):
             counts = [_intramol_counts(
@@ -443,11 +458,16 @@ def _get_counts_ambiguity(shape, nbeads):
 
 
 def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
-                 bias=None, verbose=True):
+                 bias=None, bias_per_hmlg=False, verbose=True):
     """Check counts, filter, and compute bias.
     """
 
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    n = lengths.sum()
     counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
+
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {n * ploidy}
 
     if (filter_threshold is None or filter_threshold == 0) and (
             not normalize) and (bias is None):
@@ -469,20 +489,21 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
         # How many beads are initially zero?
         num0_initial = find_beads_to_remove(
             counts_ambig, lengths=lengths, ploidy=1).size
-        perc0_initial = num0_initial / lengths.sum()
+        perc0_initial = num0_initial / n
 
         # Filter ambiguated counts, and get mask of beads that are NaN
         counts_ambig = filter_low_counts(
-            counts_ambig.astype(float), sparsity=False,
+            counts_ambig.astype(float), sparsity=False, lengths=lengths,
             percentage=filter_threshold + perc0_initial).tocoo()
         if verbose:
+            tmp = " (per homolog)" if ploidy == 2 else ""
             if num0_initial > 0:
-                print(f"{' ' * 22}{num0_initial} loci (per homolog) are",
-                      " already empty", flush=True)
+                print(f"{' ' * 22}{num0_initial} of {n} loci{tmp}",
+                      " are already empty", flush=True)
             num0_final = find_beads_to_remove(
                 counts_ambig, lengths=lengths, ploidy=1).size
-            print(f"{' ' * 22}Removed {num0_final - num0_initial} loci (per",
-                  " homolog)", flush=True)
+            print(f"{' ' * 22}Removed {num0_final - num0_initial} additional",
+                  f" loci{tmp}", flush=True)
 
         # Remove the NaN beads from all counts matrices
         for i in range(len(counts)):
@@ -499,17 +520,29 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
     # Normalization is done on ambiguated counts
     if normalize and bias is None:
         if verbose:
-            print('COMPUTING HI-C BIASES', flush=True)
-        counts_ambig = ambiguate_counts(counts, lengths=lengths, ploidy=ploidy)
+            if bias_per_hmlg:
+                print('COMPUTING HI-C BIASES (separately for each homolog)',
+                      flush=True)
+            else:
+                print('COMPUTING HI-C BIASES', flush=True)
+        if bias_per_hmlg:
+            counts_ambig = counts[0]
+        else:
+            counts_ambig = ambiguate_counts(
+                counts, lengths=lengths, ploidy=ploidy)
         bias = ICE_normalization(
             counts_ambig, max_iter=300, output_bias=True)[1].flatten()
     elif bias is not None:
         if verbose:
             print('USING USER-PROVIDED HI-C BIAS VECTOR', flush=True)
-        if bias.size != lengths.sum():
+        if bias_per_hmlg and bias.size != n * 2:
+            raise ValueError("Bias size must be equal to the sum of the number"
+                             f" of bins in the unambiguous counts matrix ("
+                             f"{n * 2}). It is of size {bias.size}.")
+        if (not bias_per_hmlg) and bias.size != n:
             raise ValueError("Bias size must be equal to the sum of the"
-                             f" chromosome lengths ({lengths.sum()}). It is of"
-                             f" size {bias.size}.")
+                             f" chromosome lengths ({n}). It is of size"
+                             f" {bias.size}.")
 
     # In each counts matrix, zero out counts for which bias is NaN
     if bias is not None:
@@ -524,7 +557,10 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
             bias[bias == 0] = np.nan
 
             # Remove beads with bias=NaN from counts
-            bias_is_finite = np.where(np.isfinite(np.tile(bias, ploidy)))[0]
+            bias_is_finite = np.isfinite(bias)
+            if bias_per_hmlg:
+                bias_is_finite = bias_is_finite[:n] & bias_is_finite[n:]
+            bias_is_finite = np.where(np.tile(bias_is_finite, ploidy))[0]
             mask = np.isin(counts[i].row, bias_is_finite) & np.isin(
                 counts[i].col, bias_is_finite)
             counts[i] = sparse.coo_matrix(
@@ -537,7 +573,7 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
                     counts_ambig_i, lengths=lengths, ploidy=1).size
                 if num0_final - num0_initial > 0:
                     ambiguity = _get_counts_ambiguity(
-                        counts[i].shape, nbeads=lengths.sum() * ploidy)
+                        counts[i].shape, nbeads=n * ploidy)
                     print(f"{' ' * 22}Removing {num0_final - num0_initial}"
                           f" additional loci (per homolog) from {ambiguity}",
                           " counts", flush=True)
@@ -547,7 +583,7 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
 
 
 def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
-                      neighboring_beads_only=True):
+                      neighboring_beads_only=True, bias_per_hmlg=False):
     """Estimate compatible betas for each counts matrix.
 
     Set the mean (distance ** alpha) using either
@@ -558,10 +594,17 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
 
     from .constraints import _neighboring_bead_indices
 
-    if bias is not None and bias.size != lengths.sum():
-        raise ValueError("Bias size must be equal to the sum of the chromosome "
-                         f"lengths ({lengths.sum()}). It is of size"
-                         f" {bias.size}.")
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {sum(lengths) * ploidy}
+
+    bias = check_bias_size(bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg)
+
+    # If bias_per_hmlg=True and only unambiguous counts are available, the bias
+    # vector is of size lengths.sum() * ploidy rather than lengths.sum(). To
+    # faciliate this usage, treat the diploid data as haploid in this function.
+    if bias_per_hmlg:
+        ploidy = 1
+        lengths = np.tile(lengths, 2)
 
     # Get relevant counts
     counts_ambig = ambiguate_counts(counts, lengths=lengths, ploidy=ploidy)
@@ -608,20 +651,23 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
 
     # Assign separate betas to each counts matrix
     beta = _disambiguate_beta(
-        beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias)
+        beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias,
+        bias_per_hmlg=bias_per_hmlg)
 
     return beta_ambig, beta
 
 
 def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
                    input_weight=None, exclude_zeros=False, multiscale_factor=1,
-                   multiscale_reform=True):
+                   multiscale_reform=True, bias_per_hmlg=False):
     """Format each counts matrix as a CountsMatrix subclass instance.
     """
 
     # Check input
     if not isinstance(counts, (tuple, list)):
         counts = [counts]
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {lengths.sum() * ploidy}
     if input_weight is None:
         input_weight = [1] * len(counts)
     else:
@@ -670,7 +716,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
     if beta is None:
         _, beta = _set_initial_beta(
             counts, lengths=lengths, ploidy=ploidy, bias=bias,
-            exclude_zeros=exclude_zeros)
+            exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg)
 
     # Reformat counts as CountsMatrix instance
     counts_reformatted = []
@@ -679,7 +725,7 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
             lengths=lengths, ploidy=ploidy, counts=counts[i],
             multiscale_factor=multiscale_factor, beta=beta[i],
             weight=input_weight[i], exclude_zeros=exclude_zeros,
-            multires_naive=not multiscale_reform)
+            multires_naive=not multiscale_reform, bias_per_hmlg=bias_per_hmlg)
         counts_reformatted.append(counts_matrix)
 
     return tuple(counts_reformatted)
@@ -732,24 +778,49 @@ def _counts_indices_to_3d_indices(data, lengths_at_res, ploidy,
     return row3d, col3d
 
 
+def check_bias_size(bias, lengths=None, bias_per_hmlg=None,
+                    multiscale_factor=1, multires_naive=False):
+    if bias is None or (isinstance(bias, np.ndarray) and np.all(bias == 1)):
+        return None
+    if lengths is None:
+        return bias
+
+    n = sum(lengths)
+
+    if multiscale_factor > 1 and multires_naive:
+        tmp_desc = " low-res "
+        bias_size = decrease_lengths_res(
+            lengths, multiscale_factor=multiscale_factor).sum()
+    else:
+        tmp_desc = " "
+        bias_size = n
+
+    if bias_per_hmlg is None:
+        bias_size_desc = f"{n} or {n * 2}"
+    if bias_per_hmlg:
+        bias_size *= 2
+        bias_size_desc = f"the total number of{tmp_desc}beads ({bias_size})"
+    else:
+        bias_size_desc = f"the sum of{tmp_desc}chromosome lengths ({bias_size})"
+
+    if bias.size != bias_size:
+        raise ValueError(f"Bias size must be equal to {bias_size_desc}."
+                         f" It is of size {bias.size}.")
+
+    return bias
+
+
 def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
-                      multires_naive=False):
+                      multires_naive=False, bias_per_hmlg=False):
     """Determines bias corresponding to each bin of a given matrix."""
     if bias is None or (isinstance(bias, np.ndarray) and np.all(bias == 1)):
         return None
 
-    if lengths is not None:
-        if multiscale_factor > 1 and multires_naive:
-            lengths_lowres = decrease_lengths_res(
-                lengths, multiscale_factor=multiscale_factor)
-            if bias.size != lengths_lowres.sum():
-                raise ValueError("Bias size must be equal to the sum of low-res"
-                                 f" chromosome lengths ({lengths_lowres.sum()})."
-                                 f" It is of size {bias.size}.")
-        elif bias.size != lengths.sum():
-            raise ValueError("Bias size must be equal to the sum of the"
-                             f" chromosome lengths ({lengths.sum()}). It is of"
-                             f" size {bias.size}.")
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2
+
+    bias = check_bias_size(
+        bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg,
+        multiscale_factor=multiscale_factor, multires_naive=multires_naive)
 
     # Output type should be the same as type(bias)
     if isinstance(bias, jnp.ndarray):
@@ -757,7 +828,9 @@ def _get_bias_per_bin(ploidy, bias, row, col, multiscale_factor=1, lengths=None,
     else:
         tmp_np = np
 
-    bias = tmp_np.tile(bias.ravel(), ploidy)
+    bias = bias.ravel()
+    if not bias_per_hmlg:
+        bias = tmp_np.tile(bias, ploidy)
     if multiscale_factor == 1 or multires_naive:
         return bias[row] * bias[col]
     else:
@@ -919,7 +992,8 @@ class CountsMatrix(object):
     """
 
     def __init__(self, lengths, ploidy, beta, counts=None, multiscale_factor=1,
-                 weight=1, exclude_zeros=False, multires_naive=False):
+                 weight=1, exclude_zeros=False, multires_naive=False,
+                 bias_per_hmlg=False):
         self.lengths = lengths
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
@@ -929,6 +1003,7 @@ class CountsMatrix(object):
         self.weight = (1. if weight is None else float(weight))
         if np.isnan(self.weight) or np.isinf(self.weight) or self.weight == 0:
             raise ValueError(f"Counts weight may not be {self.weight}.")
+        self.bias_per_hmlg = bias_per_hmlg and ploidy == 2
 
         self.ambiguity = None
         self.shape = None
@@ -1148,7 +1223,8 @@ class CountsMatrix(object):
             ambig = CountsMatrix(
                 lengths=self.lengths, ploidy=self.ploidy,
                 multiscale_factor=self.multiscale_factor, beta=self.beta,
-                weight=self.weight, multires_naive=self.multires_naive)
+                weight=self.weight, multires_naive=self.multires_naive,
+                bias_per_hmlg=self.bias_per_hmlg)
         else:
             ambig = self
         if self.ambiguity == 'pa':
@@ -1215,6 +1291,8 @@ class CountsMatrix(object):
             raise ValueError("Mismatch in number of beads per chromosome")
         if self.null != other.null:
             raise ValueError("Mismatch in null attribute")
+        if self.bias_per_hmlg != other.bias_per_hmlg:
+            raise ValueError("Mismatch in bias_per_hmlg attribute")
 
         first = self
         second = other
@@ -1245,7 +1323,7 @@ class CountsMatrix(object):
             lengths=self.lengths, ploidy=self.ploidy,
             multiscale_factor=self.multiscale_factor,
             beta=first.beta + second.beta, multires_naive=self.multires_naive,
-            weight=(
+            bias_per_hmlg=self.bias_per_hmlg, weight=(
                 first.weight * first.nbins + second.weight * second.nbins) / (
                 first.nbins + second.nbins))
         combo.shape = first.shape
@@ -1391,6 +1469,7 @@ class CountsBins(object):
         self.beta = meta.beta
         self.weight = meta.weight
         self.shape = meta.shape
+        self.bias_per_hmlg = meta.bias_per_hmlg
         if meta.ambiguity is None:
             self.ambiguity = _get_counts_ambiguity(
                 self.shape, nbeads=self.lengths.sum() * self.ploidy)
@@ -1482,7 +1561,8 @@ class CountsBins(object):
         return _get_bias_per_bin(
             ploidy=self.ploidy, bias=bias, row=self.row, col=self.col,
             multiscale_factor=self.multiscale_factor, lengths=self.lengths,
-            multires_naive=self.multires_naive)
+            multires_naive=self.multires_naive,
+            bias_per_hmlg=self.bias_per_hmlg)
 
     def sum(self, axis=None, dtype=None, out=None):
         """TODO"""

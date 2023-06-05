@@ -481,7 +481,8 @@ def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
 
 
 def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
-                         counts=None, bias=None, structures=None):
+                         counts=None, bias=None, structures=None,
+                         bias_per_hmlg=None):
     """Return data for selected chromosomes only.
 
     If `chrom_subset` is None, return original data. Otherwise, only return
@@ -520,16 +521,18 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
         the specified chromosomes. Otherwise, None.
     """
 
-    from .counts import check_counts
+    from .counts import check_counts, check_bias_size
 
     lengths_full = np.array(
         lengths_full, copy=False, ndmin=1, dtype=int).ravel()
     chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=str).ravel()
 
-    if bias is not None and bias.size != lengths_full.sum():
-        raise ValueError("Bias size must be equal to the sum of the chromosome "
-                         f"lengths ({lengths_full.sum()}). It is of size"
-                         f" {bias.size}.")
+    if bias_per_hmlg is not None:
+        bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(
+            counts) == 1 and set(
+            counts[0].shape) == {lengths_full.sum() * ploidy}
+    bias = check_bias_size(
+        bias, lengths=lengths_full, bias_per_hmlg=bias_per_hmlg)
     if structures is not None:
         if isinstance(structures, list):
             struct_list = structures

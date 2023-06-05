@@ -63,8 +63,12 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
         raise ValueError(f"Beta is {beta_ambig}.")
 
     # If diploid, disambiguate the universal/ambiguated beta
+    bias_per_hmlg = [c.bias_per_hmlg for c in counts]
+    if len(set(bias_per_hmlg)) != 1:
+        raise ValueError("Mismatch in CountsMatrix bias_per_hmlg attributes")
     beta = _disambiguate_beta(
-        beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias)
+        beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias,
+        bias_per_hmlg=bias_per_hmlg[0])
 
     return beta
 
@@ -247,7 +251,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         objective_wrapper_alpha,
         x0=np.float64(alpha_init),
         fprime=fprime_wrapper_alpha,
-        iprint=0,
+        iprint=-1,
         maxiter=max_iter,
         maxfun=max_fun,
         pgtol=pgtol,

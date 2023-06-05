@@ -467,17 +467,17 @@ def _count_fullres_per_lowres_bead(multiscale_factor, lengths, ploidy,
     return fullres_per_lowres_bead
 
 
-def decrease_bias_res(bias, multiscale_factor, lengths):
+def decrease_bias_res(bias, multiscale_factor, lengths, bias_per_hmlg=None):
     """Decrease resoluion of Hi-C biases."""
+
+    from .counts import check_bias_size
 
     if bias is None or np.all(bias == 1):
         return None
 
     if multiscale_factor == 1:
-        if bias.size != lengths.sum():
-            raise ValueError("Bias size must be equal to the sum of the"
-                             f" chromosome lengths ({lengths.sum()}). It is of"
-                             f" size {bias.size}.")
+        bias = check_bias_size(
+            bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg)
         return bias
 
     lengths_lowres = decrease_lengths_res(
@@ -485,10 +485,7 @@ def decrease_bias_res(bias, multiscale_factor, lengths):
     if bias.size == lengths_lowres.sum():  # Bias is already low-res
         return bias
 
-    if bias.size != lengths.sum():
-        raise ValueError("Bias size must be equal to the sum of the chromosome "
-                         f"lengths ({lengths.sum()}). It is of size"
-                         f" {bias.size}.")
+    bias = check_bias_size(bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg)
 
     # Bias is the same for both homologs - it is of size lengths.sum()
     idx, bad_idx = _get_struct_index(
@@ -543,7 +540,8 @@ def _var3d(struct_grouped, replace_nan=True):
 
 
 def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
-                            mixture_coefs=None, replace_nan=True, verbose=True):
+                            mixture_coefs=None, replace_nan=True,
+                            return_mean=True, verbose=True):
     """Compute multiscale epsilon from full-res structure.
 
     Generates multiscale epsilons at the specified resolution from the
@@ -577,6 +575,7 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
     if multiscale_factor == 1:
         return None
 
+    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
     structures = _format_structures(
         structures, lengths=lengths, ploidy=ploidy, mixture_coefs=mixture_coefs)
 
@@ -587,16 +586,29 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
             ploidy=ploidy)
         multiscale_variances.append(
             _var3d(struct_grouped, replace_nan=replace_nan))
-    multiscale_variances = np.mean(multiscale_variances, axis=0)  # ie >1 struct
 
-    epsilon_per_bead = np.sqrt(multiscale_variances * 2 / 3)
-    epsilon = np.mean(epsilon_per_bead)
+    epsilon_per_bead = [np.sqrt(x * 2 / 3) for x in multiscale_variances]
 
+    if len(epsilon_per_bead) == 1:
+        epsilon_per_bead = epsilon_per_bead[0]
+    else:  # If multiple structures are inputted, take mean for each lowres bead
+        lowres_nan = np.isnan(epsilon_per_bead[0])
+        for i in range(len(epsilon_per_bead)):
+            lowres_nan = lowres_nan & np.isnan(epsilon_per_bead[0])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning,
+                                    message="Mean of empty slice")
+            epsilon_per_bead = np.nanmean(epsilon_per_bead, axis=0)
+        epsilon_per_bead[lowres_nan] = np.nan
+
+    epsilon = np.nanmean(epsilon_per_bead)
     if verbose:
         print(f"MULTISCALE EPSILON ({multiscale_factor}x): {epsilon:.3g}",
               flush=True)
-
-    return epsilon
+    if return_mean:
+        return epsilon
+    else:
+        return epsilon_per_bead
 
 
 def _choose_max_multiscale_factor(lengths, min_beads):

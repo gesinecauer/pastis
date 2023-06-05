@@ -19,7 +19,8 @@ from .utils_poisson import _struct_replace_nan, _format_structures
 
 
 def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
-                           multiscale_factor=1, verbose=True):
+                           multiscale_factor=1, bias_per_hmlg=False,
+                           verbose=True):
     """Initialize structure via multi-dimensional scaling of unambig counts.
     """
 
@@ -46,10 +47,17 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
     if ua_beta is not None:
         ua_beta = ua_beta * multiscale_factor ** 2
 
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {lengths.sum() * ploidy}
+
     bias = decrease_bias_res(
-        bias, multiscale_factor=multiscale_factor, lengths=lengths)
+        bias, multiscale_factor=multiscale_factor, lengths=lengths,
+        bias_per_hmlg=bias_per_hmlg)
     if bias is not None and not np.all(bias == 1):
-        bias_tiled = np.tile(bias, ploidy)
+        if bias_per_hmlg:
+            bias_tiled = bias
+        else:
+            bias_tiled = np.tile(bias, ploidy)
     else:
         bias_tiled = None
 
@@ -59,7 +67,7 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
 
     struct = estimate_X(
         ua_counts, alpha=alpha, beta=ua_beta,
-        verbose=False, use_zero_entries=False, precompute_distances='auto',
+        verbose=-1, use_zero_entries=False, precompute_distances='auto',
         bias=bias_tiled, random_state=random_state, type="MDS2", factr=1e12,
         maxiter=10000, ini=None)
 
@@ -74,7 +82,7 @@ def _initialize_struct_mds(counts, lengths, ploidy, alpha, bias, random_state,
 
 def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                        init='mds', multiscale_factor=1, mixture_coefs=None,
-                       struct_true=None, verbose=True):
+                       struct_true=None, bias_per_hmlg=False, verbose=True):
     """Initialize structure, randomly or via MDS of unambig counts.
     """
 
@@ -112,7 +120,8 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
         struct = _initialize_struct_mds(
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state,
-            multiscale_factor=multiscale_factor, verbose=verbose)
+            multiscale_factor=multiscale_factor, bias_per_hmlg=bias_per_hmlg,
+            verbose=verbose)
         structures = [struct] * len(mixture_coefs)
     elif init.lower() in ("random", "rand", "mds"):
         if verbose:
@@ -186,7 +195,8 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
 
 def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
                bias=None, multiscale_factor=1, reorienter=None,
-               mixture_coefs=None, struct_true=None, verbose=False, mods=[]):
+               mixture_coefs=None, struct_true=None, bias_per_hmlg=False,
+               verbose=False, mods=[]):
     """Initialize optimization.
 
     Create initialization for optimization. Structures can be initialized
@@ -256,5 +266,6 @@ def initialize(counts, lengths, init, ploidy, random_state=None, alpha=-3.,
             counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state, init=init,
             multiscale_factor=multiscale_factor, mixture_coefs=mixture_coefs,
-            struct_true=struct_true, verbose=verbose)
+            struct_true=struct_true, bias_per_hmlg=bias_per_hmlg,
+            verbose=verbose)
         return struct_init
