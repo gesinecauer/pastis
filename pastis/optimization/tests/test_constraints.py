@@ -159,7 +159,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
     if multiscale_factor == 1 or (not multiscale_reform):
         epsilon_true = None
     else:
-        epsilon_true = get_epsilon_from_struct(
+        epsilon_true, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
 
@@ -235,7 +235,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
     if multiscale_factor == 1 or (not multiscale_reform):
         epsilon_true = None
     else:
-        epsilon_true = get_epsilon_from_struct(
+        epsilon_true, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
 

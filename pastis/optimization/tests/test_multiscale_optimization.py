@@ -189,7 +189,7 @@ def test_get_epsilon_from_struct(multiscale_factor):
     multiscale_var_correct = np.array(multiscale_var_correct)
     epsilon_correct = np.sqrt(multiscale_var_correct * 2 / 3)
 
-    epsilon_test = multiscale_optimization.get_epsilon_from_struct(
+    epsilon_test, _ = multiscale_optimization.get_epsilon_from_struct(
         struct, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, replace_nan=False, verbose=False)
 

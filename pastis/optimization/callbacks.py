@@ -156,7 +156,7 @@ class Callback(object):
             struct_true_fullres = [x.copy() for x in self.struct_true]
 
             if multiscale_factor != 1 and multiscale_reform:
-                self.epsilon_true = [get_epsilon_from_struct(
+                self.epsilon_true, _ = [get_epsilon_from_struct(
                     x, lengths=lengths, ploidy=ploidy,
                     multiscale_factor=multiscale_factor,
                     verbose=False) for x in struct_true_fullres]

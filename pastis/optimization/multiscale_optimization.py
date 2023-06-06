@@ -540,8 +540,7 @@ def _var3d(struct_grouped, replace_nan=True):
 
 
 def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
-                            mixture_coefs=None, replace_nan=True,
-                            return_mean=True, verbose=True):
+                            mixture_coefs=None, replace_nan=True, verbose=True):
     """Compute multiscale epsilon from full-res structure.
 
     Generates multiscale epsilons at the specified resolution from the
@@ -596,19 +595,19 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
         for i in range(len(epsilon_per_bead)):
             lowres_nan = lowres_nan & np.isnan(epsilon_per_bead[0])
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=RuntimeWarning,
-                                    message="Mean of empty slice")
-            epsilon_per_bead = np.nanmean(epsilon_per_bead, axis=0)
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            epsilon_per_bead = np.sqrt(
+                np.nanmean(epsilon_per_bead ** 2, axis=0))
         epsilon_per_bead[lowres_nan] = np.nan
 
-    epsilon = np.nanmean(epsilon_per_bead)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        epsilon = np.sqrt(np.nanmean(epsilon_per_bead ** 2))
+
     if verbose:
         print(f"MULTISCALE EPSILON ({multiscale_factor}x): {epsilon:.3g}",
               flush=True)
-    if return_mean:
-        return epsilon
-    else:
-        return epsilon_per_bead
+    return epsilon, epsilon_per_bead
 
 
 def _choose_max_multiscale_factor(lengths, min_beads):
