@@ -155,12 +155,12 @@ class Callback(object):
             self.struct_true = [x.reshape(-1, 3) for x in struct_true]
             struct_true_fullres = [x.copy() for x in self.struct_true]
 
-            if multiscale_factor != 1 and multiscale_reform:
-                self.epsilon_true, _ = [get_epsilon_from_struct(
+            if multiscale_factor != 1:
+                self.epsilon_true = [get_epsilon_from_struct(
                     x, lengths=lengths, ploidy=ploidy,
                     multiscale_factor=multiscale_factor,
-                    verbose=False) for x in struct_true_fullres]
-                if verbose:
+                    verbose=False)[0] for x in struct_true_fullres]
+                if verbose and multiscale_reform:
                     print(f"True epsilon ({multiscale_factor}x):"
                           f" {np.mean(self.epsilon_true):.3g}", flush=True)
 

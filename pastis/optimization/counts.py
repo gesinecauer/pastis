@@ -27,7 +27,7 @@ from .multiscale_optimization import _get_fullres_counts_index
 from .multiscale_optimization import _count_fullres_per_lowres_bead
 
 
-def _best_counts_dtype(counts):
+def _best_counts_dtype(counts, warn_on_float=True):
     """Choose most memory-efficient dtype for counts matrix"""
 
     if sparse.issparse(counts):
@@ -48,14 +48,15 @@ def _best_counts_dtype(counts):
         if np.array_equal(data, data.round()):
             max_val = int(max_val)
         else:
-            warnings.warn("Counts matrix should only contain integers.")
+            if warn_on_float:
+                warnings.warn("Counts matrix should only contain integers.")
             max_val = data.sum()  # Otherwise, sum can cause overflow to inf
             return np.promote_types(np.min_scalar_type(max_val), np.float64)
 
     return np.min_scalar_type(max_val)
 
 
-def ambiguate_counts(counts, lengths, ploidy):
+def ambiguate_counts(counts, lengths, ploidy, warn_on_float=False):
     """Convert diploid counts to ambiguous & aggregate counts across matrices.
 
     If diploid, convert unambiguous and partially ambiguous counts to ambiguous
@@ -84,7 +85,8 @@ def ambiguate_counts(counts, lengths, ploidy):
         counts_ambig = sum(counts).ambiguate()
         return counts_ambig
 
-    counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
+    counts = check_counts(
+        counts, lengths=lengths, ploidy=ploidy, warn_on_float=warn_on_float)
 
     if len(counts) == 1 and (ploidy == 1 or counts[0].shape == (n, n)):
         return counts[0]
@@ -107,7 +109,8 @@ def ambiguate_counts(counts, lengths, ploidy):
     counts_ambig.sort_indices()
 
     return _check_counts_matrix(
-        counts_ambig.tocoo(), lengths=lengths, ploidy=ploidy)
+        counts_ambig.tocoo(), lengths=lengths, ploidy=ploidy,
+        warn_on_float=warn_on_float)
 
 
 def _ambiguate_beta(beta, counts, lengths, ploidy):
@@ -147,7 +150,6 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None,
 
     bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
         counts[0].shape) == {sum(lengths) * ploidy}
-
     bias = check_bias_size(bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg)
 
     # If bias_per_hmlg=True and only unambiguous counts are available, the bias
@@ -240,7 +242,7 @@ def _get_included_counts_bins(counts, lengths, ploidy, check_counts=True,
 
 
 def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
-                         remove_diag=True, copy=False):
+                         remove_diag=True, copy=False, warn_on_float=True):
     """Check counts dimensions, reformat, & excise selected chromosomes.
     """
 
@@ -264,8 +266,8 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
     # Get rid of NaNs and Inf, select best dtype, convert to sparse coo matrix
     if isinstance(counts, np.ndarray):
         counts[~np.isfinite(counts)] = 0
-        counts = sparse.coo_matrix(
-            counts, dtype=_best_counts_dtype(counts))
+        counts = sparse.coo_matrix(counts, dtype=_best_counts_dtype(
+            counts, warn_on_float=warn_on_float))
     else:  # Is a sparse matrix
         counts = sparse.coo_matrix(counts)
         mask = np.isfinite(counts.data)
@@ -273,9 +275,11 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
             counts = sparse.coo_matrix(
                 (counts.data[mask], (counts.row[mask], counts.col[mask])),
                 shape=counts.shape,
-                dtype=_best_counts_dtype(counts.data[mask]))
+                dtype=_best_counts_dtype(counts.data[mask],
+                                         warn_on_float=warn_on_float))
         else:
-            counts = counts.astype(_best_counts_dtype(counts))
+            counts = counts.astype(_best_counts_dtype(
+                counts, warn_on_float=warn_on_float))
 
     # Remove values on/below diagonal, as appropriate
     if counts.shape[0] == counts.shape[1]:
@@ -310,7 +314,8 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
     return counts
 
 
-def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
+def check_counts(counts, lengths, ploidy, chrom_subset_idx=None,
+                 warn_on_float=True):
     """Check counts dimensions and reformat data.
 
     Check dimensions of each counts matrix, exclude appropriate values,
@@ -344,8 +349,33 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None):
                          f" type. Inputs: {', '.join(map(str, ambiguities))}")
 
     return [_check_counts_matrix(
-        c, lengths=lengths, ploidy=ploidy,
-        chrom_subset_idx=chrom_subset_idx) for c in counts]
+        c, lengths=lengths, ploidy=ploidy, chrom_subset_idx=chrom_subset_idx,
+        warn_on_float=warn_on_float) for c in counts]
+
+
+def _debias_counts(counts, bias, ploidy, lengths=None, bias_per_hmlg=False):
+    """TODO"""
+
+    if bias is None:
+        return counts
+
+    if isinstance(counts, CountsMatrix):
+        tmp = counts.bins_nonzero
+    else:
+        tmp = counts
+    row, col, data = tmp.row, tmp.col, tmp.data
+
+    bias_per_bin = _get_bias_per_bin(
+        ploidy=ploidy, bias=bias, row=row, col=col, lengths=lengths,
+        bias_per_hmlg=bias_per_hmlg)
+    data = data / bias_per_bin
+
+    if isinstance(counts, CountsMatrix):
+        counts.bins_nonzero = data
+    else:
+        counts = sparse.coo_matrix((data, (row, col)), shape=counts.shape)
+
+    return counts
 
 
 def preprocess_counts(counts, lengths, ploidy, multiscale_factor=1,

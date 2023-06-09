@@ -163,10 +163,10 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
 
 
 def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
-                   constraints=None,
-                   random_state=None, max_iter=30000, max_fun=None,
-                   factr=1e7, pgtol=1e-05, callback=None, alpha_loop=None,
-                   reorienter=None, mixture_coefs=None, verbose=True, mods=()):
+                   constraints=None, random_state=None, max_iter=30000,
+                   max_fun=None, factr=1e7, pgtol=1e-05, callback=None,
+                   alpha_loop=None, reorienter=None, mixture_coefs=None,
+                   verbose=True, mods=()):
     """Estimates alpha, given current structure.
 
     Parameters
@@ -229,7 +229,7 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
     if random_state is None:
         random_state = np.random.RandomState(seed=0)
     if alpha_init is None:
-        alpha_init = random_state.uniform(low=-4, high=-1)
+        alpha_init = random_state.uniform(low=-3, high=-2)
 
     if verbose:
         print("\nRUNNING THE L-BFGS-B CODE\n\n           * * *\n\nMachine"

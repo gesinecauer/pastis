@@ -342,7 +342,7 @@ def objective_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         callback.on_iter_end(obj_logs=obj_logs, structures=structures,
                              alpha=alpha, X=X, epsilon=epsilon)
 
-    if not np.isfinite(new_obj):
+    if (not jitted) and (not np.isfinite(new_obj)):
         raise ValueError(f"Objective is {new_obj}.")
 
     return new_obj
@@ -365,7 +365,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
         mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)[0]).flatten()
 
-    if (~np.isfinite(new_grad)).sum() > 0:
+    if (not jitted) and ((~np.isfinite(new_grad)).sum() > 0):
         num_nan = np.isnan(new_grad).sum()
         num_inf = (~np.isfinite(new_grad)).sum() - num_nan
         raise ValueError(f"Gradient is invalid: {num_nan}/{new_grad.size} items"

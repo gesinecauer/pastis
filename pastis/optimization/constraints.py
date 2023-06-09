@@ -803,7 +803,7 @@ class HomologSeparating2022(Constraint):
             import jax.debug as jax_debug
             print(to_print)
 
-        self._check_output(obj)
+        # self._check_output(obj)
         return self.lambda_val * obj
 
 

@@ -7,6 +7,7 @@ if sys.version_info[0] < 3:
 import os
 import numpy as np
 import pandas as pd
+from scipy import sparse
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -17,15 +18,16 @@ from .utils_poisson import _output_subdir, _load_infer_param, _format_structures
 from .utils_poisson import distance_between_homologs, distance_between_molecules
 from .counts import preprocess_counts, _ambiguate_beta, ambiguate_counts
 from .counts import _set_initial_beta, _get_counts_ambiguity, _disambiguate_beta
+from .counts import _debias_counts
 from .initialization import initialize
 from .callbacks import Callback
-from .constraints import prep_constraints
+from .constraints import prep_constraints, _neighboring_bead_indices
 from .constraints import get_counts_interchrom, HomologSeparating2019
 from .poisson import PastisPM, _convergence_criteria
 from .multiscale_optimization import _choose_max_multiscale_factor
-from .multiscale_optimization import decrease_lengths_res
-from .multiscale_optimization import decrease_bias_res
-from .multiscale_optimization import get_epsilon_from_struct
+from .multiscale_optimization import decrease_lengths_res, decrease_bias_res
+from .multiscale_optimization import get_epsilon_from_struct, decrease_counts_res
+from .multiscale_optimization import toy_struct_max_epilon
 from ..io.read import load_data
 
 
@@ -253,7 +255,8 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             epsilon = random_state.uniform(
                 low=epsilon_min * 1.1, high=min(1, epsilon_max))
-        print(f"INITIALIZATION: {epsilon=:.3g}", flush=True)
+        if verbose:
+            print(f"INITIALIZATION: {epsilon=:.3g}", flush=True)
     else:
         epsilon = None
 
@@ -294,6 +297,163 @@ def _prep_inference(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             epsilon, ploidy)
 
 
+def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
+                       beta=None, multiscale_factor=1, beta_init=None,
+                       multiscale_reform=False, epsilon_min=1e-2,
+                       epsilon_max=1e6, epsilon_prev=None, alpha_true=None,
+                       struct_true=None, exclude_zeros=False,
+                       bias_per_hmlg=False, max_attempt=5, verbose=True, mods=[]):
+    """TODO"""
+
+    est_epsilon_max = est_epsilon_x2 = None
+    if not (multiscale_reform and multiscale_factor > 1):
+        return (epsilon_min, epsilon_max), (est_epsilon_max, est_epsilon_x2)
+
+    if 'epsilon_true' in mods:
+        if struct_true is None:
+            raise ValueError("Need true struct for true epsilon.")
+        epsilon_true, _ = get_epsilon_from_struct(
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor,
+            mixture_coefs=[1] * len(struct_true), verbose=False)
+        print(f"\tUsing true epsilon = {epsilon_true:.3g}", flush=True)
+        return (epsilon_true, epsilon_true), (est_epsilon_max, est_epsilon_x2)
+
+    if verbose:
+        print(f"Setting bounds for epsilon at {multiscale_factor}x resolution"
+              f"\n\tCurrent bounds = [{epsilon_min:.3g}, {epsilon_max:.3g}]",
+              flush=True)
+
+    # if beta is None:
+    #     mean_nghbr_dis = 1
+    # else:
+    #     if beta_init is None:
+    #         beta_init = _ambiguate_beta(
+    #             beta, counts=counts, lengths=lengths, ploidy=ploidy)
+    #     beta_nghbr_1, _ = _set_initial_beta(
+    #         counts, lengths=lengths, ploidy=ploidy, bias=bias,
+    #         exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg)
+    #     mean_nghbr_dis = beta_nghbr_1 / beta_init
+    if beta is None:
+        beta_ambig, _ = _set_initial_beta(
+            counts, lengths=lengths, ploidy=ploidy, bias=bias,
+            exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg)
+    else:
+        beta_ambig = _ambiguate_beta(
+            beta, counts=counts, lengths=lengths, ploidy=ploidy)
+    if beta_init is None:
+        beta_init = beta_ambig
+        mean_nghbr_dis = 1
+    else:
+        mean_nghbr_dis = beta_ambig / beta_init
+        print(f"\t>>> {mean_nghbr_dis=:.3g}", flush=True)  # TODO remove
+
+    bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(counts) == 1 and set(
+        counts[0].shape) == {sum(lengths) * ploidy}
+
+    est_epsilon_x2 = mean_nghbr_dis / np.sqrt(6)
+
+    if multiscale_factor > 2 and 'emin' in mods:
+        if verbose and est_epsilon_x2 > epsilon_min:
+            print(f"\tEpsilon lower bound updated: ↑ from {epsilon_min:.3g}"
+                  f" to {est_epsilon_x2:.3g}", flush=True)
+        epsilon_min = max(epsilon_min, est_epsilon_x2)
+
+    if multiscale_factor == 2 and ('eps2' in mods or 'eps2mm' in mods):
+        # print(f"\t{beta_ambig=:.3g}\t{beta_init=:.3g}\t{mean_nghbr_dis=:.3g}")  # TODO remove
+        if verbose and est_epsilon_x2 < epsilon_max:
+            print(f"\tEpsilon upper bound updated: ↓ from {epsilon_max:.3g} to"
+                  f" {est_epsilon_x2:.3g}", flush=True)
+        epsilon_max = min(epsilon_max, est_epsilon_x2)
+        if 'eps2mm' in mods:
+            if verbose and est_epsilon_x2 > epsilon_min:
+                print(f"\tEpsilon lower bound updated: ↑ from {epsilon_min:.3g}"
+                      f" to {est_epsilon_x2:.3g}", flush=True)
+            epsilon_min = max(epsilon_min, est_epsilon_x2)
+
+    elif 'espiral' in mods:
+        if alpha is None:
+            raise ValueError("Must provide alpha for epsmaxd")
+
+        counts_norm = [_debias_counts(
+            c, bias=bias, ploidy=ploidy, lengths=lengths,
+            bias_per_hmlg=bias_per_hmlg) for c in counts]
+
+        counts_ambig = ambiguate_counts(
+            counts_norm, lengths=lengths, ploidy=ploidy)
+        counts_ambig_lowres = decrease_counts_res(
+            counts_ambig, multiscale_factor=multiscale_factor,
+            lengths=lengths, ploidy=1, mean=True)
+
+        row_nghbr_ambig = _neighboring_bead_indices(
+            lengths, ploidy=1, counts=counts_ambig,
+            include_struct_nan_beads=False)
+        row_nghbr_ambig_lowres = _neighboring_bead_indices(
+            lengths, ploidy=1, multiscale_factor=multiscale_factor,
+            counts=counts_ambig_lowres, include_struct_nan_beads=False)
+
+        nghbr_dis_alpha_fullres = counts_ambig.tocsr(
+            ).diagonal(k=1)[row_nghbr_ambig] / ploidy / beta_ambig
+        nghbr_dis_alpha_lowres = counts_ambig_lowres.tocsr(
+            ).diagonal(k=1)[row_nghbr_ambig_lowres] / ploidy / beta_ambig
+
+        if (nghbr_dis_alpha_fullres == 0).sum() > 0:
+            nghbr_dis_fullres = np.power(
+                nghbr_dis_alpha_fullres.mean(), 1 / alpha)
+            # print(f"\t>>> {multiscale_factor}x: {nghbr_dis_fullres=:.3g}", flush=True)  # TODO remove
+        else:
+            nghbr_dis_fullres = np.power(
+                nghbr_dis_alpha_fullres, 1 / alpha).mean()
+        if (nghbr_dis_alpha_lowres == 0).sum() > 0:
+            nghbr_dis_lowres = np.power(
+                nghbr_dis_alpha_lowres.mean(), 1 / alpha)
+            print(f"\t>>> {multiscale_factor}x: {nghbr_dis_lowres=:.3g}", flush=True)  # TODO remove
+        else:
+            nghbr_dis_lowres = np.power(
+                nghbr_dis_alpha_lowres, 1 / alpha).mean()
+
+        random_state = np.random.RandomState(seed)
+        est_epsilon_max, attempt = None, 0
+        while est_epsilon_max is None and attempt < max_attempt:
+            est_epsilon_max, _ = toy_struct_max_epilon(
+                multiscale_factor, nghbr_dis_fullres=nghbr_dis_fullres,
+                nghbr_dis_lowres=nghbr_dis_lowres,
+                epsilon_prev=epsilon_prev if 'eprev' in mods else None,
+                random_state=random_state, verbose=verbose)
+            max_attempt += 1
+        if verbose and est_epsilon_max < epsilon_max:
+            print(f"\tEpsilon upper bound updated: ↓ from {epsilon_max:.3g} to"
+                  f" {est_epsilon_max:.3g}", flush=True)
+        epsilon_max = min(epsilon_max, est_epsilon_max)
+
+    elif 'epsmax' in mods:
+        struct_epsilon_max = mean_nghbr_dis * np.concatenate([
+            np.arange(multiscale_factor).reshape(-1, 1),
+            np.zeros((multiscale_factor, 2))], axis=1)
+        est_epsilon_max, _ = get_epsilon_from_struct(
+            struct_epsilon_max, lengths=multiscale_factor, ploidy=1,
+            multiscale_factor=multiscale_factor, verbose=False)
+        if verbose and est_epsilon_max < epsilon_max:
+            print(f"\tEpsilon upper bound updated: ↓ from {epsilon_max:.3g} to"
+                  f" {est_epsilon_max:.3g}", flush=True)
+        epsilon_max = min(epsilon_max, est_epsilon_max)
+
+    if verbose and struct_true is not None:
+        epsilon_true, _ = get_epsilon_from_struct(
+            struct_true, lengths=lengths, ploidy=ploidy,
+            multiscale_factor=multiscale_factor,
+            mixture_coefs=[1] * len(struct_true), verbose=False)
+        print(f"\tTrue epsilon = {epsilon_true:.3g}", flush=True)
+        if epsilon_true > epsilon_max:
+            print(f"\t  ↳ WARNING: true epsilon ({epsilon_true:.3g}) is above"
+                  f" upper bound ({epsilon_max:.3g})", flush=True)
+        if epsilon_true < epsilon_min:
+            print(f"\t  ↳ WARNING: true epsilon ({epsilon_true:.3g}) is below"
+                  f" lower bound ({epsilon_min:.3g})", flush=True)
+
+    return (epsilon_min, epsilon_max), (est_epsilon_max, est_epsilon_x2)
+
+
 def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                    filter_threshold=0.04, normalize=True, bias=None, alpha_init=None,
                    max_alpha_loop=20, beta=None, multiscale_factor=1,
@@ -305,8 +465,8 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                    hsc_perc_diff=None, excluded_counts=None,
                    callback_freq=None, callback_fxns=None, reorienter=None,
                    multiscale_reform=False, epsilon_min=1e-2, epsilon_max=1e6,
-                   alpha_true=None, struct_true=None, input_weight=None,
-                   exclude_zeros=False, null=False,
+                   epsilon_prev=None, alpha_true=None, struct_true=None,
+                   input_weight=None, exclude_zeros=False, null=False,
                    chrom_full=None, chrom_subset=None, bias_per_hmlg=False,
                    mixture_coefs=None, verbose=True,
                    mods=[]):
@@ -433,34 +593,38 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         counts[0].shape) == {lengths.sum() * ploidy}
 
     # SET BOUNDS ON EPSILON
-    if multiscale_reform and multiscale_factor > 1:
-        if beta is None:
-            mean_nghbr_dis = 1
-        else:
-            if beta_init is None:
-                beta_init_tmp = _ambiguate_beta(
-                    beta, counts=counts, lengths=lengths, ploidy=ploidy)
-            else:
-                beta_init_tmp = beta_init
-            beta_nghbr_1, _ = _set_initial_beta(
-                counts, lengths=lengths, ploidy=ploidy, bias=bias,
-                exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg)
-            mean_nghbr_dis = beta_nghbr_1 / beta_init_tmp
-        if multiscale_factor == 2 and ('eps2' in mods or 'eps2mm' in mods):
-            estimated_epsilon = mean_nghbr_dis / np.sqrt(6)
-            epsilon_max = estimated_epsilon
-            # print(f"*** {beta_nghbr_1=:.3g}\t\t{beta_init_tmp=:.3g}\t\t{mean_nghbr_dis=:.3g}\t\t{estimated_epsilon=:.3g}")  # TODO remove
-            if 'eps2mm' in mods:
-                epsilon_min = estimated_epsilon
-        elif 'epsmax' in mods:
-            struct_epsilon_max = mean_nghbr_dis * np.concatenate([
-                np.arange(multiscale_factor).reshape(-1, 1),
-                np.zeros((multiscale_factor, 2))], axis=1)
-            est_epsilon_max = get_epsilon_from_struct(
-                struct_epsilon_max, lengths=multiscale_factor,
-                ploidy=1, multiscale_factor=multiscale_factor, verbose=False)
-            print(f">>>>>>>> {epsilon_max=:.3g}\t{est_epsilon_max=:.3g}", flush=True)
-            epsilon_max = min(epsilon_max, est_epsilon_max)
+    (epsilon_min, epsilon_max), _ = set_epsilon_bounds(
+        counts, lengths=lengths, ploidy=ploidy, alpha=alpha, bias=bias,
+        beta=beta, multiscale_factor=multiscale_factor, beta_init=beta_init,
+        multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
+        epsilon_max=epsilon_max, epsilon_prev=epsilon_prev,
+        alpha_true=alpha_true, struct_true=struct_true,
+        exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg,
+        verbose=verbose, mods=mods)
+    if 'spiral4all' in mods:
+        tmpname = os.path.basename(outfiles['dir'].split('/infer_')[0])
+        print("\n\nname\tres\tepsilon_true\test_epsilon_max\test_epsilon_x2\tmax_ok", flush=True)
+        epsilon_prev_tmp = {64: None, 32: None, 16: None, 8: None, 4: None}
+        if 'eprev' in mods:
+            epsilon_prev_tmp = {64: None, 32: 2.09, 16: 1.64, 8: 1.35, 4: 0.739}
+        for x in [32, 16, 8, 4, 2]:
+            epsilon_true, _ = get_epsilon_from_struct(
+                struct_true, lengths=lengths, ploidy=ploidy, verbose=False,
+                multiscale_factor=x, mixture_coefs=[1] * len(struct_true))
+            _, (est_epsilon_max, est_epsilon_x2) = set_epsilon_bounds(
+                counts, lengths=lengths, ploidy=ploidy, alpha=alpha, bias=bias,
+                beta=beta, multiscale_factor=x, beta_init=beta_init,
+                multiscale_reform=True, epsilon_min=epsilon_min,
+                epsilon_max=epsilon_max, epsilon_prev=epsilon_prev_tmp[x * 2],
+                alpha_true=alpha_true, struct_true=struct_true,
+                exclude_zeros=exclude_zeros, bias_per_hmlg=bias_per_hmlg,
+                verbose=True, mods=mods)
+            est_epsilon_max = np.nan if est_epsilon_max is None else est_epsilon_max
+            est_epsilon_x2 = np.nan if est_epsilon_x2 is None else est_epsilon_x2
+            max_ok = ' ' if (np.isnan(est_epsilon_max) or est_epsilon_max >= epsilon_true) else '!!!'
+            print(f"{tmpname}\t{x}\t{epsilon_true:g}\t{est_epsilon_max:g}\t{est_epsilon_x2:g}\t{max_ok}", flush=True)
+        print('\n', flush=True)
+        exit(0)
 
     # PREP FOR INFERENCE
     prepped = _prep_inference(
@@ -595,7 +759,13 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         update_alpha = True
         if alpha_init is None:
             random_state = np.random.RandomState(seed)
-            alpha_init = random_state.uniform(low=-4, high=-1)
+            if 'alpha_init' in mods:
+                alpha_init = random_state.uniform(low=-3, high=-2)
+                if verbose:
+                    print(f"INITIALIZATION: alpha={alpha_init=:.3g}",
+                          flush=True)
+            else:
+                alpha_init = random_state.uniform(low=-4, high=-1)
     if update_alpha and alpha_loop is None:
         alpha_loop = 1
     first_alpha_loop = update_alpha and alpha_loop == 1
@@ -773,6 +943,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
     # INFER FULL-RES GENOME STRUCTURE (with or without multires optimization)
     all_multiscale_factors = 2 ** np.flip(np.arange(int(multiscale_rounds)))
     epsilon_max_ = epsilon_max
+    epsilon_prev_ = None
     for multiscale_factor in all_multiscale_factors:
         _print_code_header(
             f'MULTIRES FACTOR {multiscale_factor}', max_length=60,
@@ -799,7 +970,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             callback_fxns=callback_fxns, excluded_counts=excluded_counts,
             callback_freq=callback_freq, reorienter=reorienter,
             multiscale_reform=multiscale_reform, epsilon_min=epsilon_min,
-            epsilon_max=epsilon_max_, alpha_true=alpha_true,
+            epsilon_max=epsilon_max_, epsilon_prev=epsilon_prev_,
+            alpha_true=alpha_true,
             struct_true=struct_true, input_weight=input_weight,
             exclude_zeros=exclude_zeros, null=null,
             chrom_full=chrom_full, chrom_subset=chrom_subset,
@@ -819,9 +991,15 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         else:
             init_ = struct_
         if 'epsilon' in infer_param and infer_param['epsilon'] is not None:
-            # Epsilon for the next-highest resolution should be smaller than
-            # the previous resolution's epsilon... but allow some wiggle room
-            epsilon_max_ = infer_param['epsilon'] * 1.1
+            epsilon_prev_ = infer_param['epsilon']
+            if 'eprev' in mods:
+                # Epsilon for the next-highest resolution should be smaller than
+                # the previous resolution's epsilon
+                epsilon_max_ = infer_param['epsilon']
+            else:
+                # Epsilon for the next-highest resolution should be smaller than
+                # the previous resolution's epsilon... but allow some wiggle room
+                epsilon_max_ = infer_param['epsilon'] * 1.1
         if 'lowres_exit' in mods:
             exit(0)
 

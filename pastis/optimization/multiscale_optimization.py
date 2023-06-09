@@ -7,10 +7,12 @@ import numpy as np
 import warnings
 from scipy import sparse
 from scipy.interpolate import interp1d
+from scipy import optimize
 
 from .utils_poisson import _setup_jax
 _setup_jax()
 import jax.numpy as jnp
+from jax import grad
 
 
 def decrease_lengths_res(lengths, multiscale_factor):
@@ -218,7 +220,8 @@ def _group_counts_multiscale(counts, lengths, ploidy, multiscale_factor=1,
 
 
 def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
-                        return_indices=False, remove_diag=True):
+                        return_indices=False, remove_diag=True,
+                        warn_on_float=False, mean=False):
     """Decrease resolution of counts matrices by summing adjacent bins.
 
     Decrease the resolution of the contact counts matrices. Each bin in a
@@ -248,7 +251,7 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
     from .counts import _check_counts_matrix
 
     counts = _check_counts_matrix(
-        counts, lengths=lengths, ploidy=ploidy)
+        counts, lengths=lengths, ploidy=ploidy, warn_on_float=warn_on_float)
 
     if multiscale_factor == 1:
         if return_indices:
@@ -265,11 +268,17 @@ def decrease_counts_res(counts, multiscale_factor, lengths, ploidy,
     idx_fullres, idx_lowres = _get_fullres_counts_index(
         multiscale_factor=multiscale_factor, lengths=lengths, ploidy=ploidy,
         counts_fullres_shape=counts.shape, remove_diag=remove_diag)
-    row_fullres, col_fullres, _ = idx_fullres
+    row_fullres, col_fullres, bad_idx_fullres = idx_fullres
     row_lowres, col_lowres = idx_lowres
 
     data_lowres = counts.toarray()[row_fullres, col_fullres].reshape(
         multiscale_factor ** 2, -1).sum(axis=0)
+
+    if mean:
+        fullres_per_lowres_bin = np.invert(bad_idx_fullres).reshape(
+            multiscale_factor ** 2, -1).sum(axis=0)
+        data_lowres /= fullres_per_lowres_bin
+
     counts_lowres = sparse.coo_matrix(
         (data_lowres[data_lowres != 0],
             (row_lowres[data_lowres != 0], col_lowres[data_lowres != 0])),
@@ -511,36 +520,53 @@ def decrease_bias_res(bias, multiscale_factor, lengths, bias_per_hmlg=None):
     return bias_lowres
 
 
-def _var3d(struct_grouped, replace_nan=True):
+def _var3d(struct_grouped, replace_nan=False):
     """Compute variance of beads in 3D.
     """
 
-    # struct_grouped.shape = (multiscale_factor, nbeads, 3)
-    multiscale_variances = np.full(struct_grouped.shape[1], np.nan)
+    # Output type should be the same as type(bias)
+    if isinstance(struct_grouped, jnp.ndarray):
+        tmp_np = jnp
+    else:
+        tmp_np = np
+    invalid = -1
+
+    # FYI, struct_grouped.shape = (multiscale_factor, nbeads_lowres, 3)
+    multiscale_variances = tmp_np.full(
+        struct_grouped.shape[1], invalid, dtype=float)
     for i in range(struct_grouped.shape[1]):
         struct_group = struct_grouped[:, i, :]
-        beads_in_group = np.invert(np.isnan(struct_group[:, 0])).sum()
+        beads_in_group = tmp_np.invert(tmp_np.isnan(struct_group[:, 0])).sum()
         if beads_in_group < 1:
-            var = np.nan
+            var = invalid
         else:
-            mean_coords = np.nanmean(struct_group, axis=0)
+            mean_coords = tmp_np.nanmean(struct_group, axis=0)
             # Euclidian distance formula = ((A - B) ** 2).sum(axis=1) ** 0.5
             var = (1 / beads_in_group) * \
-                np.nansum((struct_group - mean_coords) ** 2)
-        multiscale_variances[i] = var
+                tmp_np.nansum((struct_group - mean_coords) ** 2)
+        if isinstance(struct_grouped, jnp.ndarray):
+            multiscale_variances = multiscale_variances.at[i].set(var)
+        else:
+            multiscale_variances[i] = var
 
-    if np.isnan(multiscale_variances).sum() == multiscale_variances.shape[0]:
-        raise ValueError("Multiscale variances are nan for every bead.")
+    if tmp_np.isnan(multiscale_variances).sum() == multiscale_variances.shape[0]:
+        raise ValueError("Multiscale variances are invalid for every bead.")
 
     if replace_nan:
-        multiscale_variances[np.isnan(multiscale_variances)] = np.nanmedian(
-            multiscale_variances)
+        multiscale_variances[
+            multiscale_variances == invalid] = np.mean(multiscale_variances[
+            multiscale_variances != invalid])
+    elif isinstance(struct_grouped, jnp.ndarray):
+        multiscale_variances = multiscale_variances[
+            multiscale_variances != invalid]
+    else:
+        multiscale_variances[multiscale_variances == invalid] = np.nan
 
     return multiscale_variances
 
 
 def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
-                            mixture_coefs=None, replace_nan=True, verbose=True):
+                            mixture_coefs=None, replace_nan=False, verbose=True):
     """Compute multiscale epsilon from full-res structure.
 
     Generates multiscale epsilons at the specified resolution from the
@@ -596,18 +622,160 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
             lowres_nan = lowres_nan & np.isnan(epsilon_per_bead[0])
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
-            epsilon_per_bead = np.sqrt(
-                np.nanmean(epsilon_per_bead ** 2, axis=0))
+            epsilon_per_bead = np.nanmean(epsilon_per_bead, axis=0)
         epsilon_per_bead[lowres_nan] = np.nan
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=RuntimeWarning)
-        epsilon = np.sqrt(np.nanmean(epsilon_per_bead ** 2))
+    # Get epsilon_per_dis from epsilon_per_bead
+    # Formula: \epsilon_{xy} = \sqrt{ 0.5 ( \epsilon_x^2 \epsilon_y^2 ) }
+    nbeads = epsilon_per_bead.size
+    mask = ~np.isnan(epsilon_per_bead)
+    per_bead_sq_div2 = np.full(nbeads, np.nan)
+    per_bead_sq_div2[mask] = np.square(epsilon_per_bead[mask]) / 2
+    epsilon_per_dis = per_bead_sq_div2.reshape(
+        1, -1) + per_bead_sq_div2.reshape(-1, 1)
+    epsilon_per_dis[~np.isnan(epsilon_per_dis)] **= 0.5
+
+    if np.isnan(epsilon_per_bead).sum() > 0:  # TODO remove
+        assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[:, 0]))
+        assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[0, :]))
+        if nbeads > 1:
+            assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[:, 1]))
+            assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[1, :]))
+
+    # Get mean(epsilon_per_dis)
+    epsilon = np.nanmean(epsilon_per_dis[np.triu_indices(nbeads, 1)])
+    # with warnings.catch_warnings():  # TODO remove
+    #     warnings.filterwarnings("ignore", category=RuntimeWarning)
+    #     epsilon = np.sqrt(np.nanmean(epsilon_per_bead ** 2))
 
     if verbose:
         print(f"MULTISCALE EPSILON ({multiscale_factor}x): {epsilon:.3g}",
               flush=True)
-    return epsilon, epsilon_per_bead
+    return epsilon, epsilon_per_dis
+
+
+def _make_spiral(n_rotations=2, radius=1.2, z_max=4, n_points=1000):
+    """TODO"""
+    umax = n_rotations * 2 * jnp.pi
+
+    u = jnp.linspace(0, umax, n_points)
+    x = radius * jnp.cos(u)
+    y = radius * jnp.sin(u)
+    z = u / jnp.pi
+    z = z * z_max / (n_rotations * 2)
+
+    return jnp.stack([x, y, z], axis=1)
+
+
+def _spiral_obj(X, multiscale_factor, nghbr_dis_fullres, nghbr_dis_lowres,
+                epsilon_prev=None, return_extras=False):
+    """TODO"""
+    n_rotations, radius, z_max = X
+    spiral = _make_spiral(
+        n_rotations=n_rotations, radius=radius, z_max=z_max,
+        n_points=multiscale_factor * 2)
+
+    nghbr_dis_fullres_ = jnp.linalg.norm(spiral[:-1] - spiral[1:], axis=1)
+    nghbr_dis_lowres_ = jnp.linalg.norm(spiral[:multiscale_factor].mean(
+        axis=0) - spiral[multiscale_factor:].mean(axis=0))
+
+    mse_fullres = jnp.mean(jnp.square(nghbr_dis_fullres - nghbr_dis_fullres_))
+    mse_lowres = jnp.square(nghbr_dis_lowres - nghbr_dis_lowres_)
+    obj = mse_fullres + mse_lowres
+
+    epsilon_prev_ = mse_epsilon_prev = None
+    if epsilon_prev is not None:
+        multiscale_var_prev_ = _var3d(
+            spiral.reshape(spiral.shape[0], 1, 3), replace_nan=False)[0]
+        epsilon_prev_ = jnp.sqrt(multiscale_var_prev_ * 2 / 3)
+        mse_epsilon_prev = jnp.square(epsilon_prev - epsilon_prev_)
+        obj = obj + mse_epsilon_prev
+
+    if not return_extras:
+        return obj
+    else:
+        est_vals = {'fullres': nghbr_dis_fullres_, 'lowres': nghbr_dis_lowres_,
+                    'prev': epsilon_prev_}
+        mse = {'fullres': mse_fullres, 'lowres': mse_lowres,
+               'prev': mse_epsilon_prev}
+        return obj, mse, est_vals
+
+
+_spiral_grad = grad(_spiral_obj)
+_spiral_fprime = lambda *args, **kwargs: np.array(_spiral_grad(*args, **kwargs))
+
+
+def toy_struct_max_epilon(multiscale_factor, nghbr_dis_fullres,
+                          nghbr_dis_lowres, epsilon_prev=None,
+                          random_state=None, init=None, bounds=None,
+                          verbose=True):
+    """TODO"""
+
+    if verbose:
+        to_print = [
+            "\tCreating toy structure with maximum realistic epsilon",
+            f"\tTARGET: mean dist between neighboring beads... low-res="
+            f"{nghbr_dis_lowres:.3g}... high-res={nghbr_dis_fullres:.3g}"]
+        if epsilon_prev is not None:
+            to_print.append(f"\tTARGET: epsilon at previous (lower) resolution:"
+                            f" {epsilon_prev:.3g}")
+        print("\n".join(to_print), flush=True)
+
+    if bounds is None:
+        bounds = np.array([[1e-3, None], [1e-3, None], [1e-3, None]])
+
+    if random_state is None:
+        random_state = np.random.RandomState(seed=0)
+    if init is None:
+        init = random_state.uniform(
+            low=np.nanmin(bounds[:, 0]), high=10, size=3)
+
+    results = optimize.fmin_l_bfgs_b(
+        _spiral_obj, x0=init, fprime=_spiral_fprime, iprint=-1, maxiter=1e4,
+        maxfun=1e4, pgtol=1e-05, factr=1e7, bounds=bounds,
+        args=(multiscale_factor, nghbr_dis_fullres, nghbr_dis_lowres,
+              epsilon_prev))
+    X, obj, d = results
+    converged = d['warnflag'] == 0
+    conv_desc = d['task']
+    if isinstance(conv_desc, bytes):
+        conv_desc = conv_desc.decode('utf8')
+    n_rotations, radius, z_max = X
+
+    obj, mse, est_vals = _spiral_obj(
+        X, multiscale_factor=multiscale_factor,
+        nghbr_dis_fullres=nghbr_dis_fullres, nghbr_dis_lowres=nghbr_dis_lowres,
+        epsilon_prev=epsilon_prev, return_extras=True)
+
+    if verbose:
+        if converged:
+            print(f'\tCONVERGED with {obj=:.3g}', flush=True)
+        else:
+            print(f'\tOPTIMIZATION DID NOT CONVERGE\n\t{conv_desc}', flush=True)
+    if verbose and converged:
+        print(f'\tINFERED STRUCT: 3D spiral of {radius=:.3g} and height='
+              f'{z_max:.3g}, undergoes {n_rotations:.3g} rotations', flush=True)
+        to_print = [
+            "\tINFERRED STRUCT: mean dist between neighboring beads... low-res="
+            f"{est_vals['lowres']._value:.3g} (MSE={mse['lowres']._value:.3g})"
+            f"... high-res={est_vals['fullres']._value.mean():.3g} (MSE="
+            f"{mse['fullres']._value:.3g})"]
+        if epsilon_prev is not None:
+            to_print.append(
+                f"\tINFERRED STRUCT: epsilon at previous (lower) resolution: "
+                f"{est_vals['prev']._value:.3g} (MSE={mse['prev']._value:.3g})")
+        print("\n".join(to_print), flush=True)
+
+    if converged:
+        spiral = _make_spiral(
+            n_rotations=n_rotations, radius=radius, z_max=z_max,
+            n_points=multiscale_factor * 2)._value
+        est_epsilon_max, _ = get_epsilon_from_struct(
+            spiral, lengths=multiscale_factor * 2, ploidy=1,
+            multiscale_factor=multiscale_factor, verbose=False)
+        return est_epsilon_max, spiral
+    else:
+        return None, None
 
 
 def _choose_max_multiscale_factor(lengths, min_beads):
