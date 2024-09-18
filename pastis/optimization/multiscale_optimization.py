@@ -404,7 +404,7 @@ def _group_highres_struct(struct, multiscale_factor, lengths, ploidy,
     # Apply to struct, and set incorrect idx to np.nan
     grouped_struct = np.where(
         np.repeat(bad_idx.reshape(-1, 1), 3, axis=1), np.nan,
-        struct.reshape(-1, 3)[idx.flatten(), :]).reshape(
+        struct.reshape(-1, 3)[idx.ravel(), :]).reshape(
         multiscale_factor, -1, 3)
 
     return grouped_struct
@@ -587,7 +587,7 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
         Factor by which to reduce the resolution. A value of 2 halves the
         resolution. A value of 1 does not change the resolution.
 
-    Returns
+    Returns  TODO update
     -------
     epsilon_per_bead : array of float
         Multiscale epsilons: for each low-resolution bead, the epsilon of the
@@ -642,11 +642,8 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
             assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[:, 1]))
             assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[1, :]))
 
-    # Get mean(epsilon_per_dis)
+    # Get mean of epsilon_per_dis
     epsilon = np.nanmean(epsilon_per_dis[np.triu_indices(nbeads, 1)])
-    # with warnings.catch_warnings():  # TODO remove
-    #     warnings.filterwarnings("ignore", category=RuntimeWarning)
-    #     epsilon = np.sqrt(np.nanmean(epsilon_per_bead ** 2))
 
     if verbose:
         print(f"MULTISCALE EPSILON ({multiscale_factor}x): {epsilon:.3g}",
@@ -667,7 +664,7 @@ def _make_spiral(n_rotations=2, radius=1.2, z_max=4, n_points=1000):
     return jnp.stack([x, y, z], axis=1)
 
 
-def _spiral_obj(X, multiscale_factor, nghbr_dis_fullres, nghbr_dis_lowres,
+def _spiral_obj(X, multiscale_factor, nghbr_dis_fullres, nghbr_dis_lowres=None,
                 epsilon_prev=None, return_extras=False):
     """TODO"""
     n_rotations, radius, z_max = X
@@ -676,12 +673,15 @@ def _spiral_obj(X, multiscale_factor, nghbr_dis_fullres, nghbr_dis_lowres,
         n_points=multiscale_factor * 2)
 
     nghbr_dis_fullres_ = jnp.linalg.norm(spiral[:-1] - spiral[1:], axis=1)
-    nghbr_dis_lowres_ = jnp.linalg.norm(spiral[:multiscale_factor].mean(
-        axis=0) - spiral[multiscale_factor:].mean(axis=0))
-
     mse_fullres = jnp.mean(jnp.square(nghbr_dis_fullres - nghbr_dis_fullres_))
-    mse_lowres = jnp.square(nghbr_dis_lowres - nghbr_dis_lowres_)
-    obj = mse_fullres + mse_lowres
+    obj = mse_fullres
+
+    nghbr_dis_lowres_ = mse_lowres = None
+    if nghbr_dis_lowres is not None:
+        nghbr_dis_lowres_ = jnp.linalg.norm(spiral[:multiscale_factor].mean(
+            axis=0) - spiral[multiscale_factor:].mean(axis=0))
+        mse_lowres = jnp.square(nghbr_dis_lowres - nghbr_dis_lowres_)
+        obj = obj + mse_lowres
 
     epsilon_prev_ = mse_epsilon_prev = None
     if epsilon_prev is not None:
@@ -706,16 +706,20 @@ _spiral_fprime = lambda *args, **kwargs: np.array(_spiral_grad(*args, **kwargs))
 
 
 def toy_struct_max_epilon(multiscale_factor, nghbr_dis_fullres,
-                          nghbr_dis_lowres, epsilon_prev=None,
+                          nghbr_dis_lowres=None, epsilon_prev=None,
                           random_state=None, init=None, bounds=None,
                           verbose=True):
     """TODO"""
 
     if verbose:
+        if nghbr_dis_lowres is None:
+            lowres_desc = ''
+        else:
+            lowres_desc = f"low-res={nghbr_dis_lowres:.3g}... "
         to_print = [
             "\tCreating toy structure with maximum realistic epsilon",
-            f"\tTARGET: mean dist between neighboring beads... low-res="
-            f"{nghbr_dis_lowres:.3g}... high-res={nghbr_dis_fullres:.3g}"]
+            f"\tTARGET: mean dist between neighboring beads..."
+            f" high-res={nghbr_dis_fullres:.3g}"]
         if epsilon_prev is not None:
             to_print.append(f"\tTARGET: epsilon at previous (lower) resolution:"
                             f" {epsilon_prev:.3g}")
@@ -755,10 +759,13 @@ def toy_struct_max_epilon(multiscale_factor, nghbr_dis_fullres,
     if verbose and converged:
         print(f'\tINFERED STRUCT: 3D spiral of {radius=:.3g} and height='
               f'{z_max:.3g}, undergoes {n_rotations:.3g} rotations', flush=True)
+        if nghbr_dis_lowres is None:
+            lowres_desc = ''
+        else:
+            lowres_desc = f"low-res={est_vals['lowres']._value:.3g} (MSE={mse['lowres']._value:.3g})... "
         to_print = [
-            "\tINFERRED STRUCT: mean dist between neighboring beads... low-res="
-            f"{est_vals['lowres']._value:.3g} (MSE={mse['lowres']._value:.3g})"
-            f"... high-res={est_vals['fullres']._value.mean():.3g} (MSE="
+            "\tINFERRED STRUCT: mean dist between neighboring beads..."
+            f" high-res={est_vals['fullres']._value.mean():.3g} (MSE="
             f"{mse['fullres']._value:.3g})"]
         if epsilon_prev is not None:
             to_print.append(
