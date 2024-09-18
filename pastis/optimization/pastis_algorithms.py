@@ -361,15 +361,16 @@ def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
 
     if multiscale_factor == 2 and ('eps2' in mods or 'eps2mm' in mods):
         # print(f"\t{beta_ambig=:.3g}\t{beta_init=:.3g}\t{mean_nghbr_dis=:.3g}")  # TODO remove
-        if verbose and est_epsilon_x2 < epsilon_max:
-            print(f"\tEpsilon upper bound updated: ↓ from {epsilon_max:.3g} to"
-                  f" {est_epsilon_x2:.3g}", flush=True)
-        epsilon_max = min(epsilon_max, est_epsilon_x2)
-        if 'eps2mm' in mods:
-            if verbose and est_epsilon_x2 > epsilon_min:
-                print(f"\tEpsilon lower bound updated: ↑ from {epsilon_min:.3g}"
-                      f" to {est_epsilon_x2:.3g}", flush=True)
-            epsilon_min = max(epsilon_min, est_epsilon_x2)
+        if est_epsilon_x2 < epsilon_max:
+            if verbose:
+                print(f"\tEpsilon upper bound updated: ↓ from {epsilon_max:.3g} to"
+                      f" {est_epsilon_x2:.3g}", flush=True)
+            epsilon_max = min(epsilon_max, est_epsilon_x2)
+            if 'eps2mm' in mods:
+                if verbose and est_epsilon_x2 > epsilon_min:
+                    print(f"\tEpsilon lower bound updated: ↑ from {epsilon_min:.3g}"
+                          f" to {est_epsilon_x2:.3g}", flush=True)
+                epsilon_min = max(epsilon_min, est_epsilon_x2)
 
     elif 'espiral' in mods:
         if alpha is None:
@@ -404,7 +405,10 @@ def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
         else:
             nghbr_dis_fullres = np.power(
                 nghbr_dis_alpha_fullres, 1 / alpha).mean()
-        if (nghbr_dis_alpha_lowres == 0).sum() > 0:
+
+        if 'no_ndlow' in mods:
+            nghbr_dis_lowres = None
+        elif (nghbr_dis_alpha_lowres == 0).sum() > 0:
             nghbr_dis_lowres = np.power(
                 nghbr_dis_alpha_lowres.mean(), 1 / alpha)
             print(f"\t>>> {multiscale_factor}x: {nghbr_dis_lowres=:.3g}", flush=True)  # TODO remove
@@ -418,7 +422,7 @@ def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
             est_epsilon_max, _ = toy_struct_max_epilon(
                 multiscale_factor, nghbr_dis_fullres=nghbr_dis_fullres,
                 nghbr_dis_lowres=nghbr_dis_lowres,
-                epsilon_prev=epsilon_prev if 'eprev' in mods else None,
+                epsilon_prev=epsilon_prev if ('eprev' in mods or 'eprev2' in mods) else None,
                 random_state=random_state, verbose=verbose)
             max_attempt += 1
         if verbose and est_epsilon_max < epsilon_max:
@@ -605,7 +609,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         tmpname = os.path.basename(outfiles['dir'].split('/infer_')[0])
         print("\n\nname\tres\tepsilon_true\test_epsilon_max\test_epsilon_x2\tmax_ok", flush=True)
         epsilon_prev_tmp = {64: None, 32: None, 16: None, 8: None, 4: None}
-        if 'eprev' in mods:
+        if ('eprev' in mods or 'eprev2' in mods):
             epsilon_prev_tmp = {64: None, 32: 2.09, 16: 1.64, 8: 1.35, 4: 0.739}
         for x in [32, 16, 8, 4, 2]:
             epsilon_true, _ = get_epsilon_from_struct(
@@ -813,18 +817,29 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
 
         init_alpha_1chrom = 'init_alpha_1chrom' in mods and (
             lengths_subset.size > 1)
-        infer_alpha_intra = infer_alpha_intra and lengths_subset.size > 1
+        infer_alpha_intra = infer_alpha_intra and lengths_subset.size > 1 and (
+            excluded_counts != 'inter-chromosomal')
+
+        ambiguities = [_get_counts_ambiguity(
+            c.shape, nbeads=lengths_subset.sum() * ploidy) for c in _counts]
+        infer_alpha_intra_mol = 'infer_alpha_intra_mol' in mods and (
+            lengths_subset.size * ploidy > 1) and (
+            excluded_counts != 'inter-molecular') and set(ambiguities) == {"ua"}
+
     else:
         init_alpha_1chrom = False
         infer_alpha_intra = False
+        infer_alpha_intra_mol = False
 
-    if first_alpha_loop and (multiscale_rounds > 1 or infer_alpha_intra or init_alpha_1chrom):
+    if first_alpha_loop and (multiscale_rounds > 1 or infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol):
         if init_alpha_1chrom:
             chrom_subset_init_alpha = chrom_subset_[np.argmax(lengths_subset)]
         else:
             chrom_subset_init_alpha = chrom_subset_
         if infer_alpha_intra:
             excluded_counts_infer_alpha = 'inter-chromosomal'
+        elif infer_alpha_intra_mol:
+            excluded_counts_infer_alpha = 'inter-molecular'
         else:
             excluded_counts_infer_alpha = excluded_counts
 
@@ -834,10 +849,12 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             outdir_tmp = 'initial_alpha_inference'
             if multiscale_rounds > 1:
                 outdir_tmp += '.singleres'
-            if infer_alpha_intra:
-                outdir_tmp += '.intra-chromosomal'
             if init_alpha_1chrom:
                 outdir_tmp += '.' + chrom_subset_init_alpha.replace(' ', '_')
+            elif infer_alpha_intra_mol:
+                outdir_tmp += '.intra-molecular'
+            elif infer_alpha_intra:
+                outdir_tmp += '.intra-chromosomal'
             outdir_init_alpha = os.path.join(outdir, outdir_tmp)
 
         struct_, infer_param = infer(  # TODO should I be using pre-loaded _counts etc here?
@@ -849,7 +866,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             beta=beta, multiscale_rounds=1, init=init,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
             alpha_factr=alpha_factr, infer_alpha_intra=False,
-            struct_at_final_alpha=not (infer_alpha_intra or init_alpha_1chrom),
+            struct_at_final_alpha=not (infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol),
             bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
             bcc_version=bcc_version, hsc_version=hsc_version,
             data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
@@ -871,7 +888,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 not infer_param['alpha_converged']):
             return struct_, infer_param
 
-        if not (infer_alpha_intra or init_alpha_1chrom):
+        if not (infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol):
             init_ = struct_
             beta = infer_param['beta']  # FIXME not sure about the beta situation
         if (not init_alpha_1chrom) and 'est_hmlg_sep' in infer_param:
@@ -881,11 +898,12 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_loop = infer_param['alpha_loop']
         prev_alpha_obj = None
         first_alpha_loop = False
-        if infer_alpha_intra or init_alpha_1chrom:
+        if infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol:
             alpha_loop += 1
-        if infer_alpha_intra:
+        if infer_alpha_intra or infer_alpha_intra_mol:
             update_alpha = False
         infer_alpha_intra = False
+        infer_alpha_intra_mol = False
     elif first_alpha_loop and multiscale_rounds == 1:
         # No need to repeatedly re-load if inferring with single-res
         bias = _bias
