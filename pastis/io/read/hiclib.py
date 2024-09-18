@@ -3,6 +3,8 @@ import numpy as np
 from scipy import sparse
 import pandas as pd
 
+from ...optimization.counts import _best_counts_dtype
+
 
 def _get_counts_shape(row_max, col_max, lengths=None):
     """
@@ -85,6 +87,6 @@ def load_hiclib_counts(filename, lengths=None):
     shape = _get_counts_shape(
         row_max=row.max(), col_max=col.max(), lengths=lengths)
 
-    data = data.astype(float)
+    data = data.astype(_best_counts_dtype(data, warn_on_float=False))
     counts = sparse.coo_matrix((data, (row, col)), shape=shape)
     return counts
