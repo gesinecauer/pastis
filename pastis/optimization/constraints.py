@@ -1043,7 +1043,7 @@ def get_counts_interchrom(counts, lengths, ploidy, filter_threshold=0.04,
             raise ValueError("Must input inter-chromosomal counts data for all"
                              " resolutions.")
         if verbose:
-            print(f"INTER-CHROM COUNTS: loaded from file", flush=True)
+            print("INTER-CHROM COUNTS: loaded from file", flush=True)
         return data_interchrom
 
     if multiscale_reform:
