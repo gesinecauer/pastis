@@ -192,9 +192,10 @@ def test_get_epsilon_from_struct(multiscale_factor):
     multiscale_var_correct = np.array(multiscale_var_correct)
     epsilon_correct = np.sqrt(multiscale_var_correct * 2 / 3)
 
-    _, _, test_per_bead = multiscale_optimization.get_epsilon_from_struct(
+    _, test_per_dis = multiscale_optimization.get_epsilon_from_struct(
         struct, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, replace_nan=False, verbose=False)
+    test_per_bead = np.diagonal(test_per_dis)
 
     assert_allclose(np.nanmean(epsilon_correct), np.nanmean(test_per_bead))
     assert_allclose(epsilon_correct, test_per_bead)

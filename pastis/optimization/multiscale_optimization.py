@@ -645,7 +645,7 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
     if verbose:
         print(f"MULTISCALE EPSILON ({multiscale_factor}x): {epsilon:.3g}",
               flush=True)
-    return epsilon, epsilon_per_dis, epsilon_per_bead
+    return epsilon, epsilon_per_dis
 
 
 def _make_spiral(n_rotations=2, radius=1.2, z_max=4, n_points=1000):

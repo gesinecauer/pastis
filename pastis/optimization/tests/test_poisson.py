@@ -147,7 +147,7 @@ def test_objective_multires(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true, _, _ = get_epsilon_from_struct(
+        epsilon_true, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
         X = np.append(struct_true_lowres.ravel(), epsilon_true)
@@ -193,7 +193,7 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true, _, _ = get_epsilon_from_struct(
+        epsilon_true, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
         X = np.append(struct_true_lowres.ravel(), epsilon_true)
@@ -244,7 +244,7 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=None,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true, _, _ = get_epsilon_from_struct(
+        epsilon_true, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
         X = np.append(struct_true_lowres.ravel(), epsilon_true)
@@ -295,7 +295,7 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true, _, _ = get_epsilon_from_struct(
+        epsilon_true, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
         X = np.append(struct_true_lowres.ravel(), epsilon_true)
@@ -341,7 +341,7 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         multiscale_factor=multiscale_factor, beta=beta, bias=bias,
         multiscale_reform=multiscale_reform, verbose=False)
     if multiscale_reform:
-        epsilon_true, _, _ = get_epsilon_from_struct(
+        epsilon_true, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
         X = np.append(struct_true_lowres.ravel(), epsilon_true)
