@@ -11,6 +11,9 @@ if sys.version_info[0] >= 3:
     from utils import decrease_counts_res_correct
     from utils import remove_struct_nan_from_counts
 
+    from pastis.optimization.utils_poisson import _setup_jax
+    _setup_jax(traceback=True)
+
     from pastis.optimization import multiscale_optimization
     from pastis.optimization.counts import preprocess_counts
 
@@ -178,26 +181,27 @@ def test_get_epsilon_from_struct(multiscale_factor):
     for l in np.tile(lengths, ploidy):
         end += l
         for i in range(begin, end, multiscale_factor):
-            slice = coord0[i:min(end, i + multiscale_factor)]
-            beads_in_group = np.invert(np.isnan(slice)).sum()
+            sliced = coord0[i:min(end, i + multiscale_factor)]
+            beads_in_group = np.invert(np.isnan(sliced)).sum()
             if beads_in_group < 1:
                 var = np.nan
             else:
-                var = np.var(slice[~np.isnan(slice)])
+                var = np.var(sliced[~np.isnan(sliced)])
             multiscale_var_correct.append(var)
         begin = end
     multiscale_var_correct = np.array(multiscale_var_correct)
     epsilon_correct = np.sqrt(multiscale_var_correct * 2 / 3)
 
-    epsilon_test, _ = multiscale_optimization.get_epsilon_from_struct(
+    _, _, test_per_bead = multiscale_optimization.get_epsilon_from_struct(
         struct, lengths=lengths, ploidy=ploidy,
         multiscale_factor=multiscale_factor, replace_nan=False, verbose=False)
 
-    assert_allclose(np.mean(epsilon_correct), epsilon_test)
+    assert_allclose(np.nanmean(epsilon_correct), np.nanmean(test_per_bead))
+    assert_allclose(epsilon_correct, test_per_bead)
 
 
 @pytest.mark.parametrize("min_beads", [5, 10, 11, 100, 101, 200])
-def test__choose_max_multiscale_factor(min_beads):
+def test_choose_max_multiscale_factor(min_beads):
     lengths = np.array([101])
     multiscale_factor = multiscale_optimization._choose_max_multiscale_factor(
         lengths, min_beads=min_beads)
@@ -281,7 +285,7 @@ def test_decrease_bias_res(multiscale_factor):
     bias_lowres_correct = decrease_struct_res_correct(
         tmp, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=1)[:, 0].ravel()
-    bias_lowres_correct[np.isnan(bias_lowres_correct)] = 0
+    # bias_lowres_correct[np.isnan(bias_lowres_correct)] = 0
 
     bias_lowres_test = multiscale_optimization.decrease_bias_res(
         bias_fullres, multiscale_factor=multiscale_factor, lengths=lengths)

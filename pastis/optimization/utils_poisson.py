@@ -15,12 +15,15 @@ import warnings
 import hashlib
 
 
-def _setup_jax(debug_nan_inf=False):
+def _setup_jax(traceback=False, debug_nan_inf=False):
     from absl import logging as absl_logging
     absl_logging.set_verbosity('error')
     from jax import config as jax_config
     jax_config.update("jax_platform_name", "cpu")
     jax_config.update("jax_enable_x64", True)
+    if traceback:
+        jax_config.update("jax_traceback_filtering", "off")
+        print("Jax: including internal frames in traceback", flush=True)
     if debug_nan_inf:
         jax_config.update("jax_debug_nans", True)
         jax_config.update("jax_debug_infs", True)

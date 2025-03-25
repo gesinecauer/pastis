@@ -1,7 +1,6 @@
 import sys
 import pytest
 import numpy as np
-from scipy import sparse
 from numpy.testing import assert_allclose, assert_array_equal
 
 pytestmark = pytest.mark.skipif(
@@ -9,6 +8,10 @@ pytestmark = pytest.mark.skipif(
 
 if sys.version_info[0] >= 3:
     from utils import get_counts, ambiguate_counts_correct, get_struct_randwalk
+
+    from pastis.optimization.utils_poisson import _setup_jax
+    _setup_jax(traceback=True)
+
     import pastis.optimization.counts as counts_py
     from pastis.optimization.estimate_alpha_beta import _estimate_beta
     from pastis.optimization.utils_poisson import _dict_is_equal

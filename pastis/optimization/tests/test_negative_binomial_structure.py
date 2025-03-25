@@ -89,7 +89,7 @@ def test_negative_binomial_gradient_sparse_dispersed():
     counts = random_state.negative_binomial(dispersion, 1 - p)
     counts = np.triu(counts)
     counts[np.arange(len(counts)), np.arange(len(counts))] = 0
-    counts = sparse.coo_matrix(counts, dtype=float)
+    counts = sparse.coo_matrix(counts, dtype=np.float64)
     return True
     # from minorswing import dispersion
     mean, variance = dispersion.compute_mean_variance(
@@ -137,7 +137,7 @@ def test_estimate_X_biased_dispersion():
     counts = random_state.negative_binomial(dispersion, 1 - p)
     counts = np.triu(counts)
     counts[np.arange(len(counts)), np.arange(len(counts))] = 0
-    counts = sparse.coo_matrix(counts, dtype=np.float)
+    counts = sparse.coo_matrix(counts, dtype=np.float64)
 
     lengths = np.array([counts.shape[0]])
     return True

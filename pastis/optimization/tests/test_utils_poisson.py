@@ -9,7 +9,7 @@ pytestmark = pytest.mark.skipif(
 
 if sys.version_info[0] >= 3:
     from pastis.optimization.utils_poisson import _setup_jax
-    _setup_jax(debug_nan_inf=True)
+    _setup_jax(traceback=True, debug_nan_inf=True)
     from jax import grad
 
     from utils import get_counts, set_counts_ambiguity, get_struct_randwalk

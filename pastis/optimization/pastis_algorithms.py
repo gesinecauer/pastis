@@ -7,7 +7,6 @@ if sys.version_info[0] < 3:
 import os
 import numpy as np
 import pandas as pd
-from scipy import sparse
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -312,7 +311,7 @@ def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
     if 'epsilon_true' in mods:
         if struct_true is None:
             raise ValueError("Need true struct for true epsilon.")
-        epsilon_true, _ = get_epsilon_from_struct(
+        epsilon_true, _, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             mixture_coefs=[1] * len(struct_true), verbose=False)
@@ -434,7 +433,7 @@ def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
         struct_epsilon_max = mean_nghbr_dis * np.concatenate([
             np.arange(multiscale_factor).reshape(-1, 1),
             np.zeros((multiscale_factor, 2))], axis=1)
-        est_epsilon_max, _ = get_epsilon_from_struct(
+        est_epsilon_max, _, _ = get_epsilon_from_struct(
             struct_epsilon_max, lengths=multiscale_factor, ploidy=1,
             multiscale_factor=multiscale_factor, verbose=False)
         if verbose and est_epsilon_max < epsilon_max:
@@ -443,7 +442,7 @@ def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
         epsilon_max = min(epsilon_max, est_epsilon_max)
 
     if verbose and struct_true is not None:
-        epsilon_true, _ = get_epsilon_from_struct(
+        epsilon_true, _, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor,
             mixture_coefs=[1] * len(struct_true), verbose=False)
@@ -612,7 +611,7 @@ def infer_at_alpha(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         if ('eprev' in mods or 'eprev2' in mods):
             epsilon_prev_tmp = {64: None, 32: 2.09, 16: 1.64, 8: 1.35, 4: 0.739}
         for x in [32, 16, 8, 4, 2]:
-            epsilon_true, _ = get_epsilon_from_struct(
+            epsilon_true, _, _ = get_epsilon_from_struct(
                 struct_true, lengths=lengths, ploidy=ploidy, verbose=False,
                 multiscale_factor=x, mixture_coefs=[1] * len(struct_true))
             _, (est_epsilon_max, est_epsilon_x2) = set_epsilon_bounds(

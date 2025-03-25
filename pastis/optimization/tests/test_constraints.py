@@ -12,7 +12,7 @@ if sys.version_info[0] >= 3:
     from utils import decrease_struct_res_correct, get_true_data_interchrom
 
     from pastis.optimization.utils_poisson import _setup_jax
-    _setup_jax(debug_nan_inf=True)
+    _setup_jax(traceback=True, debug_nan_inf=True)
 
     from pastis.optimization import constraints
     from pastis.optimization.counts import preprocess_counts
@@ -75,7 +75,7 @@ def test_constraint_bcc2019(multiscale_factor):
         verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
-        struct_true_lowres, alpha=alpha, epsilon=None, counts=counts,
+        struct_true_lowres, alpha=alpha, beta=beta, epsilon=None, counts=counts,
         bias=bias)._value
     assert np.isclose(obj, 0)
 
@@ -117,7 +117,7 @@ def test_constraint_hsc2019(multiscale_factor):
         fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
-        struct_true_lowres, alpha=alpha, epsilon=None, counts=counts,
+        struct_true_lowres, alpha=alpha, beta=beta, epsilon=None, counts=counts,
         bias=bias)._value
     assert np.isclose(obj, 0)
 
@@ -159,7 +159,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
     if multiscale_factor == 1 or (not multiscale_reform):
         epsilon_true = None
     else:
-        epsilon_true, _ = get_epsilon_from_struct(
+        epsilon_true, _, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
 
@@ -170,8 +170,8 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
         fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
-        struct_true_lowres, alpha=alpha, epsilon=epsilon_true, counts=counts,
-        bias=bias)._value
+        struct_true_lowres, alpha=alpha, beta=beta, epsilon=epsilon_true,
+        counts=counts, bias=bias)._value
 
     nbins_nghbr = constraint._var['row_nghbr'].size
     assert obj < (-1e4 / nbins_nghbr)
@@ -235,7 +235,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
     if multiscale_factor == 1 or (not multiscale_reform):
         epsilon_true = None
     else:
-        epsilon_true, _ = get_epsilon_from_struct(
+        epsilon_true, _, _ = get_epsilon_from_struct(
             struct_true, lengths=lengths, ploidy=ploidy,
             multiscale_factor=multiscale_factor, verbose=False)
 
@@ -246,8 +246,8 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
         fullres_struct_nan=fullres_struct_nan, verbose=False)[0]
     constraint.check()
     obj = constraint.apply(
-        struct_true_lowres, alpha=alpha, epsilon=epsilon_true, counts=counts,
-        bias=bias)._value
+        struct_true_lowres, alpha=alpha, beta=beta, epsilon=epsilon_true,
+        counts=counts, bias=bias)._value
     print(f"{obj=:g}")
 
     if multiscale_factor > 1 and (not multiscale_reform):  # Multires naive

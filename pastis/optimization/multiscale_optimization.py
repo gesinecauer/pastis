@@ -636,11 +636,8 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
     epsilon_per_dis[~np.isnan(epsilon_per_dis)] **= 0.5
 
     if np.isnan(epsilon_per_bead).sum() > 0:  # TODO remove
-        assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[:, 0]))
-        assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[0, :]))
-        if nbeads > 1:
-            assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[:, 1]))
-            assert np.array_equal(mask, ~np.isnan(epsilon_per_dis[1, :]))
+        assert np.array_equal(mask, ~np.all(np.isnan(epsilon_per_dis), axis=0))
+        assert np.array_equal(mask, ~np.all(np.isnan(epsilon_per_dis), axis=1))
 
     # Get mean of epsilon_per_dis
     epsilon = np.nanmean(epsilon_per_dis[np.triu_indices(nbeads, 1)])
@@ -648,7 +645,7 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
     if verbose:
         print(f"MULTISCALE EPSILON ({multiscale_factor}x): {epsilon:.3g}",
               flush=True)
-    return epsilon, epsilon_per_dis
+    return epsilon, epsilon_per_dis, epsilon_per_bead
 
 
 def _make_spiral(n_rotations=2, radius=1.2, z_max=4, n_points=1000):
@@ -777,7 +774,7 @@ def toy_struct_max_epilon(multiscale_factor, nghbr_dis_fullres,
         spiral = _make_spiral(
             n_rotations=n_rotations, radius=radius, z_max=z_max,
             n_points=multiscale_factor * 2)._value
-        est_epsilon_max, _ = get_epsilon_from_struct(
+        est_epsilon_max, _, _ = get_epsilon_from_struct(
             spiral, lengths=multiscale_factor * 2, ploidy=1,
             multiscale_factor=multiscale_factor, verbose=False)
         return est_epsilon_max, spiral

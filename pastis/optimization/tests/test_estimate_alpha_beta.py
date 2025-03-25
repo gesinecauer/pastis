@@ -10,7 +10,7 @@ if sys.version_info[0] >= 3:
     from utils import get_counts
 
     from pastis.optimization.utils_poisson import _setup_jax
-    _setup_jax(debug_nan_inf=True)
+    _setup_jax(traceback=True, debug_nan_inf=True)
 
     from pastis.optimization import estimate_alpha_beta
     from pastis.optimization.counts import _format_counts
