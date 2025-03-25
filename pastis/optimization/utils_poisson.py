@@ -32,7 +32,8 @@ def _setup_jax(traceback=False, debug_nan_inf=False):
 
 _setup_jax()
 
-from typing import Any as Array
+from jax import Array
+from jax.typing import ArrayLike
 import jax.numpy as jnp
 from jax import custom_jvp, lax, jit
 from jax.nn import relu
@@ -317,7 +318,7 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
 
 @custom_jvp
 @jit
-def jax_max(x1: Array, x2: Array) -> Array:
+def _jax_max(x1: ArrayLike, x2: ArrayLike) -> Array:
     """Element-wise maximum of array elements.
 
     Compare two arrays and returns a new array containing the element-wise
@@ -348,20 +349,33 @@ def jax_max(x1: Array, x2: Array) -> Array:
     return jnp.maximum(x1, x2)
 
 
-@jax_max.defjvp
-def jax_max_jvp(primals, tangents):
+@_jax_max.defjvp
+def _jax_max_jvp(primals, tangents):
     x, y = primals
     x_dot, y_dot = tangents
-    primal_out = jax_max(x, y)
+    primal_out = _jax_max(x, y)
     tangent_out_x = jnp.where(x > y, x_dot, lax.full_like(x_dot, 0))
     tangent_out_y = jnp.where(x < y, y_dot, lax.full_like(y_dot, 0))
     tangent_out = tangent_out_x + tangent_out_y
     return primal_out, tangent_out
 
 
+def jax_max(x1: ArrayLike, x2: ArrayLike) -> Array:
+    """TODO move _jax_max docstring here"""
+    if isinstance(x1, (np.ndarray, jnp.ndarray)):
+        x1 = jnp.astype(x1, jnp.float64)
+    else:
+        x1 = jnp.float64(x1)
+    if isinstance(x2, (np.ndarray, jnp.ndarray)):
+        x2 = jnp.astype(x2, jnp.float64)
+    else:
+        x2 = jnp.float64(x2)
+    return _jax_max(x1, x2)
+
+
 @custom_jvp
 @jit
-def jax_min(x1: Array, x2: Array) -> Array:
+def _jax_min(x1: ArrayLike, x2: ArrayLike) -> Array:
     """Element-wise minimum of array elements.
 
     Compare two arrays and returns a new array containing the element-wise
@@ -392,15 +406,28 @@ def jax_min(x1: Array, x2: Array) -> Array:
     return jnp.minimum(x1, x2)
 
 
-@jax_min.defjvp
-def jax_min_jvp(primals, tangents):
+@_jax_min.defjvp
+def _jax_min_jvp(primals, tangents):
     x, y = primals
     x_dot, y_dot = tangents
-    primal_out = jax_min(x, y)
+    primal_out = _jax_min(x, y)
     tangent_out_x = jnp.where(x < y, x_dot, lax.full_like(x_dot, 0))
     tangent_out_y = jnp.where(x > y, y_dot, lax.full_like(y_dot, 0))
     tangent_out = tangent_out_x + tangent_out_y
     return primal_out, tangent_out
+
+
+def jax_min(x1: ArrayLike, x2: ArrayLike) -> Array:
+    """TODO move _jax_min docstring here"""
+    if isinstance(x1, (np.ndarray, jnp.ndarray)):
+        x1 = jnp.astype(x1, jnp.float64)
+    else:
+        x1 = jnp.float64(x1)
+    if isinstance(x2, (np.ndarray, jnp.ndarray)):
+        x2 = jnp.astype(x2, jnp.float64)
+    else:
+        x2 = jnp.float64(x2)
+    return _jax_min(x1, x2)
 
 
 def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
