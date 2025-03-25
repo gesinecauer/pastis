@@ -4,7 +4,6 @@ if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
 import numpy as np
-from scipy import sparse
 import warnings
 import pandas as pd
 
@@ -295,7 +294,6 @@ class HomologSeparating2019(Constraint):
             if isinstance(self.hparams[k], np.ndarray):
                 self.hparams[k] = np.asarray(self.hparams[k], order='C')
 
-
     def setup(self, counts=None, bias=None):
         if self.lambda_val <= 0:
             return
@@ -458,7 +456,7 @@ class BeadChainConnectivity2022(Constraint):
                     mean_counts_nghbr = np.mean(np.append(
                         counts_nghbr_object.bins_nonzero.data,
                         np.ones(counts_nghbr_object.bins_zero.nbins,
-                            dtype=int)))
+                                dtype=int)))
                 if self.multiscale_factor > 1 and self.multires_naive:
                     fullres_per_lowres_dis = self.hparams[
                         'fullres_per_lowres_bead'][
@@ -505,7 +503,7 @@ class BeadChainConnectivity2022(Constraint):
                     mean_counts_nghbr = np.mean(np.append(
                         counts_nghbr_object.bins_nonzero.data,
                         np.ones(counts_nghbr_object.bins_zero.nbins,
-                            dtype=int)))
+                                dtype=int)))
                 if np.issubdtype(counts_nghbr.dtype, np.integer):
                     mean_counts_nghbr = int(np.round(mean_counts_nghbr))
                 counts_nghbr[0, mask_no_data] = mean_counts_nghbr

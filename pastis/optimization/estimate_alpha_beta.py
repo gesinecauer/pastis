@@ -5,7 +5,6 @@ if sys.version_info[0] < 3:
 
 import numpy as np
 from scipy import optimize
-from functools import partial
 
 from .utils_poisson import _setup_jax
 _setup_jax()
