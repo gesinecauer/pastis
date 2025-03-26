@@ -12,7 +12,8 @@ if sys.version_info[0] >= 3:
     _setup_jax(traceback=True, debug_nan_inf=True)
     from jax import grad
 
-    from utils import get_counts, set_counts_ambiguity, get_struct_randwalk
+    from utils import get_counts_diploid
+    from utils import set_counts_ambiguity, get_struct_randwalk
     from utils import decrease_struct_res_correct
     from pastis.optimization import utils_poisson
 
@@ -35,13 +36,13 @@ def test_find_beads_to_remove(ambiguity):
     lengths = np.array([40])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 0.5
+    alpha, beta_ambig = -3, 0.5
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
         use_poisson=True)
 

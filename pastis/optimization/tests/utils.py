@@ -182,9 +182,9 @@ def get_struct_randwalk(lengths, ploidy, random_state=None,
     return struct
 
 
-def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
-               struct_nan=None, random_state=None, use_poisson=False,
-               bias=None):
+def _get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
+                struct_nan=None, random_state=None, use_poisson=False,
+                bias=None):
     """Simulate Hi-C counts from 3D structure"""
     if ambiguity is None:
         ambiguity = 'ua'
@@ -211,9 +211,40 @@ def get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
 
     counts = set_counts_ambiguity(
         counts, lengths=lengths, ploidy=ploidy, ambiguity=ambiguity)
-
-    return remove_struct_nan_from_counts(
+    counts = remove_struct_nan_from_counts(
         counts, lengths=lengths, struct_nan=struct_nan)
+
+    return counts
+
+
+def get_counts_diploid(struct, lengths, alpha=-3, beta_ambig=1, ambiguity='ua',
+                       struct_nan=None, random_state=None, use_poisson=False,
+                       bias=None):
+
+    # Adjust beta for partially ambig so that nreads is same for all ambiguities
+    # (Ideal constraint penalties are affected by nreads)
+    if ambiguity == 'pa':
+        beta = beta_ambig / 2
+    else:
+        beta = beta_ambig
+
+    counts = _get_counts(
+        struct, ploidy=2, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
+        use_poisson=use_poisson, bias=bias)
+
+    return counts, beta
+
+
+def get_counts_haploid(struct, lengths, alpha=-3, beta=1, struct_nan=None,
+                       random_state=None, use_poisson=False, bias=None):
+
+    counts = _get_counts(
+        struct, ploidy=1, lengths=lengths, alpha=alpha, beta=beta,
+        ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
+        use_poisson=use_poisson, bias=bias)
+
+    return counts, beta
 
 
 def set_counts_ambiguity(counts, lengths, ploidy, ambiguity='ua'):
@@ -281,7 +312,8 @@ def get_true_data_interchrom(struct_true, ploidy, lengths, ambiguity,
         beta_ua = beta * 2
     else:
         beta_ua = beta
-    counts_unambig = sparse.coo_matrix(sum([get_counts(
+
+    counts_unambig = sparse.coo_matrix(sum([_get_counts(
         struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta_ua,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
         use_poisson=use_poisson, bias=bias).toarray() for i in range(4)]))

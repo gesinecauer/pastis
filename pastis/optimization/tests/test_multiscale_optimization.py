@@ -7,7 +7,8 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
-    from utils import get_counts, decrease_struct_res_correct
+    from utils import get_counts_diploid
+    from utils import decrease_struct_res_correct
     from utils import decrease_counts_res_correct
     from utils import remove_struct_nan_from_counts
 
@@ -97,13 +98,13 @@ def test_decrease_counts_res(ambiguity, multiscale_factor):
     lengths = np.array([10, 21])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1
+    alpha, beta_ambig = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
         use_poisson=False)
 

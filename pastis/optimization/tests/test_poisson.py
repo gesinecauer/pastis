@@ -7,8 +7,8 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
-    from utils import get_counts, get_struct_randwalk
-    from utils import decrease_struct_res_correct
+    from utils import get_counts_haploid, get_counts_diploid
+    from utils import get_struct_randwalk, decrease_struct_res_correct
 
     from pastis.optimization.utils_poisson import _setup_jax
     _setup_jax(traceback=True, debug_nan_inf=True)
@@ -29,10 +29,9 @@ def test_poisson_objective_haploid():
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ua", struct_nan=None, random_state=random_state,
-        use_poisson=False, bias=bias)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=bias)
 
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
@@ -53,10 +52,9 @@ def test_poisson_objective_haploid_biased():
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     bias = 0.1 + random_state.uniform(size=lengths.sum())
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity="ua", struct_nan=None, random_state=random_state,
-        use_poisson=False, bias=bias)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=bias)
 
     counts = _format_counts(
         counts=counts, lengths=lengths, ploidy=ploidy, beta=beta, bias=bias)
@@ -73,13 +71,13 @@ def test_poisson_objective_diploid(ambiguity):
     lengths = np.array([20])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1
+    alpha, beta_ambig = -3, 1
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False, bias=bias)
 
@@ -98,13 +96,13 @@ def test_poisson_objective_diploid_biased(ambiguity):
     lengths = np.array([20])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1
+    alpha, beta_ambig = -3, 1
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
     bias = 0.1 + random_state.uniform(size=lengths.sum())
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False, bias=bias)
 
@@ -125,7 +123,7 @@ def test_objective_multires(ambiguity, multiscale_factor):
     lengths = np.array([40])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     multiscale_reform = True
 
@@ -137,8 +135,8 @@ def test_objective_multires(ambiguity, multiscale_factor):
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False, bias=bias)
 
@@ -171,7 +169,7 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
     lengths = np.array([40])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     multiscale_reform = True
 
@@ -183,8 +181,8 @@ def test_objective_multires_biased(ambiguity, multiscale_factor):
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
     bias = 0.1 + random_state.uniform(size=lengths.sum())
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False, bias=bias)
 
@@ -217,7 +215,7 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
     lengths = np.array([40])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     multiscale_reform = True
 
@@ -228,8 +226,8 @@ def test_objective_multires_bias_approx1(ambiguity, multiscale_factor):
     struct_true_lowres = decrease_struct_res_correct(
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=True, bias=None)  # Counts can be unbiased, doesn't matter
 
@@ -273,7 +271,7 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
     lengths = np.array([40])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     multiscale_reform = False
 
@@ -285,8 +283,8 @@ def test_objective_multires_naive(ambiguity, multiscale_factor):
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False, bias=bias)
 
@@ -319,7 +317,7 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
     lengths = np.array([40])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     multiscale_reform = False
 
@@ -331,8 +329,8 @@ def test_objective_multires_naive_biased(ambiguity, multiscale_factor):
         struct_true, multiscale_factor=multiscale_factor, lengths=lengths,
         ploidy=ploidy)
     bias = 0.1 + random_state.uniform(size=lengths.sum())
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False, bias=bias)
 

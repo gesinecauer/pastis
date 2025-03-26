@@ -11,7 +11,8 @@ if sys.version_info[0] >= 3:
     from pastis.optimization.utils_poisson import _setup_jax
     _setup_jax(traceback=True, debug_nan_inf=False)
 
-    from utils import get_counts, get_struct_randwalk, get_true_data_interchrom
+    from utils import get_counts_haploid, get_counts_diploid
+    from utils import get_struct_randwalk, get_true_data_interchrom
     from utils import decrease_struct_res_correct
     from pastis.optimization import pastis_algorithms
     from pastis.optimization.utils_poisson import distance_between_homologs
@@ -84,10 +85,9 @@ def test_haploid(multiscale_factor, multiscale_reform):
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity='ua', struct_nan=None, random_state=random_state,
-        use_poisson=False)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False)
 
     struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
@@ -116,10 +116,9 @@ def test_haploid_biased(multiscale_factor, multiscale_reform):
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state)
     bias = 0.1 + random_state.uniform(size=lengths.sum())
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity='ua', struct_nan=None, random_state=random_state,
-        use_poisson=False, bias=bias)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False, bias=bias)
 
     struct_, infer_param = pastis_algorithms.infer_at_alpha(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
@@ -146,10 +145,9 @@ def test_haploid_run_pastis(multiscale_rounds, multiscale_reform):
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity='ua', struct_nan=None, random_state=random_state,
-        use_poisson=False)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False)
 
     struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
@@ -176,10 +174,9 @@ def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
     random_state = np.random.RandomState(seed=seed)
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
-        ambiguity='ua', struct_nan=None, random_state=random_state,
-        use_poisson=False)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False)
 
     struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=None,
@@ -204,7 +201,7 @@ def test_diploid(ambiguity, multiscale_factor):
     seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 10
     init = 'true'  # For convenience/speed
 
@@ -212,8 +209,8 @@ def test_diploid(ambiguity, multiscale_factor):
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=True)
 
@@ -234,25 +231,25 @@ def test_diploid_combo():
     seed = 0
     bcc_lambda = 0
     hsc_lambda = 0
-    alpha, beta = -3, 1e3
-    ratio_ambig, ratio_pa, ratio_ua = 0.2, 0.7, 0.1
+    alpha, beta_ambig = -3, 1e3
+    nreads_ratios = {'ambig': 0.2, 'pa': 0.7, 'ua': 0.1}
     init = 'true'  # For convenience/speed
 
     random_state = np.random.RandomState(seed=seed)
     struct_true = random_state.uniform(size=(lengths.sum() * ploidy, 3))
-    ambig_counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
-        beta=beta * ratio_ambig, ambiguity="ambig", struct_nan=None,
-        random_state=random_state, use_poisson=False)
-    pa_counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
-        beta=beta * ratio_pa, ambiguity="pa", struct_nan=None,
-        random_state=random_state, use_poisson=False)
-    ua_counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha,
-        beta=beta * ratio_ua, ambiguity="ua", struct_nan=None,
-        random_state=random_state, use_poisson=False)
-    counts = [ambig_counts, pa_counts, ua_counts]
+
+    counts = []
+    betas = []
+    nreads_ratios = {k: (v / sum(
+        nreads_ratios.values())) for k, v in nreads_ratios.items()}
+    for ambiguity, nreads_ratio in nreads_ratios.items():
+        counts_tmp, beta_tmp = get_counts_diploid(
+            struct_true, lengths=lengths, alpha=alpha,
+            beta_ambig=beta_ambig * nreads_ratio, ambiguity=ambiguity,
+            struct_nan=None, random_state=random_state, use_poisson=False)
+        counts.append(counts_tmp)
+        betas.append(beta_tmp)
+    betas = np.array(betas)
 
     struct_, infer_param = pastis_algorithms.pastis_poisson(
         counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=alpha,
@@ -265,9 +262,8 @@ def test_diploid_combo():
 
     # Make sure estimated betas are appropriate given nreads per counts matrix
     infer_beta = np.array(infer_param['beta'])
-    sim_ratio = np.array([ratio_ambig, ratio_pa, ratio_ua])
     assert_allclose(
-        infer_beta / infer_beta.sum(), sim_ratio / sim_ratio.sum(), rtol=0.01)
+        infer_beta / infer_beta.sum(), betas / betas.sum(), rtol=0.01)
 
 
 def test_constraint_bcc2019():
@@ -287,8 +283,8 @@ def test_constraint_bcc2019():
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta,
         ambiguity="ua", struct_nan=None, random_state=random_state,
         use_poisson=False)
 
@@ -325,8 +321,8 @@ def test_constraint_hsc2019_infer_hmlg_sep():
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta,
         ambiguity="ua", struct_nan=None, random_state=random_state,
         use_poisson=False)
 
@@ -365,7 +361,7 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
     hsc_lambda = 1e4  # Update this as needed
     true_interhmlg_dis = 15
     est_hmlg_sep = true_interhmlg_dis  # Using true value for convenience
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     null = True  # If True, only optimize constraints, not main obj
     init = None
 
@@ -373,8 +369,8 @@ def test_constraint_hsc2019(ambiguity, multiscale_factor):
     struct_true = get_struct_randwalk(
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=None, random_state=random_state,
         use_poisson=False)
 
@@ -404,7 +400,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
     lengths = np.array([41])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true if including hsc2022
@@ -418,8 +414,8 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor):
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
         use_poisson=use_poisson, bias=bias)
 
@@ -454,7 +450,7 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
     lengths = np.array([41])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true if including hsc2022
@@ -468,8 +464,8 @@ def test_constraint_bcc2022_biased(ambiguity, multiscale_factor):
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
     bias = 0.1 + random_state.uniform(size=lengths.sum())
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
         use_poisson=use_poisson, bias=bias)
 
@@ -504,7 +500,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
     lengths = np.array([41])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true for hsc2022
@@ -518,8 +514,8 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor):
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
         use_poisson=use_poisson, bias=bias)
 
@@ -561,7 +557,7 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
     lengths = np.array([41])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     true_interhmlg_dis = 15
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true for hsc2022
@@ -575,8 +571,8 @@ def test_constraint_hsc2022_biased(ambiguity, multiscale_factor):
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
     bias = 0.1 + random_state.uniform(size=lengths.sum())
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
         use_poisson=use_poisson, bias=bias)
 

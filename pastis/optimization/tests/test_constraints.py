@@ -8,7 +8,8 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 6), reason="Requires python3.6 or higher")
 
 if sys.version_info[0] >= 3:
-    from utils import get_counts, get_struct_randwalk
+    from utils import get_counts_diploid
+    from utils import get_struct_randwalk
     from utils import decrease_struct_res_correct, get_true_data_interchrom
 
     from pastis.optimization.utils_poisson import _setup_jax
@@ -46,7 +47,7 @@ def test_neighboring_bead_indices(multiscale_factor):
 def test_constraint_bcc2019(multiscale_factor):
     lengths = np.array([20])
     ploidy = 2
-    alpha, beta = -3, 1
+    alpha, beta_ambig = -3, 1
     multiscale_reform = True
 
     n = lengths.sum()
@@ -54,8 +55,8 @@ def test_constraint_bcc2019(multiscale_factor):
         [np.arange(n * ploidy).reshape(-1, 1), np.zeros((n * ploidy, 1)),
             np.zeros((n * ploidy, 1))], axis=1)
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity="ua", struct_nan=None, random_state=None,
         use_poisson=False, bias=bias)
 
@@ -86,7 +87,7 @@ def test_constraint_hsc2019(multiscale_factor):
     ploidy = 2
     seed = 0
     true_interhmlg_dis = 15
-    alpha, beta = -3, 1
+    alpha, beta_ambig = -3, 1
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     est_hmlg_sep = true_interhmlg_dis  # Using true value for convenience
     multiscale_reform = True
@@ -96,8 +97,8 @@ def test_constraint_hsc2019(multiscale_factor):
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity="ua", struct_nan=struct_nan, random_state=random_state,
         use_poisson=False, bias=bias)
 
@@ -134,7 +135,7 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
     lengths = np.array([41])
     ploidy = 2
     seed = 0
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     struct_nan = None
     true_interhmlg_dis = 15
 
@@ -143,8 +144,8 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=None,
         use_poisson=True, bias=bias)
 
@@ -203,7 +204,7 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
     ploidy = 2
     seed = 0
     true_interhmlg_dis = 15
-    alpha, beta = -3, 1e3
+    alpha, beta_ambig = -3, 1e3
     struct_nan = np.array([0, 1, 2, 3, 12, 15, 25])
     use_poisson = True  # Must be true for hsc2022
 
@@ -212,8 +213,8 @@ def test_constraint_hsc2022(ambiguity, multiscale_factor, multiscale_reform):
         lengths=lengths, ploidy=ploidy, random_state=random_state,
         true_interhmlg_dis=true_interhmlg_dis)
     bias = None
-    counts = get_counts(
-        struct_true, ploidy=ploidy, lengths=lengths, alpha=alpha, beta=beta,
+    counts, beta = get_counts_diploid(
+        struct_true, lengths=lengths, alpha=alpha, beta_ambig=beta_ambig,
         ambiguity=ambiguity, struct_nan=struct_nan, random_state=random_state,
         use_poisson=use_poisson, bias=bias)
 
