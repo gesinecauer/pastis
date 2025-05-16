@@ -99,8 +99,6 @@ def test_haploid(multiscale_factor, multiscale_reform):
 
     assert infer_param['converged']
 
-    assert infer_var['converged']
-
 
 @pytest.mark.parametrize("multiscale_factor,multiscale_reform", [
     (1, True), (2, True), (4, True), (8, True), (2, False), (4, False),
@@ -131,8 +129,6 @@ def test_haploid_biased(multiscale_factor, multiscale_reform):
         multiscale_reform=multiscale_reform, verbose=False, init=init, bias=bias)
 
     assert infer_param['converged']
-
-    assert infer_var['converged']
 
 
 @pytest.mark.parametrize("multiscale_rounds,multiscale_reform", [

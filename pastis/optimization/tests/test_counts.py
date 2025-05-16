@@ -17,7 +17,7 @@ if sys.version_info[0] >= 3:
     from pastis.optimization.estimate_alpha_beta import _estimate_beta
     from pastis.optimization.utils_poisson import _dict_is_equal
 
-    from topsy.utils.debug import print_array_non0  # TODO remove
+    # from topsy.utils.debug import print_array_non0  # TODO remove
 
 
 def idx_isin_correct(idx1, idx2):
@@ -72,9 +72,9 @@ def compare_counts_bins_objects(bins, bins_correct):
                 if where_diff[0].size > 0:
                     print('row', bins_correct.row[np.unique(where_diff[0])])
                     print('col', bins_correct.col[np.unique(where_diff[1])])
-                    print_array_non0(bins_correct.mask[:10, :10]); print()
-                    print_array_non0(bins.mask[:10, :10]); print('\ndiff:')
-                    print_array_non0((bins_correct.mask != bins.mask)[:10, :10])
+                    # print_array_non0(bins_correct.mask[:10, :10]); print()
+                    # print_array_non0(bins.mask[:10, :10]); print('\ndiff:')
+                    # print_array_non0((bins_correct.mask != bins.mask)[:10, :10])
             else:
                 print(f"{bins_correct.mask.shape=}, {bins.mask.shape=}... {bins_correct.data.shape=}")
 
@@ -193,7 +193,7 @@ def test_ambiguate_counts(ambiguity, multiscale_factor, beta_ambig):
         counts=true_counts_ambig_arr_fullres, lengths=lengths, ploidy=ploidy,
         beta=beta_ambig, bias=None, exclude_zeros=False,
         multiscale_factor=multiscale_factor)[0]
-    print_array_non0(true_counts_ambig_object.tocoo().toarray())
+    # print_array_non0(true_counts_ambig_object.tocoo().toarray())
 
     # Ambiguate after converting to CountsMatrix
     counts_objects = counts_py._format_counts(
