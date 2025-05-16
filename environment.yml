@@ -3,7 +3,7 @@ channels:
     - default
 dependencies:
     - python>3
-    - setuptools
+    - cython
     - numpy
     - pandas
     - scikit-learn
