@@ -96,6 +96,7 @@ class Constraint(object):
         self._fullres_struct_nan = fullres_struct_nan  # For self.setup() only
         self._lowmem = lowmem
         self._var = None
+
         self.check()
 
     @property
