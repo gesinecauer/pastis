@@ -2,18 +2,18 @@ name: pastis
 channels:
     - default
 dependencies:
-    - python
+    - python>3
     - setuptools
     - numpy
+    - pandas
+    - scikit-learn
+    - scipy
     - pip
     - pip:
         - sphinx
-        - scipy
-        - scikit-learn
         - matplotlib
         - iced
         - joblib
-        - pandas
         - sphinx-gallery
         - numpydoc
         - pytest
