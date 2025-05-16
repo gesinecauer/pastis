@@ -3,18 +3,23 @@ channels:
     - default
 dependencies:
     - python>3
-    - cython==3.0.10  # for installing iced
-    # - numpy>1.16, <=2.0  # for installing iced
-    - numpy==2.0.0
-    - pandas
-    - scikit-learn
-    - scipy
+    # - cython==3.0.10  # for installing iced
+    # # - numpy>1.16, <=2.0  # for installing iced
+    # - numpy==2.0.0
+    # - pandas
+    # - scikit-learn
+    # - scipy
+    - numpy
     - pip
     - pip:
         - sphinx
+        - scipy
+        - scikit-learn
         - matplotlib
         - iced
         - joblib
+        - cython
+        - pandas
         - sphinx-gallery
         - numpydoc
         - pytest
