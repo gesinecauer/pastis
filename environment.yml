@@ -3,8 +3,7 @@ channels:
     - default
 dependencies:
     - python>3
-    - conda-forge::cython
-    - numpy
+    - numpy>1.16, <=2.0  # for installing iced
     - pandas
     - scikit-learn
     - scipy
