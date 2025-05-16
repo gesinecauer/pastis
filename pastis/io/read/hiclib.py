@@ -2,7 +2,6 @@ import warnings
 import numpy as np
 from scipy import sparse
 import pandas as pd
-
 from ...optimization.counts import _best_counts_dtype
 
 

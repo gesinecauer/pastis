@@ -693,6 +693,9 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
     """Format each counts matrix as a CountsMatrix subclass instance.
     """
 
+    lengths_lowres = decrease_lengths_res(lengths, multiscale_factor)
+    n = lengths_lowres.sum()
+
     # Check input
     if not isinstance(counts, (tuple, list)):
         counts = [counts]

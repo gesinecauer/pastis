@@ -5,6 +5,9 @@ if sys.version_info[0] < 3:
 
 import numpy as np
 import os
+from .mds import estimate_X
+from .utils_poisson import find_beads_to_remove
+from .utils_poisson import _struct_replace_nan, _format_structures
 
 from .utils_poisson import _setup_jax
 _setup_jax()
@@ -118,7 +121,7 @@ def _initialize_struct(counts, lengths, ploidy, alpha, bias, random_state,
                          "Options: np.ndarray, 'mds', or 'random'.")
     elif (init.lower() == "mds") and have_unambig:
         struct = _initialize_struct_mds(
-            counts=counts, lengths=lengths, ploidy=ploidy, alpha=alpha,
+            counts=counts, lengths=lengths_lowres, ploidy=ploidy, alpha=alpha,
             bias=bias, random_state=random_state,
             multiscale_factor=multiscale_factor, bias_per_hmlg=bias_per_hmlg,
             verbose=verbose)
