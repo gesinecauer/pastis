@@ -3,6 +3,7 @@ channels:
     - default
 dependencies:
     - python>3
+    - setuptools>=50.0, <60.0
     # - cython==3.0.10  # for installing iced
     # # - numpy>1.16, <=2.0  # for installing iced
     # - numpy==2.0.0
