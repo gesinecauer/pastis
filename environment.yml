@@ -5,7 +5,7 @@ dependencies:
     - python
     # - setuptools>=50.0, <60.0
     - setuptools=75.1.0
-    - numpy<1.50
+    - numpy<1.26
     - pip
     - pip:
         - sphinx
