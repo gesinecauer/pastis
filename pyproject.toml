@@ -17,7 +17,7 @@ dependencies = [
 readme = "README.rst"
 description = "A set of algorithms for the 3D inference of the genome"
 #license = "BSD-3-Clause"
-license-files = ["COPYING"]
+# license-files = ["COPYING"]
 keywords = ["pastis", "hi-c", "chromatin"]
 authors = [
   {name = "Nelle Varoquaux", email = "nelle.varoquaux@ensmp.fr"},
