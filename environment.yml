@@ -4,8 +4,8 @@ channels:
 dependencies:
     - python
     # - setuptools>=50.0, <60.0
-    - setuptools>75
-    - numpy<1.25
+    - setuptools=75.1.0
+    - numpy<1.5
     - pip
     - pip:
         - sphinx
