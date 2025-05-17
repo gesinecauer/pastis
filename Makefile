@@ -19,19 +19,17 @@ clean:
 	rm -rf example/*MDS*
 	rm -rf examples/filtering_example/*.png
 
-in: inplace # just a shortcut
-
-test: in
+test:
 	$(PYTEST) --showlocals -v pastis --durations=20
 
 test-coverage:
 	rm -rf coverage .coverage
 	$(PYTEST) pastis --showlocals -v --cov=pastis
 
-doc: inplace
+doc:
 	$(MAKE) -C doc html
 
-doc-noplot: inplace
+doc-noplot:
 	$(MAKE) -C doc html-noplot
 
 code-analysis:
