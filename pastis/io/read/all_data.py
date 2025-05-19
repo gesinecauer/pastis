@@ -28,7 +28,7 @@ def _get_lengths(lengths):
                 raise ValueError(
                     f"Chromosome lengths file not found: {lengths}.")
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     return lengths
 
 
@@ -48,7 +48,7 @@ def _get_bias(bias, lengths, bias_per_hmlg=None):
             raise ValueError(f"Bias file not found: {bias}.")
         bias = np.loadtxt(bias)
 
-    bias = np.array(bias, copy=False, ndmin=1, dtype=float).ravel()
+    bias = np.array(bias, copy=None, ndmin=1, dtype=float).ravel()
 
     bias = check_bias_size(bias, lengths=lengths, bias_per_hmlg=bias_per_hmlg)
     return bias
@@ -70,7 +70,7 @@ def _get_struct(struct, lengths, ploidy, num_struct=1, concatenate=True):
             raise ValueError(f"Structure file not found: {struct}.")
         struct = np.loadtxt(struct)
 
-    struct = np.array(struct, copy=False, dtype=float)
+    struct = np.asarray(struct, dtype=float)
 
     try:
         struct = struct.reshape(-1, 3)
@@ -121,7 +121,7 @@ def _get_chrom(chrom, lengths=None):
             raise ValueError("Must supply chromosome lengths.")
         chrom = np.array([f'num{i}' for i in range(1, lengths.size + 1)])
 
-    chrom = np.array(chrom, copy=False, ndmin=1, dtype=str).ravel()
+    chrom = np.array(chrom, copy=None, ndmin=1, dtype=str).ravel()
 
     if chrom.size != np.unique(chrom).size:
         raise ValueError("Chromosome names may not contain duplicates.")

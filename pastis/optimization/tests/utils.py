@@ -105,7 +105,7 @@ def separate_homologs(struct, lengths, true_interhmlg_dis, random_state=None):
     elif isinstance(random_state, int):
         random_state = np.random.RandomState(seed=random_state)
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     if isinstance(true_interhmlg_dis, (int, float)):
@@ -136,7 +136,7 @@ def get_struct_randwalk(lengths, ploidy, random_state=None,
         random_state = np.random.RandomState(seed=0)
     elif isinstance(random_state, int):
         random_state = np.random.RandomState(seed=random_state)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     # Create structure, without any beads overlapping
@@ -196,7 +196,7 @@ def _get_counts(struct, ploidy, lengths, alpha=-3, beta=1, ambiguity='ua',
         elif isinstance(random_state, int):
             random_state = np.random.RandomState(seed=random_state)
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     dis = euclidean_distances(struct)
@@ -253,7 +253,7 @@ def set_counts_ambiguity(counts, lengths, ploidy, ambiguity='ua'):
     if ambiguity.lower() not in ('ua', 'ambig', 'pa'):
         raise ValueError(f"Ambiguity not understood: {ambiguity}")
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     if counts.shape != (n * ploidy, n * ploidy):
@@ -281,7 +281,7 @@ def remove_struct_nan_from_counts(counts, lengths, struct_nan):
     if struct_nan is None or struct_nan.size == 0:
         return sparse.coo_matrix(counts)
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
 
     if sparse.issparse(counts):
         counts = counts.toarray()
@@ -332,7 +332,7 @@ def decrease_struct_res_correct(struct, multiscale_factor, lengths, ploidy):
         return struct
 
     struct = struct.copy().reshape(-1, 3)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
 
     struct_lowres = []
     begin = end = 0
@@ -361,7 +361,7 @@ def decrease_counts_res_correct(counts, multiscale_factor, lengths):
 
     if sparse.issparse(counts):
         counts = counts.toarray()
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     triu = counts.shape[0] == counts.shape[1]
     if triu:
         counts = np.triu(counts, 1)
@@ -412,7 +412,7 @@ def decrease_counts_res_correct(counts, multiscale_factor, lengths):
 
 
 def ambiguate_counts_correct(counts, lengths, ploidy):
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
     if not isinstance(counts, list):
         counts = [counts]

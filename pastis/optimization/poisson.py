@@ -204,7 +204,7 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
     if constraints is not None and not isinstance(constraints, (list, tuple)):
         constraints = [constraints]
     if not isinstance(lengths, (tuple, np.ndarray, jnp.ndarray)):
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
 
     # Get beta
     if beta is None:
@@ -212,7 +212,7 @@ def objective(X, counts, alpha, lengths, ploidy, beta=None, bias=None,
             raise ValueError("Must supply beta when inferring alpha.")
         beta = [c.beta for c in counts]
     else:
-        beta = jnp.array(beta, copy=False, ndmin=1).ravel()
+        beta = jnp.array(beta, copy=None, ndmin=1).ravel()
         if beta.size != len(counts):
             raise ValueError(
                 "Beta needs to contain as many values as there are counts"
@@ -381,9 +381,9 @@ def _check_input(lengths, alpha, counts, constraints, bias, mixture_coefs,
     if lengths_as_tuple:
         if not isinstance(lengths, tuple):
             lengths = tuple(
-                np.array(lengths, copy=False, ndmin=1, dtype=int).ravel())
+                np.array(lengths, copy=None, ndmin=1, dtype=int).ravel())
     else:
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
 
     if alpha is not None and (alpha > -1 or alpha < -4):
         raise ValueError(f"Alpha must be between -4 and -1, {alpha=:.3g}.")

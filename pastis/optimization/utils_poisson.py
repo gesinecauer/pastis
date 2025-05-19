@@ -182,7 +182,7 @@ def _format_structures(structures, lengths=None, ploidy=None,
 
     # Check number of beads
     if lengths is not None and ploidy is not None:
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
         if nbeads_ != lengths.sum() * ploidy:
             raise ValueError(f"Structures must contain {lengths.sum() * ploidy}"
                              f" beads. They contain {nbeads_} beads.")
@@ -252,7 +252,7 @@ def _struct_replace_nan(struct, lengths, ploidy, kind='linear',
     from ..io.read import _get_chrom
 
     struct = struct.reshape(-1, 3)
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
 
     if struct.shape[0] != lengths.sum() * ploidy:
         raise ValueError(f"The structure must contain {lengths.sum() * ploidy}"
@@ -463,8 +463,8 @@ def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
     """
 
     lengths_full = np.array(
-        lengths_full, copy=False, ndmin=1, dtype=int).ravel()
-    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=str).ravel()
+        lengths_full, copy=None, ndmin=1, dtype=int).ravel()
+    chrom_full = np.array(chrom_full, copy=None, ndmin=1, dtype=str).ravel()
 
     if chrom_full.size != np.unique(chrom_full).size:
         raise ValueError("Chromosome names may not contain duplicates.")
@@ -477,7 +477,7 @@ def subset_chromosomes(lengths_full, chrom_full, chrom_subset=None):
         chrom_subset = chrom_full.copy()
     else:
         chrom_subset = np.array(
-            chrom_subset, copy=False, ndmin=1, dtype=str).ravel()
+            chrom_subset, copy=None, ndmin=1, dtype=str).ravel()
 
         if chrom_subset.size != np.unique(chrom_subset).size:
             raise ValueError(
@@ -554,8 +554,8 @@ def subset_chrom_of_data(ploidy, lengths_full, chrom_full, chrom_subset=None,
     from .counts import check_counts, check_bias_size
 
     lengths_full = np.array(
-        lengths_full, copy=False, ndmin=1, dtype=int).ravel()
-    chrom_full = np.array(chrom_full, copy=False, ndmin=1, dtype=str).ravel()
+        lengths_full, copy=None, ndmin=1, dtype=int).ravel()
+    chrom_full = np.array(chrom_full, copy=None, ndmin=1, dtype=str).ravel()
 
     if bias_per_hmlg is not None:
         bias_per_hmlg = bias_per_hmlg and ploidy == 2 and len(
@@ -748,7 +748,7 @@ def _intramol_mask(data, lengths_at_res, nbins=None, intrachrom_interhmlg=False)
         shape = data.shape
 
     lengths_at_res = np.array(
-        lengths_at_res, copy=False, ndmin=1, dtype=int).ravel()
+        lengths_at_res, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths_at_res.sum()
     if set(shape) not in ({n}, {n * 2}, {n, n * 2}):
         raise ValueError(

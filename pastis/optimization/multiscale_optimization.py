@@ -42,7 +42,7 @@ def decrease_lengths_res(lengths, multiscale_factor):
     else:
         tmp_np = np
 
-    lengths = tmp_np.array(lengths, ndmin=1, dtype=int).ravel()  # Copying is ok
+    lengths = tmp_np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
 
     if multiscale_factor == 1:
         return lengths
@@ -600,7 +600,7 @@ def get_epsilon_from_struct(structures, lengths, ploidy, multiscale_factor,
     if multiscale_factor == 1:
         return None
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     structures = _format_structures(
         structures, lengths=lengths, ploidy=ploidy, mixture_coefs=mixture_coefs)
 

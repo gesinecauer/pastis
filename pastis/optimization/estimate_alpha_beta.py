@@ -27,7 +27,7 @@ def _estimate_beta(X, counts, alpha, lengths, ploidy, bias=None,
     if not isinstance(counts, (list, tuple)):
         counts = [counts]
     if not isinstance(lengths, (tuple, np.ndarray, jnp.ndarray)):
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
 
     # Format X
     structures, _, mixture_coefs = _format_X(

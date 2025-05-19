@@ -236,7 +236,7 @@ def plot_structure(struct_file, lengths=None, ploidy=1, title=None,
     elif isinstance(str, lengths) and os.path.isfile(lengths):
         lengths = load_lengths(lengths)
     else:
-        lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     lengths = np.tile(lengths, ploidy)  # In case data is diploid
 
     # Using a modified spectral colormap

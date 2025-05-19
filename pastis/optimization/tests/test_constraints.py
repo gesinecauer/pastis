@@ -183,8 +183,8 @@ def test_constraint_bcc2022(ambiguity, multiscale_factor, multiscale_reform):
     ([0.80, 0.15, 0.05], [0.10, 0.40, 0.50]),
     (np.arange(5) / 10, np.arange(5) / 10)])
 def test_kl_divergence(p, q):
-    p = np.array(p, ndmin=1, copy=False)
-    q = np.array(q, ndmin=1, copy=False)
+    p = np.array(p, ndmin=1, copy=None)
+    q = np.array(q, ndmin=1, copy=None)
 
     kl_correct = rel_entr(p, q).sum()
     kl_test = constraints._kl_divergence(p, np.log(q), mean=False)

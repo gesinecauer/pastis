@@ -122,7 +122,7 @@ class Callback(object):
                  reorienter=None, mixture_coefs=None, verbose=False, mods=[]):
         self.ploidy = ploidy
         self.multiscale_factor = multiscale_factor
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        self.lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             lengths, multiscale_factor=multiscale_factor)
         self.bias = bias

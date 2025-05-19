@@ -86,7 +86,7 @@ class Constraint(object):
         self.name = None
         self.during_alpha_infer = None
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        self.lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
@@ -177,7 +177,7 @@ class BeadChainConnectivity2019(Constraint):
         self.name = "Bead-chain connectivity (2019)"
         self.during_alpha_infer = False
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        self.lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
@@ -242,7 +242,7 @@ class HomologSeparating2019(Constraint):
         self.name = "Homolog separation (2019)"
         self.during_alpha_infer = False
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        self.lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
@@ -356,7 +356,7 @@ class BeadChainConnectivity2022(Constraint):
         self.name = "Bead-chain connectivity (2022)"
         self.during_alpha_infer = True and ('no_bcc_alpha' not in mods)
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        self.lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy
@@ -626,7 +626,7 @@ class HomologSeparating2022(Constraint):
         self.name = "Homolog separation (2022)"
         self.during_alpha_infer = False or ('hsc_alpha' in mods)  # See 2023 manuscript for explanation
         self.lambda_val = lambda_val
-        self.lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+        self.lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
         self.lengths_lowres = decrease_lengths_res(
             self.lengths, multiscale_factor=multiscale_factor)
         self.ploidy = ploidy

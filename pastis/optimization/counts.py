@@ -76,7 +76,7 @@ def ambiguate_counts(counts, lengths, ploidy, warn_on_float=False):
         Aggregated and ambiguated contact counts matrix.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
     if not isinstance(counts, (list, tuple)):
         counts = [counts]
@@ -246,7 +246,7 @@ def _check_counts_matrix(counts, lengths, ploidy, chrom_subset_idx=None,
     """Check counts dimensions, reformat, & excise selected chromosomes.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
 
     # Check input
@@ -337,7 +337,7 @@ def check_counts(counts, lengths, ploidy, chrom_subset_idx=None,
         Checked and reformatted counts data.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     if not isinstance(counts, (list, tuple)):
         counts = [counts]
 
@@ -492,7 +492,7 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
     """Check counts, filter, and compute bias.
     """
 
-    lengths = np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = np.array(lengths, copy=None, ndmin=1, dtype=int).ravel()
     n = lengths.sum()
     counts = check_counts(counts, lengths=lengths, ploidy=ploidy)
 
@@ -1264,8 +1264,8 @@ class CountsMatrix(object):
 
         row = self.bins_nonzero.row.copy()
         col = self.bins_nonzero.col.copy()
-        row[row >= n] -= n
-        col[col >= n] -= n
+        row[row >= n] -= np.array(n, dtype=row.dtype)
+        col[col >= n] -= np.array(n, dtype=col.dtype)
         row_ambig = np.minimum(row, col)
         col_ambig = np.maximum(row, col)
         swap = row != row_ambig
