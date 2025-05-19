@@ -42,7 +42,7 @@ def decrease_lengths_res(lengths, multiscale_factor):
     else:
         tmp_np = np
 
-    lengths = tmp_np.array(lengths, copy=False, ndmin=1, dtype=int).ravel()
+    lengths = tmp_np.array(lengths, ndmin=1, dtype=int).ravel()  # Copying is ok
 
     if multiscale_factor == 1:
         return lengths
