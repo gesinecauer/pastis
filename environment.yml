@@ -5,6 +5,7 @@ dependencies:
     - python
     - setuptools>=77
     - numpy
+    - absl-py
     - pip
     - pip:
         - sphinx
@@ -18,4 +19,5 @@ dependencies:
         - numpydoc
         - pytest
         - nose
+        - jax
         - autograd
