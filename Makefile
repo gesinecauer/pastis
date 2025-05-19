@@ -35,4 +35,3 @@ doc-noplot:
 code-analysis:
 	flake8 pastis | grep -v __init__
 	pylint -E -i y pastis/ -d E1103,E0611,E1101
-
