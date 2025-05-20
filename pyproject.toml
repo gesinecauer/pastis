@@ -12,7 +12,8 @@ dependencies = [
   "pandas",
   "scikit-learn",
   "iced",
-  "autograd"
+  "jax",
+  "absl-py"
 ]
 readme = "README.rst"
 description = "A set of algorithms for the 3D inference of the genome"
