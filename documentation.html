@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 
-<html lang="en">
+<html lang="en" data-content_root="./">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   
     <title>PASTIS: Poisson-based algorithm for stable inference of DNA Structure &#8212; Pastis 0.5.0-git documentation</title>
@@ -18,17 +18,15 @@
           type="text/javascript"></script>
 
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
-    <link rel="stylesheet" type="text/css" href="_static/basic.css" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css" />
-    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
-    <script src="_static/jquery.js"></script>
-    <script src="_static/underscore.js"></script>
-    <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
-    <script src="_static/doctools.js"></script>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=fb9458d3" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=d2d258e8" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <script src="_static/documentation_options.js?v=7614f3fd"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
 <meta charset='utf-8'>
@@ -75,14 +73,12 @@
     <div class="container">
   
   <section id="documentation">
-<h1>Documentation<a class="headerlink" href="#documentation" title="Permalink to this heading">¶</a></h1>
+<h1>Documentation<a class="headerlink" href="#documentation" title="Link to this heading">¶</a></h1>
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="auto_examples/index.html">Datasets</a></li>
 <li class="toctree-l1"><a class="reference internal" href="auto_examples/index.html#plotting-two-structures-inferred-with-different-amounts-of-filtering">Plotting Two Structures Inferred with Different Amounts of Filtering</a></li>
-<li class="toctree-l1"><a class="reference internal" href="auto_examples/index.html#negative-binomial-modeling-of-contact-counts">Negative Binomial modeling of contact counts</a><ul>
-</ul>
-</li>
+<li class="toctree-l1"><a class="reference internal" href="auto_examples/index.html#negative-binomial-modeling-of-contact-counts">Negative Binomial modeling of contact counts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="auto_examples/index.html#plotting-a-structure">Plotting a Structure</a></li>
 <li class="toctree-l1"><a class="reference internal" href="modules/classes.html">Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="modules/classes.html#module-pastis.config"><code class="xref py py-mod docutils literal notranslate"><span class="pre">pastis.config</span></code>: Configuration</a></li>
@@ -93,22 +89,22 @@
 </ul>
 </div>
 <section id="pastis">
-<h2>Pastis<a class="headerlink" href="#pastis" title="Permalink to this heading">¶</a></h2>
+<h2>Pastis<a class="headerlink" href="#pastis" title="Link to this heading">¶</a></h2>
 <p>In this package, we provide four algorithms to infer the 3D structure of the
 genome: MDS, NMDS, PM1, PM2. For all methods, chromosomes are represented as
 beads on a string, at a given resolution. All are installed as a standalone
 program: pastis-mds, pastis-nmds, pastis-pm1, pastis-pm2.</p>
 </section>
 <section id="running-the-example">
-<h2>Running the example<a class="headerlink" href="#running-the-example" title="Permalink to this heading">¶</a></h2>
+<h2>Running the example<a class="headerlink" href="#running-the-example" title="Link to this heading">¶</a></h2>
 <p>We provide a sample interaction count matrix of the first 5 chromosomes and
 configuration file <code class="docutils literal notranslate"><span class="pre">config.ini</span></code>. To run the example, edit the two options
 <code class="docutils literal notranslate"><span class="pre">binary_mds</span></code> (respectively <code class="docutils literal notranslate"><span class="pre">binary_pm</span></code>) to the path where you have
 installed <code class="docutils literal notranslate"><span class="pre">MDS_all</span></code> (respectively <code class="docutils literal notranslate"><span class="pre">PM_all</span></code>).</p>
-<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="k">[all]</span><span class="w"></span>
-<span class="na">resolution: 10000</span><span class="w"></span>
-<span class="na">output_name: structure.pdb</span><span class="w"></span>
-<span class="na">counts: data/counts.matrix</span><span class="w"></span>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="k">[all]</span>
+<span class="na">resolution</span><span class="o">:</span><span class="w"> </span><span class="s">10000</span>
+<span class="na">output_name</span><span class="o">:</span><span class="w"> </span><span class="s">structure.pdb</span>
+<span class="na">counts</span><span class="o">:</span><span class="w"> </span><span class="s">data/counts.matrix</span>
 </pre></div>
 </div>
 <p>To run the code, simply call the program of your choice, and the repository
@@ -124,7 +120,7 @@ array of coordinates while the <code class="docutils literal notranslate"><span 
 the structure for visualization purposes.</p>
 </section>
 <section id="running-the-algorithms-on-your-own-structure">
-<h2>Running the algorithms on your own structure<a class="headerlink" href="#running-the-algorithms-on-your-own-structure" title="Permalink to this heading">¶</a></h2>
+<h2>Running the algorithms on your own structure<a class="headerlink" href="#running-the-algorithms-on-your-own-structure" title="Link to this heading">¶</a></h2>
 <p>Running the algorithms on your own structure, and your own organism will
 require a bit more work.</p>
 <p>The <strong>interaction count matrix</strong> needs to be saved as a <a class="reference external" href="http://docs.scipy.org/doc/numpy/reference/generated/numpy.array.html">numpy array</a>, in
@@ -149,7 +145,7 @@ chromosomes lengths and the <strong>resolution</strong> should be coherent.</p>
     </p>
     <p>
         &copy; Copyright 2014, Nelle Varoquaux.<br/>
-      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 5.0.2.<br/>
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 7.4.7.<br/>
     </p>
 </footer>
   </body>
