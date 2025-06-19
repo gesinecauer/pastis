@@ -107,7 +107,6 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
                              " estimate est_hmlg_sep from ambiguous data.")
         ploidy_draft = 1
 
-
         # Convert counts, betas, bias, & struct_true to "simplified" diploid
         beta_ambig = _ambiguate_beta(
             beta, counts=counts, lengths=lengths, ploidy=2)
@@ -129,7 +128,6 @@ def _infer_draft(counts, lengths, ploidy, outdir=None, alpha=None, seed=0,
             bias is None
         if bias_per_hmlg and bias is not None:
             bias = np.mean([bias[:lengths.sum()], bias[lengths.sum():]])
-
 
         # Convert initialization to "simplified" diploid (if necessary)
         if isinstance(init_draft, list):
@@ -392,10 +390,10 @@ def set_epsilon_bounds(counts, lengths, ploidy, alpha=None, seed=0, bias=None,
             lengths, ploidy=1, multiscale_factor=multiscale_factor,
             counts=counts_ambig_lowres, include_struct_nan_beads=False)
 
-        nghbr_dis_alpha_fullres = counts_ambig.tocsr(
-            ).diagonal(k=1)[row_nghbr_ambig] / ploidy / beta_ambig
-        nghbr_dis_alpha_lowres = counts_ambig_lowres.tocsr(
-            ).diagonal(k=1)[row_nghbr_ambig_lowres] / ploidy / beta_ambig
+        nghbr_dis_alpha_fullres = counts_ambig.tocsr().diagonal(
+            k=1)[row_nghbr_ambig] / ploidy / beta_ambig
+        nghbr_dis_alpha_lowres = counts_ambig_lowres.tocsr().diagonal(
+            k=1)[row_nghbr_ambig_lowres] / ploidy / beta_ambig
 
         if (nghbr_dis_alpha_fullres == 0).sum() > 0:
             nghbr_dis_fullres = np.power(
@@ -741,8 +739,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
           max_alpha_loop=20, beta=None, multiscale_rounds=1,
           alpha_loop=None, update_alpha=False, prev_alpha_obj=None,
           beta_init=None, init='mds', max_iter=30000,
-          factr=1e7, pgtol=1e-05, alpha_factr=1e12, infer_alpha_intra=True,
-          struct_at_final_alpha=True,
+          factr=1e7, pgtol=1e-05, alpha_factr=1e12,
+          struct_at_final_alpha=True, alpha_infer_subset=None,
           bcc_lambda=0, hsc_lambda=0, bcc_version='2019', hsc_version='2019',
           data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
           hsc_perc_diff=None, excluded_counts=None,
@@ -814,31 +812,33 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 beta_init, counts=_counts, lengths=lengths_subset,
                 ploidy=ploidy, bias=_bias, bias_per_hmlg=bias_per_hmlg)
 
-        init_alpha_1chrom = 'init_alpha_1chrom' in mods and (
+    # Decide whether to use just a subset of data for alpha inference
+    get_alpha_1chr = get_alpha_intrachr = get_alpha_intramol = False
+    if not first_alpha_loop:
+        alpha_infer_subset = None
+    if alpha_infer_subset is not None:
+        if isinstance(alpha_infer_subset, str):
+            alpha_infer_subset = [alpha_infer_subset]
+        get_alpha_1chr = ('1chr' in alpha_infer_subset) and (
             lengths_subset.size > 1)
-        infer_alpha_intra = infer_alpha_intra and lengths_subset.size > 1 and (
+        get_alpha_intrachr = ('intrachr' in alpha_infer_subset) and (
+            lengths_subset.size > 1) and (not get_alpha_1chr) and (
             excluded_counts != 'inter-chromosomal')
-
         ambiguities = [_get_counts_ambiguity(
             c.shape, nbeads=lengths_subset.sum() * ploidy) for c in _counts]
-        infer_alpha_intra_mol = 'infer_alpha_intra_mol' in mods and (
+        get_alpha_intramol = ('intramol' in alpha_infer_subset) and (
             lengths_subset.size * ploidy > 1) and (
             excluded_counts != 'inter-molecular') and set(ambiguities) == {"ua"}
 
-    else:
-        init_alpha_1chrom = False
-        infer_alpha_intra = False
-        infer_alpha_intra_mol = False
-
-    if first_alpha_loop and (multiscale_rounds > 1 or infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol):
-        if init_alpha_1chrom:
+    if first_alpha_loop and (multiscale_rounds > 1 or get_alpha_intrachr or get_alpha_1chr or get_alpha_intramol):
+        if get_alpha_1chr:
             chrom_subset_init_alpha = chrom_subset_[np.argmax(lengths_subset)]
         else:
             chrom_subset_init_alpha = chrom_subset_
-        if infer_alpha_intra:
-            excluded_counts_infer_alpha = 'inter-chromosomal'
-        elif infer_alpha_intra_mol:
+        if get_alpha_intramol:
             excluded_counts_infer_alpha = 'inter-molecular'
+        elif get_alpha_intrachr:
+            excluded_counts_infer_alpha = 'inter-chromosomal'
         else:
             excluded_counts_infer_alpha = excluded_counts
 
@@ -848,11 +848,11 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             outdir_tmp = 'initial_alpha_inference'
             if multiscale_rounds > 1:
                 outdir_tmp += '.singleres'
-            if init_alpha_1chrom:
+            if get_alpha_1chr:
                 outdir_tmp += '.' + chrom_subset_init_alpha.replace(' ', '_')
-            elif infer_alpha_intra_mol:
+            if get_alpha_intramol:
                 outdir_tmp += '.intra-molecular'
-            elif infer_alpha_intra:
+            elif get_alpha_intrachr:
                 outdir_tmp += '.intra-chromosomal'
             outdir_init_alpha = os.path.join(outdir, outdir_tmp)
 
@@ -864,8 +864,8 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
             beta_init=beta_init, max_alpha_loop=max_alpha_loop,
             beta=beta, multiscale_rounds=1, init=init,
             max_iter=max_iter, factr=factr, pgtol=pgtol,
-            alpha_factr=alpha_factr, infer_alpha_intra=False,
-            struct_at_final_alpha=not (infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol),
+            alpha_factr=alpha_factr, alpha_infer_subset=None,
+            struct_at_final_alpha=not (get_alpha_intrachr or get_alpha_1chr or get_alpha_intramol),
             bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
             bcc_version=bcc_version, hsc_version=hsc_version,
             data_interchrom=data_interchrom, est_hmlg_sep=est_hmlg_sep,
@@ -887,22 +887,22 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
                 not infer_param['alpha_converged']):
             return struct_, infer_param
 
-        if not (infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol):
+        if not (get_alpha_intrachr or get_alpha_1chr or get_alpha_intramol):
             init_ = struct_
             beta = infer_param['beta']  # FIXME not sure about the beta situation
-        if (not init_alpha_1chrom) and 'est_hmlg_sep' in infer_param:
+        if (not get_alpha_1chr) and 'est_hmlg_sep' in infer_param:
             est_hmlg_sep_ = infer_param['est_hmlg_sep']
 
         alpha = infer_param['alpha']
         alpha_loop = infer_param['alpha_loop']
         prev_alpha_obj = None
         first_alpha_loop = False
-        if infer_alpha_intra or init_alpha_1chrom or infer_alpha_intra_mol:
+        if get_alpha_intrachr or get_alpha_1chr or get_alpha_intramol:
             alpha_loop += 1
-        if infer_alpha_intra or infer_alpha_intra_mol:
+        if get_alpha_intrachr or get_alpha_intramol:
             update_alpha = False
-        infer_alpha_intra = False
-        infer_alpha_intra_mol = False
+        get_alpha_intrachr = False
+        get_alpha_intramol = False
     elif first_alpha_loop and multiscale_rounds == 1:
         # No need to repeatedly re-load if inferring with single-res
         bias = _bias
@@ -1053,7 +1053,7 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
         alpha_loop=alpha_loop + 1, max_alpha_loop=max_alpha_loop,
         beta=infer_param['beta'], multiscale_rounds=multiscale_rounds,
         init=init_, max_iter=max_iter, factr=factr, pgtol=pgtol,
-        alpha_factr=alpha_factr, infer_alpha_intra=infer_alpha_intra,
+        alpha_factr=alpha_factr, alpha_infer_subset=alpha_infer_subset,
         struct_at_final_alpha=struct_at_final_alpha,
         bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda, bcc_version=bcc_version,
         hsc_version=hsc_version,
@@ -1075,7 +1075,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
                    alpha_init=None, max_alpha_loop=20,
                    beta=None, multiscale_rounds=1,
                    max_iter=30000, factr=1e7, pgtol=1e-05,
-                   alpha_factr=1e12, infer_alpha_intra=True,
+                   alpha_factr=1e12, alpha_infer_subset=None,
                    struct_at_final_alpha=True, bcc_lambda=0,
                    hsc_lambda=0, bcc_version='2019', hsc_version='2019',
                    data_interchrom=None, est_hmlg_sep=None, hsc_min_beads=5,
@@ -1230,7 +1230,7 @@ def pastis_poisson(counts, lengths, ploidy, outdir='', chromosomes=None,
             alpha_init=alpha_init, max_alpha_loop=max_alpha_loop, beta=beta,
             multiscale_rounds=multiscale_rounds,
             init=init, max_iter=max_iter, factr=factr, pgtol=pgtol,
-            alpha_factr=alpha_factr, infer_alpha_intra=infer_alpha_intra,
+            alpha_factr=alpha_factr, alpha_infer_subset=alpha_infer_subset,
             struct_at_final_alpha=struct_at_final_alpha,
             bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
             bcc_version=bcc_version, hsc_version=hsc_version,

@@ -50,7 +50,10 @@ def main():
         help="For PM2, the initial value of alpha to use.")
     parser.add_argument(
         "--max_alpha_loop", type=int, default=20,
-        help="For PM2, Number of times alpha and structure are inferred.")
+        help="For PM2, number of times alpha and structure are inferred.")
+    parser.add_argument(
+        "--alpha_infer_subset", type=str, nargs='+', default=None,
+        help="For PM2, TODO")  # TODO
     parser.add_argument(
         "--beta", nargs="+", default=None, type=float,
         help="Scaling parameter that determines the size of the structure,"
