@@ -752,8 +752,10 @@ def infer(counts, lengths, ploidy, outdir='', alpha=None, seed=0,
           mixture_coefs=None, verbose=True, mods=[]):
     """TODO"""
 
-    # if 'exclude_inter' in mods:
-    #     excluded_counts = 'inter-chromosomal'
+    if 'intrachr' in mods:
+        excluded_counts = 'inter-chromosomal'
+    if 'intramol' in mods:
+        excluded_counts = 'inter-molecular'
 
     # SETUP
     if alpha is None:

@@ -363,7 +363,7 @@ def fprime_wrapper(X, counts, alpha, lengths, ploidy, bias=None,
         X, counts=counts, alpha=alpha, lengths=lengths, ploidy=ploidy,
         bias=bias, constraints=constraints, reorienter=reorienter,
         multiscale_factor=multiscale_factor, multiscale_reform=multiscale_reform,
-        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)[0]).flatten()
+        mixture_coefs=mixture_coefs, verbose=verbose, mods=mods)[0]).ravel()
 
     if (not jitted) and ((~np.isfinite(new_grad)).sum() > 0):
         num_nan = np.isnan(new_grad).sum()
@@ -540,7 +540,7 @@ def estimate_X(counts, init_X, alpha, lengths, ploidy, bias=None,
             bounds=bounds,
             args=(counts, alpha, lengths, ploidy, bias, constraints,
                   reorienter, multiscale_factor, multiscale_reform, callback,
-                  mixture_coefs, jitted, (verbose and jitted), mods))
+                  mixture_coefs, jitted, (verbose and jitted), mods))  # FIXME should be (verbose and not jitted), right?
         X, obj, d = results
         converged = d['warnflag'] == 0
         conv_desc = d['task']

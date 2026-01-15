@@ -163,7 +163,7 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None,
         return None
     if ploidy == 1 or (
             len(counts) == 1 and counts[0].shape[0] == counts[0].shape[1]):
-        if isinstance(beta_ambig, (jnp.float64, jnp.ndarray)):
+        if isinstance(beta_ambig, jnp.ndarray):
             return jnp.array([beta_ambig])
         else:
             return [beta_ambig]
@@ -201,7 +201,7 @@ def _disambiguate_beta(beta_ambig, counts, lengths, ploidy, bias=None,
     divide_by = np.array([1 if c.shape[0] == c.shape[1] else 2 for c in counts])
     beta = beta / divide_by
 
-    if isinstance(beta_ambig, (jnp.float64, jnp.ndarray)):
+    if isinstance(beta_ambig, jnp.ndarray):
         return beta
     else:
         return beta.tolist()
@@ -561,7 +561,7 @@ def _prep_counts(counts, lengths, ploidy, filter_threshold=0.04, normalize=True,
             counts_ambig = ambiguate_counts(
                 counts, lengths=lengths, ploidy=ploidy)
         bias = ICE_normalization(
-            counts_ambig, max_iter=300, output_bias=True)[1].flatten()
+            counts_ambig, max_iter=300, output_bias=True)[1].ravel()
     elif bias is not None:
         if verbose:
             print('USING USER-PROVIDED HI-C BIAS VECTOR', flush=True)
@@ -683,6 +683,8 @@ def _set_initial_beta(counts, lengths, ploidy, bias=None, exclude_zeros=False,
     beta = _disambiguate_beta(
         beta_ambig, counts=counts, lengths=lengths, ploidy=ploidy, bias=bias,
         bias_per_hmlg=bias_per_hmlg)
+    if isinstance(beta, jnp.ndarray):
+        beta = beta._value
 
     return beta_ambig, beta
 
@@ -711,8 +713,11 @@ def _format_counts(counts, lengths, ploidy, beta=None, bias=None,
         if input_weight.sum() not in (0, 1):
             input_weight *= len(input_weight) / input_weight.sum()
     if beta is not None:
+        if isinstance(beta, jnp.ndarray):
+            beta = beta._value
         if not isinstance(beta, (list, tuple, np.ndarray)):
             beta = [beta]
+            exit(0)
         if len(beta) != len(counts):
             raise ValueError(
                 "Beta needs to contain as many values as there are counts"
@@ -1093,7 +1098,7 @@ class CountsMatrix(object):
             filtered.bins_zero = filtered.bins_zero.filter(
                 row=row, col=col, copy=False)
 
-        if self.bins_nonzero is None and self.bins_zero is None:
+        if filtered.bins_nonzero is None and filtered.bins_zero is None:
             raise ValueError("All counts bins have been filtered out.")
         return filtered
 

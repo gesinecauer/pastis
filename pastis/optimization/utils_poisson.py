@@ -907,7 +907,7 @@ def _dict_is_equal(d1, d2, verbose=False):
                 if verbose:
                     if np.array_equal(key_d1, key_d2):
                         print(f"Mismatch in dtype for {key}: {d1[key].dtype}"
-                          f" VS. {d2[key].dtype}", flush=True)
+                              f" VS. {d2[key].dtype}", flush=True)
                     else:
                         print(f"Mismatch in {key}:\n{d1[key]}\nVS.\n{d2[key]}",
                               flush=True)

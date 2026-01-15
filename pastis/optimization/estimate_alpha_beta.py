@@ -156,7 +156,7 @@ def fprime_wrapper_alpha(alpha, counts, X, lengths, ploidy, bias=None,
     new_grad = np.array(gradient_alpha(
         alpha, beta=beta_new, counts=counts, X=X, lengths=lengths,
         ploidy=ploidy, bias=bias, constraints=constraints,
-        reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)[0]).flatten()
+        reorienter=reorienter, mixture_coefs=mixture_coefs, mods=mods)[0]).ravel()
 
     return np.asarray(new_grad, dtype=np.float64)
 
@@ -265,7 +265,8 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         log = callback.log
 
     alpha, obj, d = results
-    alpha = float(alpha)
+    if alpha.size == 1:
+        alpha = float(alpha[0])
     converged = d['warnflag'] == 0
     conv_desc = d['task']
     if isinstance(conv_desc, bytes):
@@ -288,5 +289,6 @@ def estimate_alpha(counts, X, alpha_init, lengths, ploidy, bias=None,
         else:
             print('OPTIMIZATION DID NOT CONVERGE', flush=True)
             print(conv_desc + '\n', flush=True)
+            print(d)
 
     return alpha, obj, converged, log, conv_desc
