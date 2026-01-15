@@ -162,7 +162,7 @@ def test_haploid_run_pastis(multiscale_rounds, multiscale_reform):
 
 @pytest.mark.parametrize("multiscale_rounds,multiscale_reform", [
     (1, True), (2, True), (2, False)])
-def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
+def test_haploid_infer_alpha_init_true(multiscale_rounds, multiscale_reform):
     lengths = np.array([41])
     ploidy = 1
     seed = 0
@@ -185,6 +185,68 @@ def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
         print_freq=None, log_freq=None, save_freq=None,
         struct_true=struct_true, multiscale_rounds=multiscale_rounds,
         multiscale_reform=multiscale_reform, verbose=False, init=init)
+
+    assert infer_param['converged']
+
+    print(f"{alpha=:g}    {infer_param['alpha']=:g}")
+    assert_allclose(alpha, infer_param['alpha'], rtol=0.1)
+
+
+@pytest.mark.parametrize("multiscale_rounds,multiscale_reform", [(1, True)])
+def test_haploid_infer_alpha(multiscale_rounds, multiscale_reform):
+    lengths = np.array([41])
+    ploidy = 1
+    seed = 0
+    bcc_lambda = 0
+    hsc_lambda = 0
+    alpha, beta = -3, 1e3
+    init = 'mds'
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False)
+
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
+        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=None,
+        seed=seed, normalize=False, filter_threshold=0, beta=beta,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
+        print_freq=None, log_freq=None, save_freq=None,
+        struct_true=struct_true, multiscale_rounds=multiscale_rounds,
+        multiscale_reform=multiscale_reform, verbose=False, init=init)
+
+    assert infer_param['converged']
+
+    print(f"{alpha=:g}    {infer_param['alpha']=:g}")
+    assert_allclose(alpha, infer_param['alpha'], rtol=0.1)
+
+
+@pytest.mark.parametrize("alpha_infer_subset", ['intrachr', 'intramol'])
+def test_haploid_infer_alpha_intra(alpha_infer_subset):
+    lengths = np.array([52, 41, 32])
+    ploidy = 1
+    seed = 0
+    bcc_lambda = 0
+    hsc_lambda = 0
+    alpha, beta = -3, 1e3
+    init = 'mds'
+
+    random_state = np.random.RandomState(seed=seed)
+    struct_true = get_struct_randwalk(
+        lengths=lengths, ploidy=ploidy, random_state=random_state)
+    counts, beta = get_counts_haploid(
+        struct_true, lengths=lengths, alpha=alpha, beta=beta, struct_nan=None,
+        random_state=random_state, use_poisson=False)
+
+    struct_, infer_param = pastis_algorithms.pastis_poisson(
+        counts, lengths=lengths, ploidy=ploidy, outdir=None, alpha=None,
+        seed=seed, normalize=False, filter_threshold=0, beta=beta,
+        bcc_lambda=bcc_lambda, hsc_lambda=hsc_lambda,
+        print_freq=None, log_freq=None, save_freq=None,
+        struct_true=struct_true, multiscale_rounds=1,
+        multiscale_reform=True, verbose=False, init=init)
 
     assert infer_param['converged']
 
