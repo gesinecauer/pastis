@@ -136,7 +136,7 @@ Now, estimate a constant and a functional dispersion parameter.
  .. code-block:: none
 
 
-    <pastis.dispersion.ExponentialDispersion object at 0x7f519ae83d00>
+    <pastis.dispersion.ExponentialDispersion object at 0x7f52fa57c6d0>
 
 
 
