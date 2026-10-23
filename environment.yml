@@ -18,5 +18,4 @@ dependencies:
         - sphinx-gallery
         - numpydoc
         - pytest
-        - nose
         - jax
